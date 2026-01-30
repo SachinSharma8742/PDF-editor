@@ -1,13 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Use local worker from public directory
-try {
-    // Note: The file must be copied to public/pdf.worker.min.mjs
-    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-} catch (error) {
-    console.error('Failed to set PDF worker source:', error);
-}
-
-export const usePDFWorker = () => {
-    // Logic to ensure worker is ready if needed
-};
+// Use the CDN for the worker to avoid build/bundling issues with Create React App / Vite
+// Matches the version of pdfjs-dist being used
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;

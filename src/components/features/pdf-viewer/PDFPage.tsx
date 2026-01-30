@@ -103,7 +103,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                 height: dimensions ? dimensions.height : '800px'
             }}
         >
-            <PageSelectionOverlay pageNumber={pageNumber} />
+            <PageSelectionOverlay pageNumber={pageNumber} pageId={pageState.id!} />
 
             {/* Content Layer */}
             {pageState.source === 'pdf' && (
@@ -125,6 +125,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
             {/* Editing Layer */}
             {dimensions && (
                 <CanvasLayer
+                    pageId={pageState.id!}
                     pageNumber={pageNumber}
                     width={dimensions.width}
                     height={dimensions.height}

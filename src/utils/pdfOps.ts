@@ -1,41 +1,49 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument } from 'pdf-lib';
 
+import type { PageState } from '../store/pdfStore';
+
 export const extractPagesAsPNG = async (
     pdfDocument: any,
-    selectedPages: Set<number>,
+    pages: PageState[],
+    selectedPageIds: string[],
     scale: number = 2
 ) => {
-    if (!pdfDocument || selectedPages.size === 0) return;
+    if (!pdfDocument || selectedPageIds.length === 0) return;
 
-    const pagesToExtract = Array.from(selectedPages).sort((a, b) => a - b);
+    // Filter selected pages and sort by visual order (index in pages array)
+    const pagesToExtract = pages
+        .filter(p => selectedPageIds.includes(p.id))
+        .sort((a, b) => pages.indexOf(a) - pages.indexOf(b));
 
-    for (const pageNum of pagesToExtract) {
-        const page = await pdfDocument.getPage(pageNum);
-        const viewport = page.getViewport({ scale });
+    for (const pageState of pagesToExtract) {
+        if (pageState.source === 'pdf' && pageState.originalPageIndex) {
+            const page = await pdfDocument.getPage(pageState.originalPageIndex);
+            const viewport = page.getViewport({ scale });
 
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const context = canvas.getContext('2d');
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const context = canvas.getContext('2d');
 
-        if (!context) continue;
+            if (!context) continue;
 
-        await page.render({
-            canvasContext: context,
-            viewport: viewport,
-        }).promise;
+            await page.render({
+                canvasContext: context,
+                viewport: viewport,
+            }).promise;
 
-        // Convert to blob and download
-        canvas.toBlob((blob) => {
-            if (!blob) return;
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `page-${pageNum}.png`;
-            a.click();
-            URL.revokeObjectURL(url);
-        });
+            // Convert to blob and download
+            canvas.toBlob((blob) => {
+                if (!blob) return;
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `page-${pageState.pageNumber}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
     }
 };
 
@@ -46,19 +54,33 @@ export const loadPDF = async (arrayBuffer: ArrayBuffer) => {
 
 export const extractPagesAsPDF = async (
     originalPdfBytes: ArrayBuffer,
-    selectedPages: Set<number>
+    pages: PageState[],
+    selectedPageIds: string[]
 ) => {
-    if (!originalPdfBytes || selectedPages.size === 0) return;
+    if (!originalPdfBytes || selectedPageIds.length === 0) return;
 
     try {
         const pdfDoc = await PDFDocument.load(originalPdfBytes);
         const newPdf = await PDFDocument.create();
 
-        // pdf-lib is 0-indexed, our app is 1-indexed
-        const pageIndices = Array.from(selectedPages).map(p => p - 1).sort((a, b) => a - b);
+        // Map selected IDs to their original PDF indices
+        // We only support extracting original PDF pages for now (until flattening engine is built)
+        // TODO: Use Flattening Engine here for non-pdf pages or edited pages
+        const selectedPageStates = pages
+            .filter(p => selectedPageIds.includes(p.id))
+            .sort((a, b) => pages.indexOf(a) - pages.indexOf(b));
 
-        const copiedPages = await newPdf.copyPages(pdfDoc, pageIndices);
-        copiedPages.forEach(page => newPdf.addPage(page));
+        // We accumulate indices. Note: this strategy only works for original PDF pages.
+        // If user added blank/image pages, they will be skipped or need special handling (Flattening).
+        // For 'Legacy' export behavior, we only copy PDF pages.
+        const pageIndices = selectedPageStates
+            .filter(p => p.source === 'pdf' && p.originalPageIndex !== undefined)
+            .map(p => p.originalPageIndex! - 1); // pdf-lib is 0-indexed
+
+        if (pageIndices.length > 0) {
+            const copiedPages = await newPdf.copyPages(pdfDoc, pageIndices);
+            copiedPages.forEach(page => newPdf.addPage(page));
+        }
 
         const pdfBytes = await newPdf.save();
         const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });

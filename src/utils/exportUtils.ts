@@ -84,49 +84,74 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
 
                 ctx.scale(scale, scale);
 
-                // Draw Lines
-                if (page.lines && page.lines.length > 0) {
-                    page.lines.forEach(line => {
+                // Draw Paths (Freehand)
+                if (page.paths && page.paths.length > 0) {
+                    page.paths.forEach(path => {
                         ctx.beginPath();
-                        ctx.strokeStyle = line.color;
-                        ctx.lineWidth = line.width;
+                        ctx.strokeStyle = path.stroke;
+                        ctx.lineWidth = path.strokeWidth;
                         ctx.lineCap = 'round';
                         ctx.lineJoin = 'round';
-                        ctx.globalCompositeOperation = line.tool === 'eraser' ? 'destination-out' : 'source-over';
+                        ctx.globalCompositeOperation = 'source-over'; // Eraser not fully supported in export yet without layer masking
 
-                        if (line.points.length > 0) {
-                            ctx.moveTo(line.points[0], line.points[1]);
-                            for (let i = 2; i < line.points.length; i += 2) {
-                                ctx.lineTo(line.points[i], line.points[i + 1]);
+                        if (path.points.length > 0) {
+                            ctx.moveTo(path.points[0], path.points[1]);
+                            for (let i = 2; i < path.points.length; i += 2) {
+                                ctx.lineTo(path.points[i], path.points[i + 1]);
                             }
                         }
                         ctx.stroke();
                     });
                 }
 
-                // Draw Overlay Images
-                // We need to load them async. 
-                if (page.images && page.images.length > 0) {
-                    for (const imgData of page.images) {
-                        await new Promise<void>((resolve) => {
-                            const img = new Image();
-                            img.onload = () => {
-                                ctx.save();
-                                // Translate to center of image position to handle rotation
-                                ctx.translate(imgData.x + imgData.width / 2, imgData.y + imgData.height / 2);
-                                ctx.rotate((imgData.rotation * Math.PI) / 180);
-                                ctx.drawImage(
-                                    img,
-                                    -imgData.width / 2,
-                                    -imgData.height / 2,
-                                    imgData.width,
-                                    imgData.height
-                                );
-                                ctx.restore();
-                                resolve();
-                            };
-                            img.src = imgData.url;
-                        });
+                // Draw Objects (Text, Shapes, Images)
+                if (page.objects && page.objects.length > 0) {
+                    for (const obj of page.objects) {
+                        ctx.save();
+                        // Handle rotation and position
+                        // Note: Konva centers rotation, canvas needs translation
+                        // Assuming obj.x/y is top-left.
+                        // If object has specific center logic (like text), adjustment needed. 
+                        // For simplicity, we assume standard top-left positioning for now.
+
+                        if (obj.type === 'image') {
+                            await new Promise<void>((resolve) => {
+                                const img = new Image();
+                                img.onload = () => {
+                                    const w = obj.width || img.width;
+                                    const h = obj.height || img.height;
+                                    ctx.drawImage(img, obj.x, obj.y, w, h);
+                                    resolve();
+                                };
+                                img.onerror = () => resolve(); // Skip on error
+                                img.src = (obj as any).src || (obj as any).url; // Handle legacy/new naming
+                            });
+                        } else if (obj.type === 'text') {
+                            const fontSize = obj.fontSize || 16;
+                            ctx.font = `${fontSize}px ${obj.fontFamily || 'Arial'}`;
+                            ctx.fillStyle = obj.fill || 'black';
+                            ctx.fillText(obj.text || '', obj.x, obj.y + fontSize);
+                        } else if (obj.type === 'rectangle') {
+                            ctx.beginPath();
+                            ctx.rect(obj.x, obj.y, obj.width || 0, obj.height || 0);
+                            ctx.strokeStyle = obj.stroke || 'black';
+                            ctx.lineWidth = obj.strokeWidth || 2;
+                            ctx.stroke();
+                            if (obj.fill && obj.fill !== 'transparent') {
+                                ctx.fillStyle = obj.fill;
+                                ctx.fill();
+                            }
+                        } else if (obj.type === 'circle') {
+                            ctx.beginPath();
+                            const w = obj.width || 0;
+                            const radius = w / 2;
+                            ctx.ellipse(obj.x + radius, obj.y + radius, radius, radius, 0, 0, 2 * Math.PI);
+                            ctx.strokeStyle = obj.stroke || 'black';
+                            ctx.lineWidth = obj.strokeWidth || 2;
+                            ctx.stroke();
+                        }
+
+                        ctx.restore();
                     }
                 }
 

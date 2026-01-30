@@ -1,73 +1,50 @@
-# React + TypeScript + Vite
+# Premium PDF Editor
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A high-fidelity, client-side PDF editor built with React, TypeScript, and Vite. This application provides a seamless, professional environment for managing and editing PDF documents directly in your browser.
 
-Currently, two official plugins are available:
+## 🚀 Key Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### 💎 Premium Interface
+- **Glassmorphic Design**: Modern, translucent UI components with high-precision animations.
+- **Smart Sidebar**: An adaptable sidebar that provides document context and intuitive navigation.
+- **Responsive Workspace**: A clean, centered document view that scales perfectly across different screen sizes.
 
-## React Compiler
+### 📄 Document Operations
+- **Focused Selection Mode**: A dedicated "Single-Purpose" terminal for bulk page management (Delete, Export, Clone).
+- **Infinite Flexibility**: Add blank pages, append new PDF files, or reorder pages via smooth drag-and-drop.
+- **Smart Scroll Tracking**: The sidebar "Viewing" marker automatically tracks your position in the document as you scroll.
+- **Precision Page Management**: Full support for duplicating, deleting, and extracting specific page selections.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 🛠 Tech Stack
+- **Frontend**: React 18, TypeScript, Vite
+- **Styling**: Tailwind CSS
+- **PDF Engine**: `pdfjs-dist` for rendering, `pdf-lib` for document manipulation.
+- **State Management**: Zustand (for high-performance, predictable state).
+- **Interactions**: `@dnd-kit` for robust drag-and-drop.
 
-## Expanding the ESLint configuration
+## 📦 Getting Started
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Prerequisites
+- Node.js (v18 or higher)
+- npm or yarn
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Installation
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 🏗 Project Structure
+- `src/components/layout`: Core UI layout components (Sidebar, Toolbar).
+- `src/components/features`: Feature-specific modules (PDF Viewer, Page Operations).
+- `src/store`: Global state management via Zustand.
+- `src/utils`: PDF heavy-lifting and utility functions.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+---
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+*Built with precision and focus to provide a state-of-the-art PDF editing experience.*

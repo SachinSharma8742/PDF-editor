@@ -1,247 +1,606 @@
 import { create } from 'zustand';
+import { devtools, persist } from 'zustand/middleware';
 
-export type ToolType = 'select' | 'pen' | 'highlighter' | 'eraser';
+export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature';
 export type PageSource = 'pdf' | 'image' | 'blank';
+
+// --- Core Data Models ---
 
 export interface Point {
     x: number;
     y: number;
 }
 
-export interface DrawingLine {
-    points: number[];
-    color: string;
-    width: number;
-    tool: 'pen' | 'highlighter' | 'eraser';
-}
-
-export interface OverlayImage {
+export interface PDFObject {
     id: string;
-    url: string;
+    type: 'text' | 'image' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'stamp' | 'signature';
     x: number;
     y: number;
-    width: number;
-    height: number;
-    rotation: number;
+    width?: number;
+    height?: number;
+    rotation?: number;
+
+    // Style props
+    fill?: string;
+    stroke?: string;
+    strokeWidth?: number;
+    opacity?: number;
+
+    // Text specific
+    text?: string;
+    fontSize?: number;
+    fontFamily?: string;
+    fontWeight?: string;
+    fontStyle?: string;
+    align?: 'left' | 'center' | 'right';
+
+    // Image specific
+    src?: string; // Data URL or Object URL
+
+    isLocked?: boolean;
+    groupId?: string; // For grouping objects
+}
+
+export interface DrawingPath {
+    id: string;
+    points: number[];
+    stroke: string;
+    strokeWidth: number;
+    tool: 'pen' | 'highlighter' | 'eraser';
+    opacity: number;
+    closed?: boolean;
 }
 
 export interface PageState {
-    pageNumber: number; // Current visual index (1-based)
-    id: string; // Unique ID for keying/dnd
-    originalPageIndex?: number; // Original 1-based index in the PDF document (if source === 'pdf')
-    rotation: number;
+    id: string; // Unique Page ID
+    pageNumber: number; // Visual index (1-based)
+    originalPageIndex?: number; // Index in source PDF (1-based)
+
+    // Dimensions
+    width: number;
+    height: number;
     scale: number;
-    isEdited: boolean;
-    canvasData: any; // Serialized Konva data
+    rotation: number;
+
     source: PageSource;
-    content?: string; // Data URL for image or null for blank/pdf
-    width?: number; // Custom width for non-PDF pages
-    height?: number; // Custom height for non-PDF pages
-    lines: DrawingLine[]; // Drawing data
-    images: OverlayImage[]; // Overlay images
+    content?: string; // Background image data URL (if not PDF)
+
+    // Content Layers
+    paths: DrawingPath[]; // Freehand drawings (Pen/Highlighter)
+    objects: PDFObject[]; // Vector objects & text
+
+    // State
+    isEdited: boolean;
+}
+
+// --- History Model ---
+
+interface HistoryState {
+    past: PageState[][]; // Array of full page state snapshots
+    future: PageState[][];
+}
+
+// --- Store Actions ---
+
+// --- Store Actions ---
+
+interface ToolSettings {
+    color: string;
+    size: number;
+    opacity: number;
+    fontFamily: string;
+    fontSize: number;
+    fontWeight: string;
+    fontStyle: string;
 }
 
 interface PDFStore {
+    // Global State
     pdfDocument: any | null;
     originalPdfBytes: ArrayBuffer | null;
     pages: PageState[];
-    scale: number;
     currentPage: number;
+    scale: number;
     isLoading: boolean;
+    fileName: string | null;
 
-    // Selection State
-    isSelectionMode: boolean;
-    selectedPages: Set<number>;
+    // History
+    history: HistoryState;
+    canUndo: () => boolean;
+    canRedo: () => boolean;
+    undo: () => void;
+    redo: () => void;
+    saveToHistory: () => void; // Call before making destructive changes
 
-    // Editing State
+    // Tool State
     activeTool: ToolType;
-    brushColor: string;
-    brushSize: number;
+    eraserMode: 'path' | 'element'; // Toggle between erasing drawings vs deleting objects
+    // Per-tool preferences
+    toolPreferences: Record<ToolType, ToolSettings>; // The Single Source of Truth
+
+    // Selection
+    selectedObjectIds: string[]; // For objects
+    selectedPageIds: string[]; // For pages
+    isMultiSelection: boolean;
 
     // Actions
-    setPdfDocument: (doc: any, bytes: ArrayBuffer) => void;
-
-    // Page Actions
+    setPdfDocument: (doc: any, bytes: ArrayBuffer, fileName: string) => void;
+    appendPDF: (doc: any, bytes: ArrayBuffer, addedPagesCount: number) => void;
     addPage: (source: PageSource, content?: string, width?: number, height?: number) => void;
-    deleteSelectedPages: () => void;
+    updatePage: (pageId: string, updates: Partial<PageState>) => void;
     reorderPages: (fromIndex: number, toIndex: number) => void;
+    deletePage: (pageId: string) => void;
+    deleteSelectedPages: () => void;
+
+    // Page Selection
+    togglePageSelection: (pageId: string) => void;
+    selectAllPages: () => void;
+    deselectAllPages: () => void;
+    duplicateSelectedPages: () => void;
 
     // View Actions
     setScale: (scale: number) => void;
     setCurrentPage: (page: number) => void;
     setIsLoading: (loading: boolean) => void;
 
-    // Selection Actions
-    toggleSelectionMode: () => void;
-    togglePageSelection: (pageNumber: number) => void;
-    selectAll: () => void;
-    clearSelection: () => void;
-
-    // Editing Actions
+    // Tool Actions
     setActiveTool: (tool: ToolType) => void;
-    setBrushColor: (color: string) => void;
-    setBrushSize: (size: number) => void;
-    addDrawingLine: (pageNumber: number, line: DrawingLine) => void;
-    addImageToPage: (pageNumber: number, image: OverlayImage) => void;
-    updateImagePosition: (pageNumber: number, imageId: string, updates: Partial<OverlayImage>) => void;
+    setEraserMode: (mode: 'path' | 'element') => void;
+    updateToolSettings: (settings: Partial<ToolSettings>) => void; // Updates CURRENT tool's settings
+
+    // Content Actions
+    addPath: (pageId: string, path: DrawingPath) => void;
+    addObject: (pageId: string, object: PDFObject) => void;
+    updateObject: (pageId: string, objectId: string, updates: Partial<PDFObject>) => void;
+    deleteObjects: (objectIds: string[]) => void;
+
+    // Selection Actions
+    selectObject: (objectId: string, multi?: boolean) => void;
+    selectObjects: (objectIds: string[]) => void;
+    clearSelection: () => void;
+    duplicateObject: (pageId: string, objectId: string) => void;
+    reorderObject: (pageId: string, objectId: string, direction: 'front' | 'back') => void;
+    groupObjects: (pageId: string, objectIds: string[]) => void;
+    ungroupObjects: (pageId: string, objectIds: string[]) => void;
 
     reset: () => void;
 }
 
-export const usePDFStore = create<PDFStore>((set) => ({
-    pdfDocument: null,
-    originalPdfBytes: null,
-    pages: [],
-    scale: 1.0,
-    currentPage: 1,
-    isLoading: false,
+// --- Implementation ---
 
-    isSelectionMode: false,
-    selectedPages: new Set(),
+const generateId = () => `obj-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-    activeTool: 'select',
-    brushColor: '#df4b26',
-    brushSize: 5,
+const DEFAULT_SETTINGS: ToolSettings = {
+    color: '#000000',
+    size: 2,
+    opacity: 1,
+    fontFamily: 'Inter',
+    fontSize: 16,
+    fontWeight: 'normal',
+    fontStyle: 'normal'
+};
 
-    setPdfDocument: (doc, bytes) => {
-        const initialPages: PageState[] = Array.from({ length: doc.numPages }, (_, i) => ({
-            pageNumber: i + 1,
-            id: `page-${Date.now()}-${i + 1}`,
-            originalPageIndex: i + 1,
-            rotation: 0,
+export const usePDFStore = create<PDFStore>()(
+    devtools(
+        (set, get) => ({
+            pdfDocument: null,
+            originalPdfBytes: null,
+            pages: [],
+            currentPage: 1,
             scale: 1.0,
-            isEdited: false,
-            canvasData: null,
-            source: 'pdf',
-            lines: [],
-            images: []
-        }));
-        set({
-            pdfDocument: doc,
-            originalPdfBytes: bytes,
-            pages: initialPages,
-            currentPage: 1
-        });
-    },
+            isLoading: false,
+            fileName: null,
 
-    addPage: (source, content, width = 595, height = 842) => set((state) => {
-        const newPageNumber = state.pages.length + 1;
-        const newPage: PageState = {
-            pageNumber: newPageNumber,
-            id: `page-${Date.now()}-${newPageNumber}`,
-            rotation: 0,
-            scale: 1.0,
-            isEdited: source !== 'pdf',
-            canvasData: null,
-            source: source,
-            content: content,
-            width: width,
-            height: height,
-            lines: [],
-            images: []
-        };
-        return { pages: [...state.pages, newPage] };
-    }),
+            history: { past: [], future: [] },
 
-    deleteSelectedPages: () => set((state) => {
-        if (state.selectedPages.size === 0) return state;
+            activeTool: 'select',
+            eraserMode: 'path', // Default to path eraser
 
-        const newPages = state.pages
-            .filter(p => !state.selectedPages.has(p.pageNumber))
-            .map((p, index) => ({ ...p, pageNumber: index + 1 }));
+            // Initialize preferences for each tool
+            toolPreferences: {
+                select: { ...DEFAULT_SETTINGS },
+                pan: { ...DEFAULT_SETTINGS },
+                pen: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                highlighter: { ...DEFAULT_SETTINGS, color: '#facc15', size: 20, opacity: 0.5 },
+                eraser: { ...DEFAULT_SETTINGS, size: 20 },
+                text: { ...DEFAULT_SETTINGS, color: '#000000' },
+                rectangle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                circle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                arrow: { ...DEFAULT_SETTINGS, color: '#000000' },
+                line: { ...DEFAULT_SETTINGS, color: '#000000' },
+                image: { ...DEFAULT_SETTINGS },
+                stamp: { ...DEFAULT_SETTINGS },
+                signature: { ...DEFAULT_SETTINGS }
+            },
 
-        return {
-            pages: newPages,
-            selectedPages: new Set(),
-            currentPage: Math.min(state.currentPage, newPages.length) || 1
-        };
-    }),
+            selectedObjectIds: [],
+            selectedPageIds: [],
+            isMultiSelection: false,
 
-    reorderPages: (fromIndex: number, toIndex: number) => set((state) => {
-        const newPages = [...state.pages];
-        const [removed] = newPages.splice(fromIndex, 1);
-        newPages.splice(toIndex, 0, removed);
+            // History Helpers
+            canUndo: () => get().history.past.length > 0,
+            canRedo: () => get().history.future.length > 0,
 
-        const reindexedPages = newPages.map((p, index) => ({
-            ...p,
-            pageNumber: index + 1
-        }));
+            saveToHistory: () => {
+                const { pages, history } = get();
+                const snapshot = JSON.parse(JSON.stringify(pages));
+                const newPast = [...history.past, snapshot].slice(-50);
+                set({
+                    history: {
+                        past: newPast,
+                        future: []
+                    }
+                });
+            },
 
-        return { pages: reindexedPages };
-    }),
+            undo: () => {
+                const { history, pages } = get();
+                if (history.past.length === 0) return;
+                const previous = history.past[history.past.length - 1];
+                const newPast = history.past.slice(0, -1);
+                set({
+                    pages: previous,
+                    history: { past: newPast, future: [pages, ...history.future] }
+                });
+            },
 
-    setScale: (scale) => set({ scale }),
-    setCurrentPage: (page) => set({ currentPage: page }),
-    setIsLoading: (loading) => set({ isLoading: loading }),
+            redo: () => {
+                const { history, pages } = get();
+                if (history.future.length === 0) return;
+                const next = history.future[0];
+                const newFuture = history.future.slice(1);
+                set({
+                    pages: next,
+                    history: { past: [...history.past, pages], future: newFuture }
+                });
+            },
 
-    toggleSelectionMode: () => set((state) => ({
-        isSelectionMode: !state.isSelectionMode,
-        selectedPages: new Set(),
-        activeTool: 'select'
-    })),
+            setPdfDocument: (doc, bytes, fileName) => {
+                const initialPages: PageState[] = Array.from({ length: doc.numPages }, (_, i) => ({
+                    id: `page-${i + 1}`,
+                    pageNumber: i + 1,
+                    originalPageIndex: i + 1,
+                    width: 595,
+                    height: 842,
+                    scale: 1,
+                    rotation: 0,
+                    source: 'pdf',
+                    paths: [],
+                    objects: [],
+                    isEdited: false
+                }));
+                set({
+                    pdfDocument: doc,
+                    originalPdfBytes: bytes,
+                    fileName: fileName,
+                    pages: initialPages,
+                    currentPage: 1,
+                    history: { past: [], future: [] },
+                });
+            },
 
-    togglePageSelection: (pageNumber) => set((state) => {
-        const newSelected = new Set(state.selectedPages);
-        if (newSelected.has(pageNumber)) {
-            newSelected.delete(pageNumber);
-        } else {
-            newSelected.add(pageNumber);
-        }
-        return { selectedPages: newSelected };
-    }),
+            appendPDF: (doc, bytes, addedPagesCount) => {
+                get().saveToHistory();
+                const currentCount = get().pages.length;
+                const newPages: PageState[] = Array.from({ length: addedPagesCount }, (_, i) => ({
+                    id: generateId(),
+                    pageNumber: currentCount + i + 1,
+                    originalPageIndex: currentCount + i + 1,
+                    width: 595,
+                    height: 842,
+                    scale: 1,
+                    rotation: 0,
+                    source: 'pdf',
+                    paths: [],
+                    objects: [],
+                    isEdited: false
+                }));
+                set(state => ({
+                    pdfDocument: doc,
+                    originalPdfBytes: bytes,
+                    pages: [...state.pages, ...newPages]
+                }));
+            },
 
-    selectAll: () => set((state) => {
-        const allPages = new Set(state.pages.map(p => p.pageNumber));
-        return { selectedPages: allPages };
-    }),
+            addPage: (source, content, width = 595, height = 842) => {
+                get().saveToHistory();
+                set(state => {
+                    const newPage: PageState = {
+                        id: generateId(),
+                        pageNumber: state.pages.length + 1,
+                        width,
+                        height,
+                        scale: 1,
+                        rotation: 0,
+                        source,
+                        content,
+                        paths: [],
+                        objects: [],
+                        isEdited: true
+                    };
+                    return {
+                        pages: [...state.pages, newPage],
+                        currentPage: newPage.pageNumber
+                    };
+                });
+            },
 
-    clearSelection: () => set({ selectedPages: new Set() }),
+            updatePage: (pageId, updates) => {
+                set(state => ({
+                    pages: state.pages.map(p => p.id === pageId ? { ...p, ...updates, isEdited: true } : p)
+                }));
+            },
 
-    setActiveTool: (tool) => set({ activeTool: tool }),
-    setBrushColor: (color) => set({ brushColor: color }),
-    setBrushSize: (size) => set({ brushSize: size }),
+            reorderPages: (fromIndex, toIndex) => {
+                get().saveToHistory();
+                set(state => {
+                    const newPages = [...state.pages];
+                    const [moved] = newPages.splice(fromIndex, 1);
+                    newPages.splice(toIndex, 0, moved);
+                    return {
+                        pages: newPages.map((p, i) => ({ ...p, pageNumber: i + 1 }))
+                    };
+                });
+            },
 
-    addDrawingLine: (pageNumber, line) => set((state) => ({
-        pages: state.pages.map(p =>
-            p.pageNumber === pageNumber
-                ? { ...p, lines: [...p.lines, line], isEdited: true }
-                : p
-        )
-    })),
+            deletePage: (pageId) => {
+                get().saveToHistory();
+                set(state => ({
+                    pages: state.pages
+                        .filter(p => p.id !== pageId)
+                        .map((p, i) => ({ ...p, pageNumber: i + 1 }))
+                }));
+            },
 
-    addImageToPage: (pageNumber, image) => set((state) => ({
-        pages: state.pages.map(p =>
-            p.pageNumber === pageNumber
-                ? { ...p, images: [...p.images, image], isEdited: true }
-                : p
-        )
-    })),
+            deleteSelectedPages: () => {
+                get().saveToHistory();
+                set(state => {
+                    const ids = new Set(state.selectedPageIds);
+                    if (ids.size === 0) return state;
+                    const newPages = state.pages
+                        .filter(p => !ids.has(p.id))
+                        .map((p, i) => ({ ...p, pageNumber: i + 1 }));
+                    return {
+                        pages: newPages,
+                        selectedPageIds: [],
+                        currentPage: Math.min(state.currentPage, newPages.length) || 1
+                    };
+                });
+            },
 
-    updateImagePosition: (pageNumber, imageId, updates) => set((state) => ({
-        pages: state.pages.map(p =>
-            p.pageNumber === pageNumber
-                ? {
+            togglePageSelection: (pageId) => set(state => {
+                const ids = new Set(state.selectedPageIds);
+                if (ids.has(pageId)) ids.delete(pageId);
+                else ids.add(pageId);
+                return { selectedPageIds: Array.from(ids) };
+            }),
+
+            selectAllPages: () => set(state => ({
+                selectedPageIds: state.pages.map(p => p.id)
+            })),
+
+            deselectAllPages: () => set({ selectedPageIds: [] }),
+
+            duplicateSelectedPages: () => {
+                const { selectedPageIds, pages, saveToHistory } = get();
+                if (selectedPageIds.length === 0) return;
+                saveToHistory();
+
+                const selectedPages = pages.filter(p => selectedPageIds.includes(p.id));
+                const newPages = selectedPages.map((p, i) => ({
                     ...p,
-                    images: p.images.map(img =>
-                        img.id === imageId ? { ...img, ...updates } : img
-                    ),
+                    id: `page-dup-${Date.now()}-${i}`,
+                    pageNumber: pages.length + i + 1,
+                    originalPageIndex: p.originalPageIndex,
+                    paths: JSON.parse(JSON.stringify(p.paths)),
+                    objects: JSON.parse(JSON.stringify(p.objects)),
                     isEdited: true
-                }
-                : p
-        )
-    })),
+                }));
 
-    reset: () => set({
-        pdfDocument: null,
-        originalPdfBytes: null,
-        pages: [],
-        scale: 1.0,
-        currentPage: 1,
-        isLoading: false,
-        isSelectionMode: false,
-        selectedPages: new Set(),
-        activeTool: 'select',
-        brushColor: '#df4b26',
-        brushSize: 5,
-    }),
-}));
+                set(state => ({
+                    pages: [...state.pages, ...newPages].map((p, i) => ({ ...p, pageNumber: i + 1 })),
+                    selectedPageIds: newPages.map(p => p.id)
+                }));
+            },
+
+            setScale: (scale) => set({ scale }),
+            setCurrentPage: (page) => set({ currentPage: page }),
+            setIsLoading: (loading) => set({ isLoading: loading }),
+
+            setActiveTool: (tool) => {
+                set({ activeTool: tool, selectedObjectIds: [] });
+            },
+
+            setEraserMode: (mode) => set({ eraserMode: mode }),
+
+            // NEW: Updates the preferences for the CURRENTLY active tool
+            updateToolSettings: (settings) => set(state => {
+                const currentTool = state.activeTool;
+                return {
+                    toolPreferences: {
+                        ...state.toolPreferences,
+                        [currentTool]: { ...state.toolPreferences[currentTool], ...settings }
+                    }
+                };
+            }),
+
+            addPath: (pageId, path) => {
+                get().saveToHistory();
+                set(state => ({
+                    pages: state.pages.map(p =>
+                        p.id === pageId ? { ...p, paths: [...p.paths, path], isEdited: true } : p
+                    )
+                }));
+            },
+
+            addObject: (pageId, object) => {
+                get().saveToHistory();
+                set(state => ({
+                    pages: state.pages.map(p =>
+                        p.id === pageId ? { ...p, objects: [...p.objects, object], isEdited: true } : p
+                    )
+                }));
+                get().selectObject(object.id);
+            },
+
+            updateObject: (pageId, objectId, updates) => {
+                set(state => ({
+                    pages: state.pages.map(p =>
+                        p.id === pageId ? {
+                            ...p,
+                            objects: p.objects.map(obj =>
+                                obj.id === objectId ? { ...obj, ...updates } : obj
+                            ),
+                            isEdited: true
+                        } : p
+                    )
+                }));
+            },
+
+            deleteObjects: (objectIds) => {
+                get().saveToHistory();
+                const ids = new Set(objectIds);
+                set(state => ({
+                    pages: state.pages.map(p => ({
+                        ...p,
+                        objects: p.objects.filter(obj => !ids.has(obj.id))
+                    })),
+                    selectedObjectIds: []
+                }));
+            },
+
+            selectObject: (objectId, multi = false) => {
+                set(state => {
+                    const findGroupMembers = (targetId: string) => {
+                        for (const page of state.pages) {
+                            const obj = page.objects.find(o => o.id === targetId);
+                            if (obj && obj.groupId) {
+                                return page.objects.filter(o => o.groupId === obj.groupId).map(o => o.id);
+                            }
+                        }
+                        return [targetId];
+                    };
+
+                    const idsToSelect = findGroupMembers(objectId);
+                    if (multi) {
+                        const currentSet = new Set(state.selectedObjectIds);
+                        const allSelected = idsToSelect.every(id => currentSet.has(id));
+                        let newSet = new Set(currentSet);
+                        if (allSelected) idsToSelect.forEach(id => newSet.delete(id));
+                        else idsToSelect.forEach(id => newSet.add(id));
+                        return {
+                            selectedObjectIds: Array.from(newSet),
+                            isMultiSelection: newSet.size > 1
+                        };
+                    }
+                    return { selectedObjectIds: idsToSelect, isMultiSelection: idsToSelect.length > 1 };
+                });
+            },
+
+            selectObjects: (objectIds) => {
+                set({ selectedObjectIds: objectIds, isMultiSelection: objectIds.length > 1 });
+            },
+
+            clearSelection: () => set({ selectedObjectIds: [], isMultiSelection: false }),
+
+            reset: () => set({
+                pdfDocument: null,
+                originalPdfBytes: null,
+                fileName: null,
+                pages: [],
+                currentPage: 1,
+                scale: 1.0,
+                history: { past: [], future: [] },
+                selectedObjectIds: [],
+                selectedPageIds: [],
+                activeTool: 'select',
+                toolPreferences: {
+                    select: { ...DEFAULT_SETTINGS },
+                    pan: { ...DEFAULT_SETTINGS },
+                    pen: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                    highlighter: { ...DEFAULT_SETTINGS, color: '#facc15', size: 20, opacity: 0.5 },
+                    eraser: { ...DEFAULT_SETTINGS, size: 20 },
+                    text: { ...DEFAULT_SETTINGS, color: '#000000' },
+                    rectangle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                    circle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                    arrow: { ...DEFAULT_SETTINGS, color: '#000000' },
+                    line: { ...DEFAULT_SETTINGS, color: '#000000' },
+                    image: { ...DEFAULT_SETTINGS },
+                    stamp: { ...DEFAULT_SETTINGS },
+                    signature: { ...DEFAULT_SETTINGS }
+                }
+            }),
+
+            duplicateObject: (pageId, objectId) => {
+                get().saveToHistory();
+                set(state => ({
+                    pages: state.pages.map(p => {
+                        if (p.id !== pageId) return p;
+                        const objToClone = p.objects.find(o => o.id === objectId);
+                        if (!objToClone) return p;
+                        const newObj = {
+                            ...objToClone,
+                            id: generateId(),
+                            x: objToClone.x + 20,
+                            y: objToClone.y + 20
+                        };
+                        return { ...p, objects: [...p.objects, newObj], isEdited: true };
+                    })
+                }));
+            },
+
+            reorderObject: (pageId, objectId, direction) => {
+                get().saveToHistory();
+                set(state => ({
+                    pages: state.pages.map(p => {
+                        if (p.id !== pageId) return p;
+                        const objIndex = p.objects.findIndex(o => o.id === objectId);
+                        if (objIndex === -1) return p;
+                        const newObjects = [...p.objects];
+                        const [movedObj] = newObjects.splice(objIndex, 1);
+                        if (direction === 'front') newObjects.push(movedObj);
+                        else newObjects.unshift(movedObj);
+                        return { ...p, objects: newObjects, isEdited: true };
+                    })
+                }));
+            },
+
+            groupObjects: (pageId, objectIds) => {
+                if (objectIds.length < 2) return;
+                get().saveToHistory();
+                const newGroupId = `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                set(state => ({
+                    pages: state.pages.map(p => {
+                        if (p.id !== pageId) return p;
+                        return {
+                            ...p,
+                            objects: p.objects.map(obj =>
+                                objectIds.includes(obj.id) ? { ...obj, groupId: newGroupId } : obj
+                            ),
+                            isEdited: true
+                        };
+                    }),
+                    selectedObjectIds: objectIds,
+                    isMultiSelection: true
+                }));
+            },
+
+            ungroupObjects: (pageId, objectIds) => {
+                get().saveToHistory();
+                set(state => ({
+                    pages: state.pages.map(p => {
+                        if (p.id !== pageId) return p;
+                        return {
+                            ...p,
+                            objects: p.objects.map(obj =>
+                                objectIds.includes(obj.id) ? { ...obj, groupId: undefined } : obj
+                            ),
+                            isEdited: true
+                        };
+                    })
+                }));
+            }
+        })
+    )
+);
+

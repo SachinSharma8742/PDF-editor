@@ -5,20 +5,22 @@ import clsx from 'clsx';
 
 interface PageSelectionOverlayProps {
     pageNumber: number;
+    pageId: string;
 }
 
-export const PageSelectionOverlay: React.FC<PageSelectionOverlayProps> = ({ pageNumber }) => {
-    const { isSelectionMode, selectedPages, togglePageSelection } = usePDFStore();
+export const PageSelectionOverlay: React.FC<PageSelectionOverlayProps> = ({ pageNumber, pageId }) => {
+    const { selectedPageIds, togglePageSelection } = usePDFStore();
+    const isSelectionMode = selectedPageIds.length > 0;
 
     if (!isSelectionMode) return null;
 
-    const isSelected = selectedPages.has(pageNumber);
+    const isSelected = selectedPageIds.includes(pageId);
 
     return (
         <div
             onClick={(e) => {
                 e.stopPropagation();
-                togglePageSelection(pageNumber);
+                togglePageSelection(pageId);
             }}
             className={clsx(
                 "absolute inset-0 z-20 cursor-pointer transition-all duration-200",
