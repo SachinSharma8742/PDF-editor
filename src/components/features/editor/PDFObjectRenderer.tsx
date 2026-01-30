@@ -80,13 +80,25 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
         const newWidth = Math.max(5, width * scaleX);
         const newHeight = Math.max(5, height * scaleY);
 
-        onChange({
+        const updates: Partial<PDFObject> = {
             x: node.x() - newWidth / 2,
             y: node.y() - newHeight / 2,
             width: newWidth,
             height: newHeight,
             rotation: node.rotation(),
-        });
+        };
+
+        if (object.type === 'path' && object.points) {
+            // Scale points to match new dimensions
+            // Note: points are [x1, y1, x2, y2, ...]
+            // Since we normalized points to be within [0, width] and [0, height],
+            // we can just multiply by the scale factor.
+            updates.points = object.points.map((val, i) => {
+                return i % 2 === 0 ? val * scaleX : val * scaleY;
+            });
+        }
+
+        onChange(updates);
         setLiveRotation(node.rotation());
     };
 

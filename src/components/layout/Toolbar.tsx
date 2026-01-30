@@ -25,16 +25,24 @@ import {
     AlignRight,
     Palette,
     Spline,
-    BoxSelect
+    BoxSelect,
+    ChevronDown,
+    FileText,
+    File,
+    Pencil,
+    Sun,
+    Moon
 } from 'lucide-react';
 import { loadPDF } from '../../utils/pdfOps';
-import { saveDocument } from '../../utils/exportUtils';
+import { saveDocument, exportPageAsPNG } from '../../utils/exportUtils';
+import { useEditorStore } from '../../store/editorStore';
 import clsx from 'clsx';
 import { Tooltip } from '../ui/Tooltip';
 
 export const Toolbar: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
+    const [isExportOpen, setIsExportOpen] = React.useState(false);
 
     const {
         scale,
@@ -62,7 +70,9 @@ export const Toolbar: React.FC = () => {
         updateObject,
         deleteObjects,
         groupObjects,
-        ungroupObjects
+        ungroupObjects,
+        theme,
+        toggleTheme
     } = usePDFStore();
 
     // Derived Settings for Active Tool (MEMORY FIX)
@@ -103,7 +113,10 @@ export const Toolbar: React.FC = () => {
                 if (!arrayBuffer) return;
                 try {
                     setIsLoading(true);
-                    const doc = await loadPDF(arrayBuffer);
+                    // Clone the buffer for PDF.js to consume/transfer
+                    const bufferForPDFjs = arrayBuffer.slice(0);
+                    const doc = await loadPDF(bufferForPDFjs);
+                    // Store the original (valid) buffer
                     setPdfDocument(doc, arrayBuffer, file.name);
                 } catch (error) {
                     console.error("Failed to load PDF:", error);
@@ -160,29 +173,39 @@ export const Toolbar: React.FC = () => {
     return (
         <div className="flex flex-col items-center gap-4 w-full">
             {/* MAIN COMMAND CENTER (Top Row) */}
-            <div className="bg-white/90 backdrop-blur-xl rounded-full shadow-2xl shadow-gray-200/50 border border-gray-200 p-2 flex items-center gap-4 transition-all hover:scale-[1.005] hover:shadow-gray-300/50 text-gray-700 text-sm z-50">
+            <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl rounded-full border border-gray-200 dark:border-zinc-700 p-2 flex items-center gap-4 text-gray-700 dark:text-gray-200 text-sm z-50">
 
-                {/* 1. View Controls (Undo/Redo + Zoom) - Left Side */}
-                <div className="flex items-center gap-1 pr-4 border-r border-gray-200">
+                {/* 1. View Controls (Undo/Redo + Zoom + Theme) - Left Side */}
+                <div className="flex items-center gap-1 pr-4 border-r border-gray-200 dark:border-zinc-700">
                     <Tooltip content="Undo">
-                        <button onClick={undo} disabled={!canUndo()} className="p-2.5 hover:bg-gray-100 rounded-full text-gray-500 disabled:opacity-30 transition-colors">
+                        <button onClick={undo} disabled={!canUndo()} className="p-2.5 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-full text-gray-500 dark:text-gray-400 disabled:opacity-30 transition-colors">
                             <Undo2 size={18} />
                         </button>
                     </Tooltip>
                     <Tooltip content="Redo">
-                        <button onClick={redo} disabled={!canRedo()} className="p-2.5 hover:bg-gray-100 rounded-full text-gray-500 disabled:opacity-30 transition-colors">
+                        <button onClick={redo} disabled={!canRedo()} className="p-2.5 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-full text-gray-500 dark:text-gray-400 disabled:opacity-30 transition-colors">
                             <Redo2 size={18} />
                         </button>
                     </Tooltip>
-                    <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200 ml-2">
-                        <button onClick={() => setScale(Math.max(0.1, scale - 0.1))} className="p-1 hover:bg-white rounded-full text-gray-500 hover:text-gray-900 shadow-sm">
+
+                    <div className="flex items-center bg-gray-100 dark:bg-zinc-800 rounded-full p-0.5 border border-gray-200 dark:border-zinc-700 ml-2">
+                        <button onClick={() => setScale(Math.max(0.1, scale - 0.1))} className="p-1 hover:bg-white dark:hover:bg-zinc-700 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 shadow-sm transition-colors">
                             <Minus size={12} />
                         </button>
-                        <span className="text-[10px] w-8 text-center tabular-nums text-gray-600 font-medium">{Math.round(scale * 100)}%</span>
-                        <button onClick={() => setScale(Math.min(5, scale + 0.1))} className="p-1 hover:bg-white rounded-full text-gray-500 hover:text-gray-900 shadow-sm">
+                        <span className="text-[10px] w-8 text-center tabular-nums text-gray-600 dark:text-gray-300 font-medium">{Math.round(scale * 100)}%</span>
+                        <button onClick={() => setScale(Math.min(5, scale + 0.1))} className="p-1 hover:bg-white dark:hover:bg-zinc-700 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 shadow-sm transition-colors">
                             <Plus size={12} />
                         </button>
                     </div>
+
+                    {/* Theme Toggle */}
+                    <button
+                        onClick={toggleTheme}
+                        className="ml-2 p-2.5 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
+                        title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                    >
+                        {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                    </button>
                 </div>
 
                 {/* 2. Tools (Center) */}
@@ -194,13 +217,13 @@ export const Toolbar: React.FC = () => {
                                 className={clsx(
                                     "p-2.5 rounded-full transition-all duration-200 group relative",
                                     activeTool === t.id
-                                        ? "bg-gray-900 text-white shadow-lg shadow-gray-900/20 ring-1 ring-gray-900"
-                                        : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                                        ? "bg-gray-900 dark:bg-blue-600 text-white shadow-lg shadow-gray-900/20 dark:shadow-blue-600/30 ring-1 ring-gray-900 dark:ring-blue-600"
+                                        : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-zinc-800"
                                 )}
                             >
                                 <t.icon size={20} className={clsx("transition-transform group-hover:scale-110", t.id === 'highlighter' ? 'stroke-[2.5px]' : '')} />
                                 {activeTool === t.id && (
-                                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-gray-900 rounded-full opacity-0" />
+                                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-gray-900 dark:bg-blue-400 rounded-full opacity-0" />
                                 )}
                             </button>
                         </Tooltip>
@@ -209,24 +232,101 @@ export const Toolbar: React.FC = () => {
                     <Tooltip content="Insert Image">
                         <button
                             onClick={() => imageInputRef.current?.click()}
-                            className="p-2.5 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all"
+                            className="p-2.5 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all"
                         >
                             <ImageIcon size={20} />
                         </button>
                     </Tooltip>
-                </div>
 
-                {/* 3. Global Actions (Save) */}
-                <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
-                    <Tooltip content="Save PDF">
+                    <Tooltip content="Edit Page (Advanced)">
                         <button
-                            onClick={() => saveDocument(pages, originalPdfBytes)}
-                            className="px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-full shadow-lg shadow-gray-900/20 hover:shadow-gray-900/40 transition-all transform active:scale-95 flex items-center gap-2"
+                            onClick={() => {
+                                const page = pages.find(p => p.pageNumber === currentPage);
+                                if (page) useEditorStore.getState().initEditor(page);
+                            }}
+                            className="p-2.5 rounded-full text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all ring-1 ring-blue-100 dark:ring-blue-800 shadow-sm"
                         >
-                            <Download size={18} />
-                            <span className="text-sm font-bold">Save</span>
+                            <Pencil size={20} />
                         </button>
                     </Tooltip>
+                </div>
+
+                {/* 3. Global Actions (Export) */}
+                <div className="flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-zinc-700 relative">
+                    <div className="relative">
+                        <button
+                            onClick={() => setIsExportOpen(!isExportOpen)}
+                            className="px-4 py-2 bg-gray-900 dark:bg-blue-600 hover:bg-black dark:hover:bg-blue-700 text-white dark:text-white rounded-full transition-all transform active:scale-95 flex items-center gap-2 group"
+                        >
+                            <Download size={18} />
+                            <span className="text-sm font-bold">Export</span>
+                            <ChevronDown size={14} className={clsx("transition-transform duration-200", isExportOpen ? "rotate-180" : "")} />
+                        </button>
+
+                        {isExportOpen && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setIsExportOpen(false)} />
+                                <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200 flex flex-col gap-1">
+                                    <button
+                                        onClick={() => {
+                                            saveDocument(pages, originalPdfBytes);
+                                            setIsExportOpen(false);
+                                        }}
+                                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-gray-50 flex items-center gap-3 text-gray-700 transition-colors group"
+                                    >
+                                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-100 transition-colors">
+                                            <FileText size={18} />
+                                        </div>
+                                        <div>
+                                            <span className="block text-xs font-bold text-gray-900">Save PDF</span>
+                                            <span className="block text-[10px] text-gray-400">Download current file</span>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            const currentPageObj = pages.find(p => p.pageNumber === currentPage);
+                                            if (currentPageObj) exportPageAsPNG(currentPageObj);
+                                            setIsExportOpen(false);
+                                        }}
+                                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-gray-50 flex items-center gap-3 text-gray-700 transition-colors group"
+                                    >
+                                        <div className="p-2 bg-purple-50 text-purple-600 rounded-lg group-hover:bg-purple-100 transition-colors">
+                                            <ImageIcon size={18} />
+                                        </div>
+                                        <div>
+                                            <span className="block text-xs font-bold text-gray-900">Export Page</span>
+                                            <span className="block text-[10px] text-gray-400">Save current page as PNG</span>
+                                        </div>
+                                    </button>
+
+                                    <div className="my-1 border-t border-gray-100" />
+
+                                    <button
+                                        onClick={() => {
+                                            // Ensure we save purely the new pages if needed, but standard save handles it.
+                                            // The user asked for "Export as New PDF". 
+                                            // Effectively, our current save IS a new PDF (it generates from scratch).
+                                            // We'll map this to the same save function for now but label it distinctly if logic differs in future.
+                                            // Or we could implement a "Clean Export" without history?
+                                            saveDocument(pages, originalPdfBytes);
+                                            // Mentally noting: "Export as New PDF" usually implies "Save As". Standard save does this (client side).
+                                            setIsExportOpen(false);
+                                        }}
+                                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-gray-50 flex items-center gap-3 text-gray-700 transition-colors group"
+                                    >
+                                        <div className="p-2 bg-green-50 text-green-600 rounded-lg group-hover:bg-green-100 transition-colors">
+                                            <File size={18} />
+                                        </div>
+                                        <div>
+                                            <span className="block text-xs font-bold text-gray-900">Export New PDF</span>
+                                            <span className="block text-[10px] text-gray-400">Save as new document</span>
+                                        </div>
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
 

@@ -60,7 +60,8 @@ export const extractPagesAsPDF = async (
     if (!originalPdfBytes || selectedPageIds.length === 0) return;
 
     try {
-        const pdfDoc = await PDFDocument.load(originalPdfBytes);
+        // Clone the buffer to prevent detachment issues if used elsewhere
+        const pdfDoc = await PDFDocument.load(originalPdfBytes.slice(0));
         const newPdf = await PDFDocument.create();
 
         // Map selected IDs to their original PDF indices

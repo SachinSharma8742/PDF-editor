@@ -13,7 +13,7 @@ export interface Point {
 
 export interface PDFObject {
     id: string;
-    type: 'text' | 'image' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'stamp' | 'signature';
+    type: 'text' | 'image' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path';
     x: number;
     y: number;
     width?: number;
@@ -25,6 +25,9 @@ export interface PDFObject {
     stroke?: string;
     strokeWidth?: number;
     opacity?: number;
+
+    // Path specific
+    points?: number[];
 
     // Text specific
     text?: string;
@@ -123,6 +126,10 @@ interface PDFStore {
     selectedPageIds: string[]; // For pages
     isMultiSelection: boolean;
 
+    // Theme
+    theme: 'light' | 'dark';
+    toggleTheme: () => void;
+
     // Actions
     setPdfDocument: (doc: any, bytes: ArrayBuffer, fileName: string) => void;
     appendPDF: (doc: any, bytes: ArrayBuffer, addedPagesCount: number) => void;
@@ -192,6 +199,10 @@ export const usePDFStore = create<PDFStore>()(
             fileName: null,
 
             history: { past: [], future: [] },
+
+            // Global Theme
+            theme: 'light',
+            toggleTheme: () => set(state => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
 
             activeTool: 'select',
             eraserMode: 'path', // Default to path eraser
@@ -426,11 +437,44 @@ export const usePDFStore = create<PDFStore>()(
 
             addPath: (pageId, path) => {
                 get().saveToHistory();
+
+                // Convert DrawingPath to PDFObject
+                // 1. Calculate bounding box
+                const xs = path.points.filter((_, i) => i % 2 === 0);
+                const ys = path.points.filter((_, i) => i % 2 !== 0);
+                const minX = Math.min(...xs);
+                const maxX = Math.max(...xs);
+                const minY = Math.min(...ys);
+                const maxY = Math.max(...ys);
+
+                const width = maxX - minX;
+                const height = maxY - minY;
+
+                // 2. Normalize points to be relative to (minX, minY)
+                const normalizedPoints = path.points.map((p, i) => {
+                    return i % 2 === 0 ? p - minX : p - minY;
+                });
+
+                const newObject: PDFObject = {
+                    id: path.id || generateId(),
+                    type: 'path',
+                    x: minX,
+                    y: minY,
+                    width: width,
+                    height: height,
+                    points: normalizedPoints,
+                    stroke: path.stroke,
+                    strokeWidth: path.strokeWidth,
+                    opacity: path.opacity,
+                    rotation: 0
+                };
+
                 set(state => ({
                     pages: state.pages.map(p =>
-                        p.id === pageId ? { ...p, paths: [...p.paths, path], isEdited: true } : p
+                        p.id === pageId ? { ...p, objects: [...p.objects, newObject], isEdited: true } : p
                     )
                 }));
+                // Optionally select it immediately if desired, but for drawing usually we don't.
             },
 
             addObject: (pageId, object) => {

@@ -11,7 +11,8 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
         let originalPdfDoc: PDFDocument | null = null;
 
         if (originalPdfBytes) {
-            originalPdfDoc = await PDFDocument.load(originalPdfBytes);
+            // Clone the buffer to prevent detachment issues
+            originalPdfDoc = await PDFDocument.load(originalPdfBytes.slice(0));
         }
 
         for (const page of pages) {
@@ -183,5 +184,149 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
     } catch (error) {
         console.error('Export Error:', error);
         alert('Failed to save PDF. Check console for details.');
+    }
+};
+
+export const exportPageAsPNG = async (page: PageState) => {
+    try {
+        // 1. Create a canvas for the export
+        const canvas = document.createElement('canvas');
+        const scale = 2; // High resolution
+        const width = page.width || 595;
+        const height = page.height || 842;
+
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.scale(scale, scale);
+
+        // 2. Draw Background (White)
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        // 3. Draw Base Content (PDF or Image)
+        if (page.source === 'image' && page.content) {
+            await new Promise<void>((resolve) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0, width, height);
+                    resolve();
+                };
+                img.onerror = () => resolve();
+                img.src = page.content!;
+            });
+        }
+        // NOTE: For PDF pages, we can't easily rasterize the underlying PDF here without pdf.js logic 
+        // that is currently in the PageView component. 
+        // Ideally, we should capture the canvas from the DOM if possible, OR re-render pdf.js here.
+        // For now, if it's a PDF page, we might miss the background if we don't have access to the rendered canvas.
+        // BUT, since we want to "Export as PNG", users likely want the ANNOTATIONS + CONTENT.
+        // A robust way requires using the PDF helper (pdfjsLib) to render the page onto this canvas.
+
+        if (page.source === 'pdf' && page.originalPageIndex) {
+            // Attempt to find the already rendered canvas in the DOM
+            // This ensures we capture the PDF content exactly as the user sees it (if rendered)
+            const domPage = document.getElementById(`page-${page.pageNumber}`);
+            if (domPage) {
+                const existingCanvas = domPage.querySelector('canvas');
+                if (existingCanvas) {
+                    ctx.drawImage(existingCanvas, 0, 0, width, height);
+                } else {
+                    // Fallback: This might happen if the page is virtualized out, or loading.
+                    // For now, we leave it white or maybe add a text watermark?
+                    console.warn("Could not find PDF canvas for page", page.pageNumber);
+                }
+            }
+        }
+
+        // --- DRAW ANNOTATIONS (Same as saveDocument) ---
+
+        // Draw Paths (Freehand)
+        if (page.paths && page.paths.length > 0) {
+            page.paths.forEach(path => {
+                ctx.beginPath();
+                ctx.strokeStyle = path.stroke;
+                ctx.lineWidth = path.strokeWidth;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+
+                if (path.points.length > 0) {
+                    ctx.moveTo(path.points[0], path.points[1]);
+                    for (let i = 2; i < path.points.length; i += 2) {
+                        ctx.lineTo(path.points[i], path.points[i + 1]);
+                    }
+                }
+                ctx.stroke();
+            });
+        }
+
+        // Draw Objects (Text, Shapes, Images)
+        if (page.objects && page.objects.length > 0) {
+            for (const obj of page.objects) {
+                ctx.save();
+
+                if (obj.type === 'image') {
+                    await new Promise<void>((resolve) => {
+                        const img = new Image();
+                        img.crossOrigin = 'anonymous';
+                        img.onload = () => {
+                            const w = obj.width || img.width;
+                            const h = obj.height || img.height;
+                            ctx.drawImage(img, obj.x, obj.y, w, h);
+                            resolve();
+                        };
+                        img.onerror = () => resolve();
+                        img.src = (obj as any).src || (obj as any).url;
+                    });
+                } else if (obj.type === 'text') {
+                    const fontSize = obj.fontSize || 16;
+                    ctx.font = `${obj.fontWeight || 'normal'} ${obj.fontStyle || 'normal'} ${fontSize}px ${obj.fontFamily || 'Inter'}`;
+                    ctx.fillStyle = obj.fill || 'black';
+                    ctx.fillText(obj.text || '', obj.x, obj.y + fontSize); // Adjust baseline approx
+                } else if (obj.type === 'rectangle') {
+                    ctx.beginPath();
+                    ctx.rect(obj.x, obj.y, obj.width || 0, obj.height || 0);
+
+                    if (obj.fill && obj.fill !== 'transparent') {
+                        ctx.fillStyle = obj.fill;
+                        ctx.fill();
+                    }
+
+                    ctx.strokeStyle = obj.stroke || 'black';
+                    ctx.lineWidth = obj.strokeWidth || 2;
+                    ctx.stroke();
+                } else if (obj.type === 'circle') {
+                    ctx.beginPath();
+                    const w = obj.width || 0;
+                    const radius = w / 2;
+                    ctx.ellipse(obj.x + radius, obj.y + radius, radius, radius, 0, 0, 2 * Math.PI);
+
+                    if (obj.fill && obj.fill !== 'transparent') {
+                        ctx.fillStyle = obj.fill;
+                        ctx.fill();
+                    }
+
+                    ctx.strokeStyle = obj.stroke || 'black';
+                    ctx.lineWidth = obj.strokeWidth || 2;
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        // 4. Download
+        const dataUrl = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = `page-${page.pageNumber}.png`;
+        a.click();
+
+    } catch (e) {
+        console.error("Failed to export PNG", e);
+        alert("Could not export page as PNG.");
     }
 };

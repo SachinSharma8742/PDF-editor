@@ -367,7 +367,8 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
             >
                 <Layer>
                     {/* 1. Render Paths (Drawings) */}
-                    {page.paths.map((path, i) => (
+                    {/* 1. Legacy Paths (Deprecated - New paths are objects) */}
+                    {/* {page.paths.map((path, i) => (
                         <Line
                             key={path.id || i}
                             points={path.points}
@@ -379,7 +380,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
                             opacity={path.opacity}
                             globalCompositeOperation="source-over"
                         />
-                    ))}
+                    ))} */}
 
                     {/* 2. Render Current Drawing Path */}
                     {isDrawing && currentPath.length > 0 && (
@@ -415,21 +416,6 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
                         />
                     )}
 
-                    {/* 2.6 Render Area Selection Box */}
-                    {selectionRect && (
-                        <div
-                            style={{
-                                position: 'absolute',
-                                border: '1px solid #3b82f6',
-                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                left: selectionRect.x * scale,
-                                top: selectionRect.y * scale,
-                                width: selectionRect.width * scale,
-                                height: selectionRect.height * scale,
-                                pointerEvents: 'none' // Click through
-                            }}
-                        />
-                    )}
                     {/* Wait, we are inside Canvas Layer which uses Konva Stage.
                         We can't render HTML divs inside Konva Layer easily unless using Html component or separate overlay.
                         Better to render a Konva Rect!

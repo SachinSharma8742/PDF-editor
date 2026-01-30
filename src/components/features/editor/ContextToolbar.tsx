@@ -12,9 +12,13 @@ export const ContextToolbar: React.FC = () => {
         ungroupObjects,
         scale,
         activeTool,
-        toolSettings,
+        toolPreferences, // Updated to toolPreferences
         updateToolSettings
     } = usePDFStore();
+
+    const toolSettings = toolPreferences[activeTool];
+
+    if (!toolSettings) return null; // Safety check
 
     // Derived state for selection
     const isMulti = selectedObjectIds.length > 1;

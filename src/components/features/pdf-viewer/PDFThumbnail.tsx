@@ -19,6 +19,7 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
         if (!pageState || pageState.source !== 'pdf' || !pdfDocument || !canvasRef.current) return;
 
         let renderTask: any = null;
+        let isCancelled = false;
 
         const render = async () => {
             try {
@@ -28,6 +29,9 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
                 if (!indexToFetch) return;
 
                 const page = await pdfDocument.getPage(indexToFetch);
+
+                if (isCancelled) return;
+
                 const viewport = page.getViewport({ scale: 1 });
 
                 // Calculate scale to fit target width
@@ -49,16 +53,19 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
                 });
 
                 await renderTask.promise;
-            } catch (err) {
-                console.error('Thumbnail render error:', err);
+            } catch (err: any) {
+                if (err.name !== 'RenderingCancelledException') {
+                    console.error('Thumbnail render error:', err);
+                }
             } finally {
-                setRendering(false);
+                if (!isCancelled) setRendering(false);
             }
         };
 
         render();
 
         return () => {
+            isCancelled = true;
             if (renderTask) {
                 renderTask.cancel();
             }

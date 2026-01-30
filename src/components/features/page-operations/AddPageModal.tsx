@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { usePDFStore } from '../../../store/pdfStore';
 import { Image as ImageIcon, FilePlus, X, Settings2, FileText } from 'lucide-react'; // Added FileText
 import { PDFDocument } from 'pdf-lib';
@@ -93,8 +94,8 @@ export const AddPageModal: React.FC<AddPageModalProps> = ({ isOpen, onClose }) =
         onClose();
     };
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    return createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl w-[500px] overflow-hidden animate-fadeIn flex flex-col max-h-[90vh]">
 
                 {/* Header */}
@@ -247,6 +248,7 @@ export const AddPageModal: React.FC<AddPageModalProps> = ({ isOpen, onClose }) =
                 </div>
 
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };

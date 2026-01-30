@@ -23,6 +23,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
         if (!pageState || pageState.source !== 'pdf') return;
 
         let renderTask: any = null;
+        let isCancelled = false;
 
         const renderPage = async () => {
             // Use originalPageIndex for PDF fetching
@@ -32,6 +33,8 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
             setRendering(true);
             try {
                 const page = await pdfDocument.getPage(indexToFetch);
+
+                if (isCancelled) return;
 
                 const viewport = page.getViewport({ scale });
 
@@ -61,20 +64,24 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                     viewport: viewport,
                 };
 
+                // Cancel previous render if any (though logic below handles it via cleanup)
                 renderTask = page.render(renderContext);
                 await renderTask.promise;
-            } catch (error) {
-                console.error('Error rendering page:', error);
+            } catch (error: any) {
+                if (error.name !== 'RenderingCancelledException') {
+                    console.error('Error rendering page:', error);
+                }
             } finally {
-                setRendering(false);
+                if (!isCancelled) setRendering(false);
             }
         };
 
         renderPage();
 
         return () => {
+            isCancelled = true;
             if (renderTask) {
-                // renderTask.cancel();
+                renderTask.cancel();
             }
         };
     }, [pdfDocument, pageNumber, scale, pageState]); // Depend on pageState to catch index changes
