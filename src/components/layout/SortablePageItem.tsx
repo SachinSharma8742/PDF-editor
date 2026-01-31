@@ -37,7 +37,8 @@ export const SortablePageItem: React.FC<SortablePageItemProps> = ({
         transform: CSS.Translate.toString(transform),
         transition,
         zIndex: isDragging ? 50 : 'auto',
-        opacity: isDragging ? 0.5 : 1,
+        opacity: isDragging ? 0.3 : 1,
+        scale: isDragging ? 1.05 : 1,
     };
 
     return (
@@ -45,11 +46,13 @@ export const SortablePageItem: React.FC<SortablePageItemProps> = ({
             ref={setNodeRef}
             style={style}
             className={clsx(
-                "relative group cursor-pointer transition-all duration-300 rounded-[22px] p-3 mb-4",
+                "relative group cursor-pointer transition-all duration-300 rounded-[24px] p-3 mb-4",
                 isSelected
-                    ? "bg-blue-50/60 ring-2 ring-blue-500 shadow-xl shadow-blue-500/10"
-                    : "bg-white border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200",
-                isCurrent && !isSelectionMode && !isSelected ? "ring-2 ring-blue-500/30 ring-offset-2" : ""
+                    ? "bg-blue-600 shadow-2xl shadow-blue-500/30 ring-2 ring-blue-400/50"
+                    : clsx(
+                        "bg-white dark:bg-white/5 border border-gray-100 dark:border-white/5 shadow-sm hover:shadow-xl hover:shadow-black/5 dark:hover:shadow-none hover:border-blue-200 dark:hover:border-blue-500/30",
+                        isCurrent && !isSelectionMode && "ring-2 ring-blue-500/50 ring-offset-2 dark:ring-offset-[#09090b]"
+                    )
             )}
             onClick={onClick}
         >
@@ -63,8 +66,8 @@ export const SortablePageItem: React.FC<SortablePageItemProps> = ({
                     className={clsx(
                         "absolute top-4 right-4 z-20 w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-300 shadow-sm overflow-hidden",
                         isSelected
-                            ? "bg-blue-600 text-white shadow-blue-500/30 scale-110"
-                            : "bg-white/90 backdrop-blur-md border border-gray-200 text-gray-400 opacity-0 group-hover:opacity-100 hover:border-blue-400 hover:scale-105 active:scale-90"
+                            ? "bg-white text-blue-600 scale-110"
+                            : "bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md border border-gray-200 dark:border-white/10 text-gray-400 opacity-0 group-hover:opacity-100 hover:border-blue-400 hover:scale-105 active:scale-90"
                     )}
                 >
                     <div className="relative">
@@ -80,32 +83,37 @@ export const SortablePageItem: React.FC<SortablePageItemProps> = ({
             <div className="flex justify-between items-center mb-3 px-1">
                 <div className="flex items-center gap-2">
                     {!isSelectionMode && (
-                        <div {...attributes} {...listeners} className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing transition-colors">
+                        <div {...attributes} {...listeners} className="text-gray-300 dark:text-zinc-600 hover:text-gray-500 dark:hover:text-zinc-400 cursor-grab active:cursor-grabbing transition-colors">
                             <GripVertical size={16} />
                         </div>
                     )}
-                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] leading-none">
+                    <span className={clsx(
+                        "text-[9px] font-black uppercase tracking-[0.2em] leading-none",
+                        isSelected ? "text-white/70" : "text-gray-400 dark:text-zinc-500"
+                    )}>
                         Page {pageNumber}
                     </span>
                 </div>
                 {isCurrent && !isSelectionMode && !isSelected && (
                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20">
                         <div className="w-1 h-1 rounded-full bg-blue-500 animate-pulse" />
-                        <span className="text-[8px] font-bold text-blue-600 uppercase tracking-tighter">Viewing</span>
+                        <span className="text-[8px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-tighter">Viewing</span>
                     </div>
                 )}
             </div>
 
             <div className={clsx(
-                "aspect-[1/1.414] bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-center overflow-hidden relative transition-all duration-500",
-                isSelected ? "scale-[0.96] rounded-lg shadow-inner" : "group-hover:scale-[1.02]"
+                "aspect-[1/1.414] rounded-xl border flex items-center justify-center overflow-hidden relative transition-all duration-500",
+                isSelected
+                    ? "bg-white/10 border-white/20 scale-[0.98] shadow-inner"
+                    : "bg-gray-50 dark:bg-zinc-900 border-gray-100 dark:border-white/5 group-hover:scale-[1.02]"
             )}>
                 <PDFThumbnail pageNumber={pageNumber} />
 
                 {/* Visual state overlays */}
                 <div className={clsx(
                     "absolute inset-0 transition-opacity duration-300 pointer-events-none",
-                    isSelected ? "bg-blue-600/5 opacity-100" : "opacity-0"
+                    isSelected ? "bg-white/5 opacity-100" : "opacity-0"
                 )} />
             </div>
         </div>

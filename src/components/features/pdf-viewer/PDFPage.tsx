@@ -104,7 +104,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
         <div
             id={`page-${pageNumber}`}
             ref={wrapperRef}
-            className="relative shadow-lg mb-4 bg-white mx-auto scroll-mt-4"
+            className="relative mb-8 bg-white mx-auto scroll-mt-4 transition-all duration-500 shadow-2xl shadow-black/5 dark:shadow-none dark:ring-1 dark:ring-white/10"
             style={{
                 width: dimensions ? dimensions.width : 'auto',
                 height: dimensions ? dimensions.height : '800px'
@@ -126,7 +126,11 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
             )}
 
             {pageState.source === 'blank' && dimensions && (
-                <div style={{ width: dimensions.width, height: dimensions.height, backgroundColor: 'white' }} />
+                <div style={{
+                    width: dimensions.width,
+                    height: dimensions.height,
+                    backgroundColor: pageState.backgroundColor || '#ffffff'
+                }} />
             )}
 
             {/* Editing Layer */}
@@ -141,8 +145,14 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
             )}
 
             {rendering && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
-                    <Loader2 className="animate-spin text-blue-600" size={32} />
+                <div className="absolute inset-0 flex items-center justify-center bg-white/60 dark:bg-[#09090b]/60 backdrop-blur-[2px] z-10 animate-in fade-in duration-300">
+                    <div className="flex flex-col items-center gap-3">
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full animate-pulse" />
+                            <Loader2 className="animate-spin text-blue-600 dark:text-blue-400 relative" size={32} />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">Rendering</span>
+                    </div>
                 </div>
             )}
         </div>

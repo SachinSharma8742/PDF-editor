@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { usePDFStore } from '../../../store/pdfStore';
 import { PDFPage } from './PDFPage';
+import { FileText } from 'lucide-react';
 
 import { ContextMenu } from '../editor/ContextMenu';
 
@@ -114,16 +115,23 @@ export const PDFViewer: React.FC = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [selectedObjectIds, undo, redo, deleteObjects]);
 
-    if (!pdfDocument) {
+    if (!pdfDocument && pages.length === 0) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-gray-100 text-gray-400">
-                <p>No document loaded</p>
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-zinc-600 animate-in fade-in duration-700">
+                <div className="relative mb-6">
+                    <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full" />
+                    <div className="relative bg-white dark:bg-zinc-800 p-6 rounded-3xl border border-gray-100 dark:border-white/5 shadow-xl">
+                        <FileText size={48} className="text-gray-200 dark:text-zinc-700" />
+                    </div>
+                </div>
+                <p className="text-sm font-black uppercase tracking-[0.2em]">No document loaded</p>
+                <p className="text-[10px] mt-2 opacity-50 uppercase tracking-widest">Upload a PDF to start editing</p>
             </div>
         );
     }
 
     return (
-        <div className="flex-1 bg-gray-50/50 flex flex-col items-center p-8 transition-all duration-300 ease-out relative">
+        <div className="flex-1 bg-transparent flex flex-col items-center p-8 transition-all duration-300 ease-out relative">
             {(pages as any[]).map((page: any) => (
                 <PDFPage key={page.pageNumber} pageNumber={page.pageNumber} />
             ))}

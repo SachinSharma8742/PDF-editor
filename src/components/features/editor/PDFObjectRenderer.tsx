@@ -1,12 +1,14 @@
 import React, { useRef, useEffect } from 'react';
-import { Text, Rect, Circle as KonvaCircle, Image as KonvaImage, Transformer, Group } from 'react-konva';
+import { Text, Rect, Circle as KonvaCircle, Image as KonvaImage, Group, Line } from 'react-konva';
+import { createPortal } from 'react-dom';
 import useImage from 'use-image';
 import type { PDFObject } from '../../../store/pdfStore';
+import { useEditorStore } from '../../../store/editorStore';
 
 interface PDFObjectRendererProps {
     object: PDFObject;
     isSelected: boolean;
-    onSelect: () => void;
+    onSelect: (e: any) => void;
     onChange: (newAttrs: Partial<PDFObject>) => void;
     isLocked?: boolean;
     isSelectionEnabled?: boolean;
@@ -26,101 +28,86 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
     isSelectionEnabled = true
 }) => {
     const groupRef = useRef<any>(null);
-    const trRef = useRef<any>(null);
-    const [liveRotation, setLiveRotation] = React.useState(object.rotation || 0);
-    const [isDraggingNode, setIsDraggingNode] = React.useState(false);
+    const [isEditing, setIsEditing] = React.useState(object.isNew);
 
-    // Update live rotation when object orientation changes
+    // If it's a new text object, focus it immediately
     useEffect(() => {
-        setLiveRotation(object.rotation || 0);
-    }, [object.rotation]);
-
-    // Sync Transformer
-    useEffect(() => {
-        if (isSelected && trRef.current && groupRef.current) {
-            trRef.current.nodes([groupRef.current]);
-            trRef.current.getLayer().batchDraw();
+        if (object.type === 'text' && object.isNew && !isEditing) {
+            setIsEditing(true);
+            onChange({ isNew: false });
         }
-    }, [isSelected]);
+    }, [object.isNew, object.type, isEditing, onChange]);
 
-    const width = object.width || 0;
-    const height = object.height || 0;
-    const centerX = object.x + width / 2;
-    const centerY = object.y + height / 2;
-
-    const currentRotation = isSelected ? liveRotation : (object.rotation || 0);
-
-    const handleDragStart = (e: any) => {
-        if (e.target === groupRef.current) {
-            e.target.getStage().container().style.cursor = 'grabbing';
-            setIsDraggingNode(true);
+    const handleTextDblClick = () => {
+        if (object.type === 'text' && !isLocked) {
+            setIsEditing(true);
         }
     };
 
-    const handleDragEnd = (e: any) => {
-        const node = e.target;
-        if (node === groupRef.current) {
-            setIsDraggingNode(false);
-            // Compensate for center-origin mapping
-            onChange({
-                x: node.x() - width / 2,
-                y: node.y() - height / 2,
-            });
+    const handleTextBlur = (newText: string) => {
+        setIsEditing(false);
+        onChange({ text: newText });
+    };
+
+    const handleTextKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.currentTarget.blur();
+        }
+        if (e.key === 'Escape') {
+            setIsEditing(false);
         }
     };
 
-    const handleTransformEnd = (e: any) => {
-        const node = groupRef.current;
-        const scaleX = node.scaleX();
-        const scaleY = node.scaleY();
-
-        node.scaleX(1);
-        node.scaleY(1);
-
-        const newWidth = Math.max(5, width * scaleX);
-        const newHeight = Math.max(5, height * scaleY);
-
-        const updates: Partial<PDFObject> = {
-            x: node.x() - newWidth / 2,
-            y: node.y() - newHeight / 2,
-            width: newWidth,
-            height: newHeight,
-            rotation: node.rotation(),
+    // Calculate bounds logic
+    const { minX, minY, calculatedWidth, calculatedHeight, isLegacyPath } = React.useMemo(() => {
+        if (object.type !== 'path' || !object.points) {
+            return { minX: 0, minY: 0, calculatedWidth: 0, calculatedHeight: 0, isLegacyPath: false };
+        }
+        const isLegacy = !object.width || object.width === 0;
+        const xs = object.points.filter((_, i) => i % 2 === 0);
+        const ys = object.points.filter((_, i) => i % 2 === 1);
+        if (xs.length === 0) return { minX: 0, minY: 0, calculatedWidth: 0, calculatedHeight: 0, isLegacyPath: false };
+        const mx = Math.min(...xs);
+        const my = Math.min(...ys);
+        return {
+            minX: mx, minY: my,
+            calculatedWidth: Math.max(...xs) - mx,
+            calculatedHeight: Math.max(...ys) - my,
+            isLegacyPath: isLegacy
         };
+    }, [object.points, object.type, object.width]);
 
-        if (object.type === 'path' && object.points) {
-            // Scale points to match new dimensions
-            // Note: points are [x1, y1, x2, y2, ...]
-            // Since we normalized points to be within [0, width] and [0, height],
-            // we can just multiply by the scale factor.
-            updates.points = object.points.map((val, i) => {
-                return i % 2 === 0 ? val * scaleX : val * scaleY;
-            });
-        }
+    const width = object.width || calculatedWidth;
+    const height = object.height || calculatedHeight;
 
-        onChange(updates);
-        setLiveRotation(node.rotation());
-    };
+    let x = object.x;
+    let y = object.y;
+    let innerX = 0;
+    let innerY = 0;
 
-    // Common props for the Group (the container that gets transformed)
+    if (isLegacyPath) {
+        x = (object.x === undefined || object.x === 0) ? minX : object.x;
+        y = (object.y === undefined || object.y === 0) ? minY : object.y;
+        innerX = -minX;
+        innerY = -minY;
+    }
+
     const containerProps = {
         id: object.id,
-        x: centerX,
-        y: centerY,
+        x: x,
+        y: y,
         width: width,
         height: height,
-        rotation: currentRotation,
-        offsetX: width / 2,
-        offsetY: height / 2,
-        draggable: isSelectionEnabled && !isLocked,
+        rotation: object.rotation || 0,
+        draggable: isSelectionEnabled && !isLocked && !isEditing,
         listening: isSelectionEnabled,
-        onClick: isSelectionEnabled ? onSelect : undefined,
-        onTap: isSelectionEnabled ? onSelect : undefined,
-        onDragStart: handleDragStart,
-        onDragEnd: handleDragEnd,
+        onClick: (e: any) => { if (isSelectionEnabled) onSelect(e); },
+        onDblClick: handleTextDblClick,
+        onTap: (e: any) => { if (isSelectionEnabled) onSelect(e); },
+        onDblTap: handleTextDblClick,
         onMouseEnter: (e: any) => {
             if (isSelectionEnabled && !isLocked) {
-                e.target.getStage().container().style.cursor = 'grab';
+                e.target.getStage().container().style.cursor = object.type === 'text' ? 'text' : 'move';
             }
         },
         onMouseLeave: (e: any) => {
@@ -128,22 +115,15 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
         },
     };
 
-    // Inner shapes need the ID for hit-testing in Element Eraser
-    const innerProps = {
-        id: object.id,
-        x: 0,
-        y: 0,
-        width: width,
-        height: height,
-    };
+    const innerProps = { width, height, x: 0, y: 0 };
 
     return (
-        <>
-            <Group {...containerProps} ref={groupRef} onTransformEnd={handleTransformEnd}>
-                {object.type === 'text' && (
+        <Group {...containerProps} ref={groupRef}>
+            {object.type === 'text' && (
+                <>
                     <Text
                         {...innerProps}
-                        text={object.text}
+                        text={isEditing ? '' : (object.text || " ")}
                         fontSize={object.fontSize || 16}
                         fontFamily={object.fontFamily || 'Arial'}
                         fill={object.fill || 'black'}
@@ -151,128 +131,130 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                         fontStyle={object.fontStyle}
                         textDecoration={object.fontStyle?.includes('underline') ? 'underline' : ''}
                         align={object.align || 'left'}
+                        verticalAlign="middle"
+                        opacity={object.opacity}
+                        visible={!isEditing}
                     />
-                )}
-                {/* ... other types stay same ... */}
-                {object.type === 'rectangle' && (
-                    <Rect
-                        {...innerProps}
-                        stroke={object.stroke || 'black'}
-                        strokeWidth={object.strokeWidth || 2}
-                        fill={object.fill || 'transparent'}
-                        cornerRadius={5}
-                    />
-                )}
-                {object.type === 'circle' && (
-                    <KonvaCircle
-                        {...innerProps}
-                        x={width / 2}
-                        y={height / 2}
-                        radius={Math.max(width, height) / 2}
-                        stroke={object.stroke || 'black'}
-                        strokeWidth={object.strokeWidth || 2}
-                        fill={object.fill || 'transparent'}
-                    />
-                )}
-                {object.type === 'image' && (
-                    <URLImage
-                        {...innerProps}
-                        object={object}
-                    />
-                )}
-            </Group>
-
-            {isSelected && (
-                <>
-                    <Transformer
-                        ref={trRef}
-                        anchorCornerRadius={999}
-                        anchorSize={8}
-                        anchorFill="#3b82f6"
-                        anchorStroke="#ffffff"
-                        anchorStrokeWidth={1.5}
-                        borderStroke="#3b82f6"
-                        borderStrokeWidth={1}
-                        borderDash={[6, 3]}
-                        rotateEnabled={false}
-                        keepRatio={false}
-                        enabledAnchors={['top-left', 'top-center', 'top-right', 'middle-left', 'middle-right', 'bottom-left', 'bottom-center', 'bottom-right']}
-                        boundBoxFunc={(oldBox, newBox) => {
-                            if (newBox.width < 5 || newBox.height < 5) return oldBox;
-                            return newBox;
-                        }}
-                    />
-
-                    {/* CUSTOM ROTATION HANDLE - Hidden while dragging parent */}
-                    {!isDraggingNode && (() => {
-                        const node = groupRef.current;
-                        if (!node) return null;
-
-                        const rotation = liveRotation;
-                        const rad = (rotation - 90) * (Math.PI / 180);
-                        const dist = (height / 2) + 40;
-
-                        const handleX = node.x() + dist * Math.cos(rad);
-                        const handleY = node.y() + dist * Math.sin(rad);
-
-                        return (
-                            <Group
-                                x={handleX}
-                                y={handleY}
-                                rotation={rotation}
-                                draggable
-                                onDragStart={(e) => {
-                                    e.target.getStage()!.container().style.cursor = 'grabbing';
-                                }}
-                                onDragMove={(e) => {
-                                    const stage = e.target.getStage()!;
-                                    const pointer = stage.getPointerPosition();
-                                    if (!pointer) return;
-
-                                    // Use current node center for target rotation
-                                    const dx = pointer.x - node.x();
-                                    const dy = pointer.y - node.y();
-                                    let angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
-
-                                    if (angle < 0) angle += 360;
-                                    const snaps = [0, 45, 90, 135, 180, 225, 270, 315];
-                                    for (const snap of snaps) {
-                                        if (Math.abs(angle - snap) < 5) {
-                                            angle = snap;
-                                            break;
-                                        }
-                                    }
-
-                                    node.rotation(angle);
-                                    setLiveRotation(angle);
-                                    node.getLayer()?.batchDraw();
-                                }}
-                                onDragEnd={(e) => {
-                                    e.target.getStage()!.container().style.cursor = 'grab';
-                                    onChange({ rotation: node.rotation() });
-                                }}
-                            >
-                                <KonvaCircle
-                                    radius={12}
-                                    fill="white"
-                                    stroke="#3b82f6"
-                                    strokeWidth={1.5}
-                                    shadowColor="rgba(0,0,0,0.2)"
-                                    shadowBlur={4}
-                                />
-                                <Text
-                                    text="↻"
-                                    fontSize={16}
-                                    x={-7}
-                                    y={-9}
-                                    fill="#3b82f6"
-                                    fontStyle="bold"
-                                />
-                            </Group>
-                        );
-                    })()}
+                    {isEditing && (
+                        <TextEditorOverlay
+                            object={object}
+                            onBlur={handleTextBlur}
+                            onKeyDown={handleTextKeyDown}
+                        />
+                    )}
                 </>
             )}
-        </>
+
+            {object.type === 'rectangle' && (
+                <Rect
+                    {...innerProps}
+                    stroke={object.stroke || 'black'}
+                    strokeWidth={object.strokeWidth || 2}
+                    fill={object.fill || 'transparent'}
+                    cornerRadius={5}
+                />
+            )}
+
+            {object.type === 'circle' && (
+                <KonvaCircle
+                    {...innerProps}
+                    x={width / 2}
+                    y={height / 2}
+                    radius={Math.max(width, height) / 2}
+                    stroke={object.stroke || 'black'}
+                    strokeWidth={object.strokeWidth || 2}
+                    fill={object.fill || 'transparent'}
+                />
+            )}
+
+            {object.type === 'image' && <URLImage {...innerProps} object={object} />}
+
+            {object.type === 'path' && object.points && (
+                <Line
+                    points={object.points}
+                    stroke={object.stroke || 'black'}
+                    strokeWidth={object.strokeWidth || 2}
+                    tension={0.5}
+                    lineCap="round"
+                    lineJoin="round"
+                    opacity={object.opacity}
+                    x={innerX}
+                    y={innerY}
+                    fill="transparent"
+                />
+            )}
+        </Group>
+    );
+};
+
+// --- Text Editor Overlay ---
+const TextEditorOverlay: React.FC<{
+    object: PDFObject;
+    onBlur: (text: string) => void;
+    onKeyDown: (e: any) => void;
+}> = ({ object, onBlur, onKeyDown }) => {
+    const { scale } = useEditorStore();
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+    const [val, setVal] = React.useState(object.text || '');
+
+    useEffect(() => {
+        if (textareaRef.current) {
+            textareaRef.current.focus();
+            textareaRef.current.setSelectionRange(val.length, val.length);
+        }
+    }, []);
+
+    const parentContainer = document.getElementById('editor-workspace');
+    if (!parentContainer) return null;
+
+    const top = object.y * scale;
+    const left = object.x * scale;
+    const width = (object.width || 200) * scale;
+    const height = (object.height || 100) * scale;
+
+    const style: React.CSSProperties = {
+        position: 'absolute',
+        top: `${top}px`,
+        left: `${left}px`,
+        width: `${width}px`,
+        height: `${height}px`,
+        fontSize: `${(object.fontSize || 16) * scale}px`,
+        fontFamily: object.fontFamily || 'Arial',
+        fontWeight: object.fontWeight as any,
+        fontStyle: object.fontStyle as any,
+        color: object.fill || 'black',
+        textAlign: object.align || 'left',
+        background: 'transparent',
+        border: '1px dashed #3b82f6',
+        outline: 'none',
+        resize: 'none',
+        overflow: 'hidden',
+        padding: '0',
+        margin: '0',
+        lineHeight: '1.2',
+        zIndex: 200,
+        transform: `rotate(${object.rotation || 0}deg)`,
+        transformOrigin: '0 0'
+    };
+
+    return createPortal(
+        <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none'
+        }}>
+            <textarea
+                ref={textareaRef}
+                style={{ ...style, pointerEvents: 'auto' }}
+                value={val}
+                onChange={(e) => setVal(e.target.value)}
+                onBlur={() => onBlur(val)}
+                onKeyDown={onKeyDown}
+            />
+        </div>,
+        parentContainer
     );
 };

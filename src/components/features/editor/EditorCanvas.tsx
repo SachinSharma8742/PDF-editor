@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Line } from 'react-konva';
+import { Stage, Layer, Line, Transformer, Rect } from 'react-konva';
 import { useEditorStore } from '../../../store/editorStore';
 import { usePDFStore } from '../../../store/pdfStore'; // Need this for the PDF Document source
 import { PDFObjectRenderer } from './PDFObjectRenderer';
 import { Loader2 } from 'lucide-react';
+import type { PDFObject } from '../../../store/pdfStore';
 
 export const EditorCanvas: React.FC = () => {
     // Editor State
@@ -27,7 +28,11 @@ export const EditorCanvas: React.FC = () => {
 
     // Refs
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const wrapperRef = useRef<HTMLDivElement>(null);
+    const stageRef = useRef<any>(null);
+    const transformerRef = useRef<any>(null);
+    // Track Drag State for Multi-move
+    const isDraggingRef = useRef(false);
+    const dragStartPosRef = useRef<{ x: number, y: number } | null>(null);
 
     // Local State
     const [rendering, setRendering] = useState(false);
@@ -45,6 +50,49 @@ export const EditorCanvas: React.FC = () => {
 
     const toolSettings = toolPreferences[activeTool];
 
+    // --- Multi-Selection Overlay Logic (Computed) ---
+    const selectionBounds = React.useMemo(() => {
+        if (!currentPage || selectedObjectIds.length <= 1) return null;
+
+        const objects = currentPage.objects.filter(o => selectedObjectIds.includes(o.id));
+        if (objects.length === 0) return null;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        objects.forEach(obj => {
+            let x = obj.x;
+            let y = obj.y;
+            let w = obj.width || 0;
+            let h = obj.height || 0;
+
+            if (obj.type === 'path' && (!obj.width || obj.width === 0) && obj.points) {
+                const xs = obj.points.filter((_, i) => i % 2 === 0);
+                const ys = obj.points.filter((_, i) => i % 2 === 1);
+                if (xs.length > 0) {
+                    const mx = Math.min(...xs);
+                    const my = Math.min(...ys);
+                    w = Math.max(...xs) - mx;
+                    h = Math.max(...ys) - my;
+                    if (x === undefined || x === 0) {
+                        x = mx;
+                        y = my;
+                    }
+                }
+            }
+
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x + w > maxX) maxX = x + w;
+            if (y + h > maxY) maxY = y + h;
+        });
+
+        if (minX === Infinity) return null;
+
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    }, [selectedObjectIds, currentPage?.objects]);
+
+
+    // --- PDF Rendering ---
     useEffect(() => {
         if (!currentPage || currentPage.source !== 'pdf') return;
 
@@ -125,9 +173,26 @@ export const EditorCanvas: React.FC = () => {
         }
     }, [currentPage, scale]);
 
-    if (!currentPage || !dimensions) return <div className="flex-1 flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
+    // --- Transformer Sync Logic for Multi-Select ---
+    useEffect(() => {
+        if (!transformerRef.current || !stageRef.current) return;
 
-    // --- Interaction Handlers (Copied & Adapted from CanvasLayer) ---
+        // Find nodes for all selected IDs
+        const nodes = selectedObjectIds
+            .map(id => stageRef.current.findOne('#' + id))
+            .filter(node => node !== undefined);
+
+        if (nodes.length > 0) {
+            transformerRef.current.nodes(nodes);
+            transformerRef.current.getLayer().batchDraw();
+        } else {
+            transformerRef.current.nodes([]);
+            transformerRef.current.getLayer().batchDraw();
+        }
+    }, [selectedObjectIds]);
+
+
+    if (!currentPage || !dimensions) return <div className="flex-1 flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
     const handleMouseDown = (e: any) => {
         const stage = e.target.getStage();
@@ -137,7 +202,7 @@ export const EditorCanvas: React.FC = () => {
         const scaledX = pos.x / scale;
         const scaledY = pos.y / scale;
 
-        // 1. Clicked on Empty Stage
+        // 1. Clicked on Empty Stage / Deselect
         if (e.target === stage) {
             if (activeTool === 'select') {
                 setSelectionStart({ x: scaledX, y: scaledY });
@@ -230,6 +295,8 @@ export const EditorCanvas: React.FC = () => {
 
             if (selectedIds.length > 0) {
                 selectObjects(selectedIds);
+            } else {
+                selectObjects([]);
             }
 
             setSelectionStart(null);
@@ -241,13 +308,34 @@ export const EditorCanvas: React.FC = () => {
 
         // Finalize Freehand
         if (['pen', 'highlighter', 'eraser'].includes(activeTool) && currentPath.length > 0) {
+            // Normalize Path: Calculate bounds to set X/Y and make points relative
+            const xs = currentPath.filter((_, i) => i % 2 === 0);
+            const ys = currentPath.filter((_, i) => i % 2 === 1);
+            const minX = Math.min(...xs);
+            const maxX = Math.max(...xs);
+            const minY = Math.min(...ys);
+            const maxY = Math.max(...ys);
+
+            const width = maxX - minX;
+            const height = maxY - minY;
+
+            // Normalize points relative to minX, minY
+            const normalizedPoints = currentPath.map((val, i) => {
+                return i % 2 === 0 ? val - minX : val - minY;
+            });
+
             addPath({
                 id: crypto.randomUUID(),
-                points: currentPath,
+                x: minX,
+                y: minY,
+                width: width,
+                height: height,
+                points: normalizedPoints,
                 stroke: activeTool === 'eraser' ? '#ffffff' : toolSettings.color,
                 strokeWidth: toolSettings.size,
                 tool: activeTool as any,
-                opacity: activeTool === 'highlighter' ? (toolSettings.opacity || 0.5) : 1
+                opacity: activeTool === 'highlighter' ? (toolSettings.opacity || 0.5) : 1,
+                rotation: 0
             });
         }
 
@@ -268,13 +356,14 @@ export const EditorCanvas: React.FC = () => {
                     type: 'text',
                     x: finalX,
                     y: finalY,
-                    text: 'Double click to edit',
+                    text: '', // Start empty for new text
                     fill: toolSettings.color,
-                    fontSize: toolSettings.fontSize || 16,
-                    fontFamily: toolSettings.fontFamily || 'Arial',
+                    fontSize: toolSettings.fontSize || 24, // Slightly larger default
+                    fontFamily: toolSettings.fontFamily || 'Inter',
                     width: Math.max(200, finalW),
-                    height: 24, // Approx
-                    rotation: 0
+                    height: 100, // Taller default for editing
+                    rotation: 0,
+                    isNew: true // Signal PDFObjectRenderer to enter edit mode
                 });
             } else {
                 addObject({
@@ -299,20 +388,230 @@ export const EditorCanvas: React.FC = () => {
         setCurrentShape(null);
     };
 
-    const getCursorStyle = () => {
-        if (activeTool === 'select') return 'default';
-        if (['rectangle', 'circle', 'text'].includes(activeTool)) return 'crosshair';
-        if (['pen', 'highlighter', 'eraser'].includes(activeTool)) return 'crosshair'; // Custom cursors later
-        return 'default';
+    // --- TRANSFORM & DRAG LOGIC ---
+
+    // Drag Start: Capture initial positions for delta calculation
+    const handleDragStartGlobal = (e: any) => {
+        const id = e.target.id();
+        if (selectedObjectIds.includes(id)) {
+            isDraggingRef.current = true;
+            // No need to store positions, we calculate based on the driven node's absolute change?
+            // Actually, for multi-drag, it's safer to just let Konva move the dragged node,
+            // and we manually move the *other* selected nodes by the same delta.
+            dragStartPosRef.current = { x: e.target.x(), y: e.target.y() };
+        }
     };
+
+    // Drag Move: Move all OTHER selected objects
+    const handleDragMoveGlobal = (e: any) => {
+        if (!isDraggingRef.current || !dragStartPosRef.current) return;
+
+        const id = e.target.id();
+        // Ensure we are dragging a selected object
+        if (!selectedObjectIds.includes(id)) return;
+
+        const newPos = { x: e.target.x(), y: e.target.y() };
+        const dx = newPos.x - dragStartPosRef.current.x;
+        const dy = newPos.y - dragStartPosRef.current.y;
+
+        // Update the ref so next move is relative to this one
+        dragStartPosRef.current = newPos;
+
+        // Move all OTHER selected objects
+        selectedObjectIds.forEach(objId => {
+            if (objId !== id) {
+                const node = stageRef.current.findOne('#' + objId);
+                if (node) {
+                    node.x(node.x() + dx);
+                    node.y(node.y() + dy);
+                }
+            }
+        });
+
+        // Force batch draw to smooth animation
+        stageRef.current.batchDraw();
+    };
+
+    const handleDragEndGlobal = (e: any) => {
+        isDraggingRef.current = false;
+        dragStartPosRef.current = null;
+
+        const id = e.target.id();
+        // If we just finished dragging a selected object, we need to sync ALL positions to store
+        if (selectedObjectIds.includes(id)) {
+            // Iterate all selected IDs and update their positions from the Konva nodes
+            selectedObjectIds.forEach(objId => {
+                const node = stageRef.current.findOne('#' + objId);
+                if (node) {
+                    updateObject(objId, {
+                        x: node.x(),
+                        y: node.y()
+                    });
+                }
+            });
+        }
+    };
+
+    const handleTransformEnd = () => {
+        selectedObjectIds.forEach(id => {
+            const node = stageRef.current.findOne('#' + id);
+            if (node) {
+                const scaleX = node.scaleX();
+                const scaleY = node.scaleY();
+
+                // Reset node scale to avoid compounding
+                node.scaleX(1);
+                node.scaleY(1);
+
+                // Rotation
+                const rotation = node.rotation();
+
+                // Find object to determine type for correct scaling
+                const object = currentPage.objects.find(o => o.id === id);
+                if (!object) return;
+
+                const updates: any = {
+                    x: node.x(),
+                    y: node.y(),
+                    rotation: rotation
+                };
+
+                if (object.type === 'path' && object.points) {
+                    // Normalize scaling to points
+                    const newPoints = object.points.map((val, i) => {
+                        return i % 2 === 0 ? val * scaleX : val * scaleY;
+                    });
+                    updates.points = newPoints;
+                    updates.width = (object.width || 0) * scaleX;
+                    updates.height = (object.height || 0) * scaleY;
+
+                } else if (object.type === 'text') {
+                    updates.fontSize = (object.fontSize || 16) * scaleY;
+                    updates.width = (object.width || 0) * scaleX;
+                    updates.height = (object.height || 0) * scaleY;
+                } else {
+                    updates.width = (object.width || 0) * scaleX;
+                    updates.height = (object.height || 0) * scaleY;
+                }
+
+                updateObject(id, updates);
+            }
+        });
+    };
+
+    // --- Multi-Selection Overlay Logic ---
+
+    const handleOverlayDragStart = (e: any) => {
+        isDraggingRef.current = true;
+        dragStartPosRef.current = { x: e.target.x(), y: e.target.y() };
+    };
+
+    const handleOverlayDragMove = (e: any) => {
+        if (!isDraggingRef.current || !dragStartPosRef.current) return;
+
+        const newPos = { x: e.target.x(), y: e.target.y() };
+        const dx = newPos.x - dragStartPosRef.current.x;
+        const dy = newPos.y - dragStartPosRef.current.y;
+
+        dragStartPosRef.current = newPos;
+
+        // Move ALL selected objects
+        selectedObjectIds.forEach(objId => {
+            const node = stageRef.current.findOne('#' + objId);
+            if (node) {
+                node.x(node.x() + dx);
+                node.y(node.y() + dy);
+            }
+        });
+
+        stageRef.current.batchDraw();
+    };
+
+    const handleOverlayDragEnd = (e: any) => {
+        isDraggingRef.current = false;
+        dragStartPosRef.current = null;
+
+        // Sync all to store
+        selectedObjectIds.forEach(objId => {
+            const node = stageRef.current.findOne('#' + objId);
+            if (node) {
+                updateObject(objId, {
+                    x: node.x(),
+                    y: node.y()
+                });
+            }
+        });
+
+        // Reset overlay position to match the new bounds on next render
+        // Actually, React will re-render and set x/y of Rect.
+        // Konva might keep the dragged offset? 
+        // We might need to manually reset Scale/Rotation if we supported it, but for Drag x/y it usually snaps back to props.
+        // But to be safe, we can reset:
+        e.target.position({ x: selectionBounds?.x || 0, y: selectionBounds?.y || 0 });
+        // Wait, if we reset it NOW, it might visually jump before React updates?
+        // Better to let React update props.
+    };
+
+    // --- CURSOR LOGIC ---
+    const getCursorStyle = () => {
+        const color = toolSettings.color || '#000000';
+        const size = Math.max(toolSettings.size || 2, 4);
+
+        if (activeTool === 'pen') {
+            const cursorSize = Math.max(16, size + 8);
+            const center = cursorSize / 2;
+            const radius = Math.max(2, size / 2);
+            const svg = `
+                <svg xmlns='http://www.w3.org/2000/svg' width='${cursorSize}' height='${cursorSize}' viewBox='0 0 ${cursorSize} ${cursorSize}'>
+                    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="rgba(0,0,0,0.3)"/>
+                    </filter>
+                    <circle cx='${center}' cy='${center}' r='${radius}' fill='${color}' stroke='white' stroke-width='1.5' filter="url(#shadow)"/>
+                </svg>
+            `;
+            return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${center} ${center}, crosshair`;
+        }
+
+        if (activeTool === 'highlighter') {
+            const h = Math.max(14, size);
+            const svgWidth = 32; const svgHeight = 32;
+            const svg = `
+                <svg xmlns='http://www.w3.org/2000/svg' width='${svgWidth}' height='${svgHeight}' viewBox='0 0 ${svgWidth} ${svgHeight}'>
+                    <rect x="12" y="${16 - h / 2}" width="8" height="${h}" rx="2" fill="${color}" stroke="white" stroke-width="1.5" transform="rotate(-45 16 16)" opacity="0.8"/>
+                </svg>
+            `;
+            return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") 16 16, crosshair`;
+        }
+
+        if (activeTool === 'eraser') {
+            const s = Math.max(12, size);
+            const svg = `
+                 <svg xmlns='http://www.w3.org/2000/svg' width='${s}' height='${s}' viewBox='0 0 ${s} ${s}'>
+                     <circle cx='${s / 2}' cy='${s / 2}' r='${s / 2 - 1}' fill='white' stroke='black' stroke-width='1'/>
+                 </svg>
+             `;
+            return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${s / 2} ${s / 2}, crosshair`;
+        }
+
+        if (activeTool === 'text') return 'text';
+        if (['rectangle', 'circle'].includes(activeTool)) return 'crosshair';
+
+        return 'default';
+    }
+
+    // Get background color - for blank pages use their custom color, otherwise white
+    const pageBackgroundColor = currentPage.source === 'blank'
+        ? (currentPage.backgroundColor || '#ffffff')
+        : '#ffffff';
 
     return (
         <div
-            className="shadow-2xl bg-white relative my-10"
+            className="shadow-2xl relative my-10"
             style={{
                 width: dimensions.width,
                 height: dimensions.height,
-                cursor: getCursorStyle()
+                cursor: getCursorStyle(),
+                backgroundColor: pageBackgroundColor
             }}
         >
             {/* Background Layer: PDF Render */}
@@ -327,29 +626,20 @@ export const EditorCanvas: React.FC = () => {
             {/* Editing Layer: Konva Stage */}
             <div className="absolute inset-0 z-10">
                 <Stage
+                    ref={stageRef}
                     width={dimensions.width}
                     height={dimensions.height}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
+                    onDragStart={handleDragStartGlobal}
+                    onDragMove={handleDragMoveGlobal}
+                    onDragEnd={handleDragEndGlobal}
                     scaleX={scale}
                     scaleY={scale}
                 >
                     <Layer>
-                        {/* 1. Render Paths */}
-                        {currentPage.paths.map((path, i) => (
-                            <Line
-                                key={path.id || i}
-                                points={path.points}
-                                stroke={path.stroke}
-                                strokeWidth={path.strokeWidth}
-                                tension={0.5}
-                                lineCap="round"
-                                lineJoin="round"
-                                opacity={path.opacity}
-                                globalCompositeOperation="source-over"
-                            />
-                        ))}
+
 
                         {/* 2. Drawing Path */}
                         {isDrawing && currentPath.length > 0 && (
@@ -408,12 +698,59 @@ export const EditorCanvas: React.FC = () => {
                                 key={obj.id}
                                 object={obj}
                                 isSelected={selectedObjectIds.includes(obj.id)}
-                                onSelect={() => selectObject(obj.id, false)}
+                                onSelect={(e: any) => {
+                                    if (activeTool === 'eraser' && toolSettings.eraserMode === 'object') {
+                                        deleteObjects([obj.id]);
+                                    } else if (activeTool === 'select') {
+                                        // Handle Shift+Click for multi-select
+                                        const isMulti = e?.evt?.shiftKey === true;
+                                        selectObject(obj.id, isMulti);
+                                    }
+                                }}
                                 onChange={(updates) => updateObject(obj.id, updates)}
                                 isLocked={obj.isLocked}
-                                isSelectionEnabled={activeTool === 'select'}
+                                isSelectionEnabled={activeTool === 'select' || (activeTool === 'eraser' && toolSettings.eraserMode === 'object')}
                             />
                         ))}
+
+                        {/* 3.5 Multi-Select Overlay (Draggable Empty Space) */}
+                        {selectionBounds && activeTool === 'select' && (
+                            <Rect
+                                id="selection-overlay"
+                                x={selectionBounds.x}
+                                y={selectionBounds.y}
+                                width={selectionBounds.width}
+                                height={selectionBounds.height}
+                                fill="transparent" // Transparent but clickable
+                                draggable
+                                onDragStart={handleOverlayDragStart}
+                                onDragMove={handleOverlayDragMove}
+                                onDragEnd={handleOverlayDragEnd}
+                                // Ensure cursor indicates move availability
+                                onMouseEnter={(e) => {
+                                    const container = e.target.getStage()?.container();
+                                    if (container) container.style.cursor = 'move';
+                                }}
+                                onMouseLeave={(e) => {
+                                    const container = e.target.getStage()?.container();
+                                    if (container) container.style.cursor = 'default';
+                                }}
+                            />
+                        )}
+
+                        {/* Global Transformer */}
+                        <Transformer
+                            ref={transformerRef}
+                            borderStroke="#3b82f6"
+                            anchorFill="white"
+                            anchorStroke="#3b82f6"
+                            anchorCornerRadius={5}
+                            boundBoxFunc={(oldBox, newBox) => {
+                                if (newBox.width < 5 || newBox.height < 5) return oldBox;
+                                return newBox;
+                            }}
+                            onTransformEnd={handleTransformEnd}
+                        />
                     </Layer>
                 </Stage>
             </div>

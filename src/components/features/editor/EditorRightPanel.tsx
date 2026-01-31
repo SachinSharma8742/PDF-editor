@@ -9,7 +9,7 @@ export const EditorRightPanel: React.FC = () => {
     const [activeTab, setActiveTab] = useState<Tab>('properties');
 
     return (
-        <div className="w-80 bg-white dark:bg-zinc-900 border-l border-gray-200 dark:border-zinc-800 flex flex-col h-full z-30 shadow-sm transition-colors duration-200">
+        <div className="w-64 bg-white dark:bg-zinc-900 border-l border-gray-200 dark:border-zinc-800 flex flex-col h-full z-30 shadow-sm transition-colors duration-200 flex-shrink-0">
             {/* Tab Header */}
             <div className="flex border-b border-gray-200 dark:border-zinc-800">
                 <button

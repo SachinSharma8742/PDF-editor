@@ -4,7 +4,7 @@ import { usePDFStore } from '../../../store/pdfStore';
 import { PDFObjectRenderer } from './PDFObjectRenderer';
 
 interface CanvasLayerProps {
-    pageId: string; // Changed from pageNumber to pageId for robust lookup
+    pageId: string;
     pageNumber: number;
     width: number;
     height: number;
@@ -15,43 +15,119 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
     const {
         pages,
         activeTool,
-        toolPreferences, // Changed from toolSettings
+        toolPreferences,
         addPath,
         addObject,
         updateObject,
         selectObject,
         selectedObjectIds,
-        setActiveTool
+        setActiveTool,
+        deleteObjects
     } = usePDFStore();
 
     const page = pages.find(p => p.id === pageId);
 
-    // Derived Settings for Active Tool (Fixing Crash)
-    // Fallback to defaults if undefined to prevent crash during hot reload/state transitions
+    // Derived Settings
     const toolSettings = toolPreferences[activeTool] || {
         color: '#000000',
         size: 2,
         opacity: 1,
-        fontFamily: 'Arial',
         fontSize: 16
     };
 
-    // Local state for drawing
+    // Drawing State
     const [isDrawing, setIsDrawing] = useState(false);
     const [currentPath, setCurrentPath] = useState<number[]>([]);
     const [shapeStartPos, setShapeStartPos] = useState<{ x: number; y: number } | null>(null);
     const [currentShape, setCurrentShape] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
 
-    // Area Selection State
+    // Selection State
     const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
     const [selectionRect, setSelectionRect] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
 
-    // Element Eraser Drag State
+    // Eraser State
     const [isElementErasing, setIsElementErasing] = useState(false);
-    const deletedIdsRef = React.useRef<Set<string>>(new Set()); // Track already deleted to avoid duplicates
+    const deletedIdsRef = React.useRef<Set<string>>(new Set());
 
     if (!page) return null;
 
+    // --- CURSOR LOGIC ---
+    const getCursorStyle = () => {
+        const color = toolSettings.color || '#000000';
+        const size = Math.max(toolSettings.size || 2, 4); // Min size limit
+
+        if (activeTool === 'pen') {
+            // Premium Pen Cursor: Circle with color fill + white border + shadow
+            const cursorSize = Math.max(16, size + 8);
+            const center = cursorSize / 2;
+            const radius = Math.max(2, size / 2);
+
+            const svg = `
+                <svg xmlns='http://www.w3.org/2000/svg' width='${cursorSize}' height='${cursorSize}' viewBox='0 0 ${cursorSize} ${cursorSize}'>
+                    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="rgba(0,0,0,0.3)"/>
+                    </filter>
+                    <circle cx='${center}' cy='${center}' r='${radius}' fill='${color}' stroke='white' stroke-width='1.5' filter="url(#shadow)"/>
+                    <circle cx='${center}' cy='${center}' r='${radius + 1.5}' stroke='rgba(0,0,0,0.1)' stroke-width='1' fill='none'/>
+                </svg>
+            `;
+            return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${center} ${center}, crosshair`;
+        }
+
+        if (activeTool === 'highlighter') {
+            // Highlighter Cursor: Angled marker
+            const h = Math.max(14, size);
+            const w = 8;
+            const svgWidth = 32;
+            const svgHeight = 32;
+
+            // Draw an angled rect
+            const svg = `
+                <svg xmlns='http://www.w3.org/2000/svg' width='${svgWidth}' height='${svgHeight}' viewBox='0 0 ${svgWidth} ${svgHeight}'>
+                     <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+                        <feMerge>
+                            <feMergeNode in="coloredBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+                    <rect x="12" y="${16 - h / 2}" width="${w}" height="${h}" rx="2" fill="${color}" stroke="white" stroke-width="1.5" transform="rotate(-45 16 16)" opacity="0.8" style="filter:url(#glow);"/>
+                </svg>
+            `;
+            // Hotspot needs to be adjusted based on rotation, roughly center
+            return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") 16 16, crosshair`;
+        }
+
+        if (activeTool === 'eraser') {
+            const eraserMode = usePDFStore.getState().eraserMode;
+            if (eraserMode === 'element') {
+                // Target cursor
+                const svg = `
+                     <svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'>
+                        <line x1="12" y1="2" x2="12" y2="22" stroke="#ef4444" stroke-width="2"/>
+                        <line x1="2" y1="12" x2="22" y2="12" stroke="#ef4444" stroke-width="2"/>
+                        <circle cx="12" cy="12" r="8" fill="none" stroke="#ef4444" stroke-width="2"/>
+                    </svg>
+                `;
+                return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") 12 12, crosshair`;
+            } else {
+                // Circle eraser
+                const s = Math.max(10, (toolSettings.size || 20));
+                const svg = `
+                    <svg xmlns='http://www.w3.org/2000/svg' width='${s}' height='${s}' viewBox='0 0 ${s} ${s}'>
+                        <circle cx='${s / 2}' cy='${s / 2}' r='${s / 2 - 1}' fill='white' stroke='#333' stroke-width='1'/>
+                    </svg>
+                `;
+                return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${s / 2} ${s / 2}, crosshair`;
+            }
+        }
+
+        if (['rectangle', 'circle', 'text'].includes(activeTool)) return 'crosshair';
+
+        return 'default';
+    }
+
+    // --- EVENT HANDLERS ---
     const handleMouseDown = (e: any) => {
         const stage = e.target.getStage();
         const pos = stage.getPointerPosition();
@@ -60,52 +136,43 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
         const scaledX = pos.x / scale;
         const scaledY = pos.y / scale;
 
-        // 1. Handle deselect if clicked on empty stage
+        // 1. Stage Click (Deselect / Start Selection)
         if (e.target === stage) {
-            // Start Area Selection if in Select Mode
             if (activeTool === 'select') {
                 setSelectionStart({ x: scaledX, y: scaledY });
                 setSelectionRect({ x: scaledX, y: scaledY, width: 0, height: 0 });
-                selectObject('', false); // Clear previous selection
+                selectObject('', false);
                 return;
             }
             selectObject('', false);
         }
 
-        // 2. Handle Element Eraser (Drag-to-Delete Mode like Edge PDF)
+        // 2. Element Eraser
         const eraserMode = usePDFStore.getState().eraserMode;
         if (activeTool === 'eraser' && eraserMode === 'element') {
-            // Start element erasing session
             setIsElementErasing(true);
-            deletedIdsRef.current.clear(); // Reset tracking
-
-            // Check if we clicked on an object/shape (not the stage)
-            const clickedOnStage = e.target === stage;
-            if (!clickedOnStage) {
-                const clickedId = e.target.id();
-                if (clickedId && !deletedIdsRef.current.has(clickedId)) {
-                    deletedIdsRef.current.add(clickedId);
-                    usePDFStore.getState().deleteObjects([clickedId]);
+            deletedIdsRef.current.clear();
+            if (e.target !== stage) {
+                const id = e.target.id();
+                if (id) {
+                    deletedIdsRef.current.add(id);
+                    deleteObjects([id]);
                 }
             }
-            return; // Don't start drawing
+            return;
         }
 
-        // 2b. Handle Drawing Tools (Pen, Highlighter, Path Eraser)
-        const drawingTools = ['pen', 'highlighter', 'eraser'];
-        if (drawingTools.includes(activeTool)) {
+        // 3. Drawing
+        if (['pen', 'highlighter', 'eraser'].includes(activeTool)) {
             setIsDrawing(true);
             setCurrentPath([scaledX, scaledY]);
             return;
         }
 
-        // 3. Handle Shape Tools (Rect, Circle, Text) - DRAG TO DRAW
+        // 4. Shapes
         if (['rectangle', 'circle', 'text'].includes(activeTool)) {
             setIsDrawing(true);
             setShapeStartPos({ x: scaledX, y: scaledY });
-            // For text, we might want just a click-to-place, but let's allow drag for box size?
-            // "Text" usually is click-to-type. Let's keep Text as click-to-place for MVP, or small drag.
-            // For now, init currentShape
             setCurrentShape({ x: scaledX, y: scaledY, width: 0, height: 0 });
         }
     };
@@ -118,16 +185,14 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
         const scaledX = point.x / scale;
         const scaledY = point.y / scale;
 
-        // Element Eraser Drag - Delete objects as cursor passes over them
-        const eraserMode = usePDFStore.getState().eraserMode;
-        if (isElementErasing && activeTool === 'eraser' && eraserMode === 'element') {
-            // Hit test: Find all shapes at the current pointer position
-            const shapes = stage.getAllIntersections({ x: point.x, y: point.y });
+        // Element Eraser Drag
+        if (isElementErasing) {
+            const shapes = stage.getAllIntersections(point);
             shapes.forEach((shape: any) => {
-                const shapeId = shape.id();
-                if (shapeId && !deletedIdsRef.current.has(shapeId)) {
-                    deletedIdsRef.current.add(shapeId);
-                    usePDFStore.getState().deleteObjects([shapeId]);
+                const id = shape.id();
+                if (id && !deletedIdsRef.current.has(id)) {
+                    deletedIdsRef.current.add(id);
+                    deleteObjects([id]);
                 }
             });
             return;
@@ -135,89 +200,65 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
 
         // Area Selection
         if (selectionStart) {
-            const width = scaledX - selectionStart.x;
-            const height = scaledY - selectionStart.y;
+            const w = scaledX - selectionStart.x;
+            const h = scaledY - selectionStart.y;
             setSelectionRect({
-                x: width < 0 ? selectionStart.x + width : selectionStart.x,
-                y: height < 0 ? selectionStart.y + height : selectionStart.y,
-                width: Math.abs(width),
-                height: Math.abs(height)
+                x: w < 0 ? selectionStart.x + w : selectionStart.x,
+                y: h < 0 ? selectionStart.y + h : selectionStart.y,
+                width: Math.abs(w),
+                height: Math.abs(h)
             });
             return;
         }
 
         if (!isDrawing) return;
 
-        // Freehand Drawing
+        // Freehand
         if (['pen', 'highlighter', 'eraser'].includes(activeTool)) {
             setCurrentPath(prev => [...prev, scaledX, scaledY]);
             return;
         }
 
-        // Shape Drawing
-        if (['rectangle', 'circle'].includes(activeTool) && shapeStartPos) {
-            const width = scaledX - shapeStartPos.x;
-            const height = scaledY - shapeStartPos.y;
+        // Shapes
+        if (shapeStartPos) {
+            const w = scaledX - shapeStartPos.x;
+            const h = scaledY - shapeStartPos.y;
             setCurrentShape({
                 x: shapeStartPos.x,
                 y: shapeStartPos.y,
-                width: width,
-                height: height
+                width: w,
+                height: h
             });
         }
     };
 
     const handleMouseUp = () => {
-        // End Element Eraser session
         if (isElementErasing) {
             setIsElementErasing(false);
-            deletedIdsRef.current.clear();
             return;
         }
 
-        // Finalize Area Selection
+        // Finish Selection
         if (selectionStart && selectionRect) {
-            // Find objects inside rect
             const selectedIds: string[] = [];
-            const rect = selectionRect;
-
+            const r = selectionRect;
             page.objects.forEach(obj => {
-                // Simple bounding box intersection
-                // Object bounds (simplified, ignoring rotation for now)
-                const objRight = obj.x + (obj.width || 0);
-                const objBottom = obj.y + (obj.height || 0);
-                const rectRight = rect.x + rect.width;
-                const rectBottom = rect.y + rect.height;
-
-                // Check overlap
-                if (
-                    obj.x < rectRight &&
-                    objRight > rect.x &&
-                    obj.y < rectBottom &&
-                    objBottom > rect.y
-                ) {
+                const ox = obj.x, oy = obj.y, ow = obj.width || 0, oh = obj.height || 0;
+                // Loose overlap check
+                if (ox < r.x + r.width && ox + ow > r.x && oy < r.y + r.height && oy + oh > r.y) {
                     selectedIds.push(obj.id);
                 }
             });
-
-            if (selectedIds.length > 0) {
-                // We need `selectObjects` (plural) action in store ideally
-                // Or call selectObject per item with multi=true
-                // But selectObjects is better. Let's assume I added it or use loop.
-                // Re-checking store... I added `selectObjects` in previous step!
-                // Type check: Need to make sure `selectObjects` is available in props.
-                usePDFStore.getState().selectObjects(selectedIds);
-            }
+            if (selectedIds.length > 0) usePDFStore.getState().selectObjects(selectedIds);
 
             setSelectionStart(null);
             setSelectionRect(null);
             return;
         }
 
-
         if (!isDrawing) return;
 
-        // Finalize Freehand
+        // Finish Freehand
         if (['pen', 'highlighter', 'eraser'].includes(activeTool) && currentPath.length > 0) {
             addPath(pageId, {
                 id: crypto.randomUUID(),
@@ -227,52 +268,42 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
                 tool: activeTool as any,
                 opacity: activeTool === 'highlighter' ? 0.5 : 1
             });
-            // Freehand usually allows continuous drawing, so we might NOT reset tool here.
-            // But user might want it. Let's keep continuous for Pen.
         }
 
-        // Finalize Shape
-        if (['rectangle', 'circle', 'text'].includes(activeTool) && shapeStartPos) {
-            // Check for minimal size to unintentional clicks vs drags
-            const width = currentShape ? currentShape.width : 0;
-            const height = currentShape ? currentShape.height : 0;
+        // Finish Shape
+        if (['rectangle', 'circle', 'text'].includes(activeTool) && shapeStartPos && currentShape) {
+            const finalW = Math.abs(currentShape.width);
+            const finalH = Math.abs(currentShape.height);
+            // Handle clicks vs drags
+            const isClick = finalW < 5 && finalH < 5;
+            const targetW = isClick ? 100 : finalW;
+            const targetH = isClick ? 100 : finalH;
 
-            // If very small drag, treat as default size
-            const isClick = Math.abs(width) < 5 && Math.abs(height) < 5;
+            // Normalize Pos
+            const targetX = currentShape.width < 0 ? shapeStartPos.x + currentShape.width : shapeStartPos.x;
+            const targetY = currentShape.height < 0 ? shapeStartPos.y + currentShape.height : shapeStartPos.y;
 
-            // Normalize negative width/height (dragging LEFT or UP)
-            const finalX = width < 0 ? shapeStartPos.x + width : shapeStartPos.x;
-            const finalY = height < 0 ? shapeStartPos.y + height : shapeStartPos.y;
-            const finalW = isClick ? 100 : Math.abs(width);
-            const finalH = isClick ? 100 : Math.abs(height);
-
-            if (activeTool === 'text') { // Text is special, usually just click
+            if (activeTool === 'text') {
                 addObject(pageId, {
                     id: crypto.randomUUID(),
                     type: 'text',
-                    x: finalX,
-                    y: finalY,
+                    x: targetX, y: targetY,
                     text: 'Double click to edit',
                     fill: toolSettings.color,
-                    fontSize: toolSettings.fontSize || 16,
-                    fontFamily: toolSettings.fontFamily || 'Arial',
-                    width: Math.max(200, finalW) // Default min width for text
+                    fontSize: toolSettings.fontSize,
+                    width: Math.max(200, targetW)
                 });
             } else {
                 addObject(pageId, {
                     id: crypto.randomUUID(),
                     type: activeTool as any,
-                    x: finalX,
-                    y: finalY,
-                    width: finalW,
-                    height: finalH,
+                    x: targetX, y: targetY,
+                    width: targetW, height: targetH,
                     stroke: toolSettings.color,
                     strokeWidth: 2,
                     fill: 'transparent'
                 });
             }
-
-            // AUTO-SWITCH TO SELECT (Fixes "continuous drawing" annoyance)
             setActiveTool('select');
         }
 
@@ -282,77 +313,11 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
         setCurrentShape(null);
     };
 
-    const getCursorStyle = () => {
-        const color = toolSettings.color || '#000000';
-        const size = toolSettings.size || 2;
-
-        // --- CUSTOM CURSOR: PEN ---
-        // A filled circle in the current pen color, centered.
-        if (activeTool === 'pen') {
-            const cursorSize = Math.max(8, size + 4); // Minimum visible size
-            const half = cursorSize / 2;
-            const svg = `
-                <svg xmlns='http://www.w3.org/2000/svg' width='${cursorSize}' height='${cursorSize}' viewBox='0 0 ${cursorSize} ${cursorSize}'>
-                    <circle cx='${half}' cy='${half}' r='${size / 2 + 1}' fill='${color}' stroke='white' stroke-width='1'/>
-                </svg>
-            `;
-            return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${half} ${half}, crosshair`;
-        }
-
-        // --- CUSTOM CURSOR: HIGHLIGHTER ---
-        // A wide, semi-transparent rectangle representing the highlighter tip.
-        if (activeTool === 'highlighter') {
-            const cursorWidth = size + 6;
-            const cursorHeight = Math.max(12, size / 2);
-            const halfW = cursorWidth / 2;
-            const halfH = cursorHeight / 2;
-            const svg = `
-                <svg xmlns='http://www.w3.org/2000/svg' width='${cursorWidth}' height='${cursorHeight}' viewBox='0 0 ${cursorWidth} ${cursorHeight}'>
-                    <rect x='0' y='0' width='${cursorWidth}' height='${cursorHeight}' rx='2' fill='${color}' fill-opacity='0.6' stroke='rgba(0,0,0,0.5)' stroke-width='1'/>
-                </svg>
-            `;
-            return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${halfW} ${halfH}, text`;
-        }
-
-        // --- DYNAMIC ERASER CURSOR ---
-        if (activeTool === 'eraser') {
-            const eraserMode = usePDFStore.getState().eraserMode;
-            const eraserSize = size || 20;
-            const half = eraserSize / 2;
-
-            // Element Eraser: Target/Crosshair with X
-            if (eraserMode === 'element') {
-                const targetSize = 24;
-                const targetHalf = targetSize / 2;
-                const svg = `
-                    <svg xmlns='http://www.w3.org/2000/svg' width='${targetSize}' height='${targetSize}' viewBox='0 0 ${targetSize} ${targetSize}'>
-                        <circle cx='${targetHalf}' cy='${targetHalf}' r='8' fill='none' stroke='#ef4444' stroke-width='2'/>
-                        <line x1='${targetHalf}' y1='4' x2='${targetHalf}' y2='20' stroke='#ef4444' stroke-width='2'/>
-                        <line x1='4' y1='${targetHalf}' x2='20' y2='${targetHalf}' stroke='#ef4444' stroke-width='2'/>
-                    </svg>
-                `;
-                return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${targetHalf} ${targetHalf}, crosshair`;
-            }
-
-            // Path Eraser: White circle
-            const svg = `
-                <svg xmlns='http://www.w3.org/2000/svg' width='${eraserSize}' height='${eraserSize}' viewBox='0 0 ${eraserSize} ${eraserSize}'>
-                    <circle cx='${half}' cy='${half}' r='${Math.max(1, half - 1)}' fill='rgba(255, 255, 255, 0.5)' stroke='#333' stroke-width='1.5'/>
-                </svg>
-            `;
-            return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${half} ${half}, auto`;
-        }
-
-        // Shape Tools
-        if (['rectangle', 'circle', 'text'].includes(activeTool)) {
-            return 'crosshair';
-        }
-
-        return 'default';
-    };
-
     return (
-        <div className="absolute inset-0 z-10 pointer-events-auto" style={{ cursor: getCursorStyle() }}>
+        <div
+            className="absolute inset-0 z-10 pointer-events-auto touch-none"
+            style={{ cursor: getCursorStyle() }}
+        >
             <Stage
                 width={width}
                 height={height}
@@ -366,23 +331,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
                 scaleY={scale}
             >
                 <Layer>
-                    {/* 1. Render Paths (Drawings) */}
-                    {/* 1. Legacy Paths (Deprecated - New paths are objects) */}
-                    {/* {page.paths.map((path, i) => (
-                        <Line
-                            key={path.id || i}
-                            points={path.points}
-                            stroke={path.stroke}
-                            strokeWidth={path.strokeWidth}
-                            tension={0.5}
-                            lineCap="round"
-                            lineJoin="round"
-                            opacity={path.opacity}
-                            globalCompositeOperation="source-over"
-                        />
-                    ))} */}
-
-                    {/* 2. Render Current Drawing Path */}
+                    {/* Drawing Preview */}
                     {isDrawing && currentPath.length > 0 && (
                         <Line
                             points={currentPath}
@@ -391,24 +340,23 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
                             tension={0.5}
                             lineCap="round"
                             lineJoin="round"
-                            opacity={activeTool === 'highlighter' ? (toolSettings.opacity || 0.5) : 1}
-                            globalCompositeOperation="source-over"
+                            opacity={activeTool === 'highlighter' ? 0.5 : 1}
                         />
                     )}
 
-                    {/* 2.5 Render Current Dragging Shape Preview */}
+                    {/* Shape Preview */}
                     {isDrawing && currentShape && ['rectangle', 'circle'].includes(activeTool) && (
                         <PDFObjectRenderer
                             object={{
                                 id: 'preview',
                                 type: activeTool as any,
-                                x: shapeStartPos!.x + (currentShape.width < 0 ? currentShape.width : 0), // Adjust for render logic
+                                x: shapeStartPos!.x + (currentShape.width < 0 ? currentShape.width : 0),
                                 y: shapeStartPos!.y + (currentShape.height < 0 ? currentShape.height : 0),
                                 width: Math.abs(currentShape.width),
                                 height: Math.abs(currentShape.height),
                                 stroke: toolSettings.color,
                                 strokeWidth: 2,
-                                fill: 'rgba(59, 130, 246, 0.1)' // Light blue transparent fill for preview
+                                fill: 'rgba(59, 130, 246, 0.1)'
                             } as any}
                             isSelected={false}
                             onSelect={() => { }}
@@ -416,57 +364,43 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
                         />
                     )}
 
-                    {/* Wait, we are inside Canvas Layer which uses Konva Stage.
-                        We can't render HTML divs inside Konva Layer easily unless using Html component or separate overlay.
-                        Better to render a Konva Rect!
-                    */}
+                    {/* Selection Rect */}
                     {selectionRect && (
-                        <React.Fragment>
-                            <Line
-                                points={[
-                                    selectionRect.x, selectionRect.y,
-                                    selectionRect.x + selectionRect.width, selectionRect.y,
-                                    selectionRect.x + selectionRect.width, selectionRect.y + selectionRect.height,
-                                    selectionRect.x, selectionRect.y + selectionRect.height,
-                                    selectionRect.x, selectionRect.y
-                                ]}
-                                stroke="#3b82f6"
-                                strokeWidth={1}
-                                closed
-                                fill="rgba(59, 130, 246, 0.1)"
-                            />
-                        </React.Fragment>
+                        <Line
+                            points={[
+                                selectionRect.x, selectionRect.y,
+                                selectionRect.x + selectionRect.width, selectionRect.y,
+                                selectionRect.x + selectionRect.width, selectionRect.y + selectionRect.height,
+                                selectionRect.x, selectionRect.y + selectionRect.height,
+                                selectionRect.x, selectionRect.y
+                            ]}
+                            stroke="#3b82f6"
+                            strokeWidth={1}
+                            closed
+                            fill="rgba(59, 130, 246, 0.1)"
+                        />
                     )}
 
-                    {/* 3. Render Objects (Text, Shapes, Images) */}
-                    {page.objects.map((obj) => {
-                        // Allow interactions in Select mode OR Element Eraser mode
-                        const eraserMode = usePDFStore.getState().eraserMode;
-                        const isElementEraser = activeTool === 'eraser' && eraserMode === 'element';
-                        const isInteractionEnabled = activeTool === 'select' || isElementEraser;
-
-                        return (
-                            <PDFObjectRenderer
-                                key={obj.id}
-                                object={obj}
-                                isSelected={selectedObjectIds.includes(obj.id)}
-                                onSelect={() => {
-                                    // In Element Eraser mode, clicking should delete, not select
-                                    if (isElementEraser) {
-                                        usePDFStore.getState().deleteObjects([obj.id]);
-                                    } else {
-                                        selectObject(obj.id, false);
-                                    }
-                                }}
-                                onChange={(updates) => updateObject(pageId, obj.id, updates)}
-                                isLocked={false}
-                                isSelectionEnabled={isInteractionEnabled}
-                            />
-                        );
-                    })}
+                    {/* Objects */}
+                    {page.objects.map((obj) => (
+                        <PDFObjectRenderer
+                            key={obj.id}
+                            object={obj}
+                            isSelected={selectedObjectIds.includes(obj.id)}
+                            onSelect={() => {
+                                const eraserMode = usePDFStore.getState().eraserMode;
+                                if (activeTool === 'eraser' && eraserMode === 'element') {
+                                    deleteObjects([obj.id]);
+                                } else if (activeTool === 'select') {
+                                    selectObject(obj.id, false);
+                                }
+                            }}
+                            onChange={(updates) => updateObject(pageId, obj.id, updates)}
+                            isSelectionEnabled={activeTool === 'select' || (activeTool === 'eraser' && usePDFStore.getState().eraserMode === 'element')}
+                        />
+                    ))}
                 </Layer>
             </Stage>
         </div>
     );
 };
-

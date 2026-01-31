@@ -42,6 +42,7 @@ export interface PDFObject {
 
     isLocked?: boolean;
     groupId?: string; // For grouping objects
+    isNew?: boolean; // Temporary flag for auto-focusing new objects
 }
 
 export interface DrawingPath {
@@ -52,6 +53,11 @@ export interface DrawingPath {
     tool: 'pen' | 'highlighter' | 'eraser';
     opacity: number;
     closed?: boolean;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    rotation?: number;
 }
 
 export interface PageState {
@@ -71,6 +77,9 @@ export interface PageState {
     // Content Layers
     paths: DrawingPath[]; // Freehand drawings (Pen/Highlighter)
     objects: PDFObject[]; // Vector objects & text
+
+    // Visual
+    backgroundColor?: string; // Background color for blank pages (default: white)
 
     // State
     isEdited: boolean;
@@ -133,7 +142,7 @@ interface PDFStore {
     // Actions
     setPdfDocument: (doc: any, bytes: ArrayBuffer, fileName: string) => void;
     appendPDF: (doc: any, bytes: ArrayBuffer, addedPagesCount: number) => void;
-    addPage: (source: PageSource, content?: string, width?: number, height?: number) => void;
+    addPage: (source: PageSource, content?: string, width?: number, height?: number, backgroundColor?: string) => void;
     updatePage: (pageId: string, updates: Partial<PageState>) => void;
     reorderPages: (fromIndex: number, toIndex: number) => void;
     deletePage: (pageId: string) => void;
@@ -313,7 +322,7 @@ export const usePDFStore = create<PDFStore>()(
                 }));
             },
 
-            addPage: (source, content, width = 595, height = 842) => {
+            addPage: (source, content, width = 595, height = 842, backgroundColor) => {
                 get().saveToHistory();
                 set(state => {
                     const newPage: PageState = {
@@ -325,6 +334,7 @@ export const usePDFStore = create<PDFStore>()(
                         rotation: 0,
                         source,
                         content,
+                        backgroundColor: source === 'blank' ? (backgroundColor || '#ffffff') : undefined,
                         paths: [],
                         objects: [],
                         isEdited: true

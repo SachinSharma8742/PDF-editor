@@ -19,6 +19,8 @@ interface ToolSettings {
     fontSize: number;
     fontWeight: string;
     fontStyle: string;
+    textAlign: 'left' | 'center' | 'right';
+    eraserMode: 'standard' | 'object';
 }
 
 const DEFAULT_SETTINGS: ToolSettings = {
@@ -28,7 +30,9 @@ const DEFAULT_SETTINGS: ToolSettings = {
     fontFamily: 'Inter',
     fontSize: 16,
     fontWeight: 'normal',
-    fontStyle: 'normal'
+    fontStyle: 'normal',
+    textAlign: 'left',
+    eraserMode: 'standard'
 };
 
 const DEFAULT_TOOL_PREFERENCES: Record<ToolType, ToolSettings> = {
@@ -69,11 +73,14 @@ interface EditorStore {
     setActiveTool: (tool: ToolType) => void;
     updateToolSettings: (settings: Partial<ToolSettings>) => void;
 
-    // Content Actions (Mirrors pdfStore but for local currentPage)
+    // Content Actions
     addPath: (path: DrawingPath) => void;
     addObject: (object: PDFObject) => void;
     updateObject: (objectId: string, updates: Partial<PDFObject>) => void;
     deleteObjects: (objectIds: string[]) => void;
+    setObjects: (objects: PDFObject[]) => void;
+    reorderObject: (objectId: string, direction: 'front' | 'back' | 'forward' | 'backward') => void;
+    duplicateObject: (objectIds: string[]) => void;
 
     // Selection
     selectObject: (objectId: string, multi?: boolean) => void;
@@ -84,6 +91,13 @@ interface EditorStore {
     undo: () => void;
     redo: () => void;
     saveToHistory: () => void;
+
+    // Eyedropper / Color Memory
+    recentColors: string[];
+    addColorToHistory: (color: string) => void;
+
+    groupObjects: (objectIds: string[]) => void;
+    ungroupObjects: (objectIds: string[]) => void;
 }
 
 export const useEditorStore = create<EditorStore>()(
@@ -96,7 +110,13 @@ export const useEditorStore = create<EditorStore>()(
             activeTool: 'select',
             toolPreferences: DEFAULT_TOOL_PREFERENCES,
             selectedObjectIds: [],
+            recentColors: ['#000000', '#df4b26', '#10B981', '#3B82F6', '#6366F1', '#ffffff', '#ef4444', '#f59e0b'], // Initial palette
             history: { past: [], future: [] },
+
+            addColorToHistory: (color) => set(state => {
+                const newRecent = [color, ...state.recentColors.filter(c => c !== color)].slice(0, 8);
+                return { recentColors: newRecent };
+            }),
 
             initEditor: (page) => {
                 // Deep clone the page to ensure isolation
@@ -181,12 +201,66 @@ export const useEditorStore = create<EditorStore>()(
 
             addPath: (path) => {
                 get().saveToHistory();
+
+                // Convert DrawingPath to PDFObject (mirroring pdfStore logic)
+                // Convert DrawingPath to PDFObject
+                let newObject: PDFObject;
+
+                // Check if path is already normalized (has valid X/Y/Width/Height)
+                if (path.x !== undefined && path.y !== undefined && path.width !== undefined && path.height !== undefined && path.width > 0) {
+                    newObject = {
+                        id: path.id || `obj-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        type: 'path',
+                        x: path.x,
+                        y: path.y,
+                        width: path.width,
+                        height: path.height,
+                        points: path.points, // Assumed relative
+                        stroke: path.stroke,
+                        strokeWidth: path.strokeWidth,
+                        opacity: path.opacity,
+                        rotation: path.rotation || 0,
+                    };
+                } else {
+                    // Legacy auto-calculation from absolute points
+                    const xs = path.points.filter((_, i) => i % 2 === 0);
+                    const ys = path.points.filter((_, i) => i % 2 !== 0);
+                    const minX = Math.min(...xs);
+                    const maxX = Math.max(...xs);
+                    const minY = Math.min(...ys);
+                    const maxY = Math.max(...ys);
+
+                    const width = maxX - minX;
+                    const height = maxY - minY;
+
+                    const normalizedPoints = path.points.map((p, i) => {
+                        return i % 2 === 0 ? p - minX : p - minY;
+                    });
+
+                    newObject = {
+                        id: path.id || `obj-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        type: 'path',
+                        x: minX,
+                        y: minY,
+                        width: width,
+                        height: height,
+                        points: normalizedPoints,
+                        stroke: path.stroke,
+                        strokeWidth: path.strokeWidth,
+                        opacity: path.opacity,
+                        rotation: 0,
+                    };
+                }
+
                 set(state => {
                     if (!state.currentPage) return state;
                     return {
                         currentPage: {
                             ...state.currentPage,
-                            paths: [...state.currentPage.paths, path],
+                            // Add to objects instead of paths. 
+                            // We can keep paths array empty or ignore it, 
+                            // but let's just not add to it to avoid duplication.
+                            objects: [...state.currentPage.objects, newObject],
                             isEdited: true
                         }
                     };
@@ -238,24 +312,212 @@ export const useEditorStore = create<EditorStore>()(
                 });
             },
 
+            setObjects: (objects) => {
+                get().saveToHistory();
+                set(state => {
+                    if (!state.currentPage) return state;
+                    return {
+                        currentPage: {
+                            ...state.currentPage,
+                            objects: objects,
+                            isEdited: true
+                        }
+                    };
+                });
+            },
+
+            reorderObject: (objectId, direction) => {
+                get().saveToHistory();
+                set(state => {
+                    if (!state.currentPage) return state;
+                    const objects = [...state.currentPage.objects];
+                    const index = objects.findIndex(o => o.id === objectId);
+                    if (index === -1) return state;
+
+                    const [start] = objects.splice(index, 1);
+
+                    if (direction === 'front') {
+                        objects.push(start);
+                    } else if (direction === 'back') {
+                        objects.unshift(start);
+                    } else if (direction === 'forward') {
+                        if (index < objects.length) {
+                            objects.splice(index + 1, 0, start);
+                        } else {
+                            objects.push(start);
+                        }
+                    } else if (direction === 'backward') {
+                        if (index > 0) {
+                            objects.splice(index - 1, 0, start);
+                        } else {
+                            objects.unshift(start);
+                        }
+                    }
+
+                    return {
+                        currentPage: {
+                            ...state.currentPage,
+                            objects: objects,
+                            isEdited: true
+                        }
+                    };
+                });
+            },
+
             selectObject: (objectId, multi = false) => {
                 set(state => {
-                    const idsToSelect = [objectId].filter(Boolean); // Simple select for now, group logic can be added later if reused
+                    if (!state.currentPage) return {};
+
+                    const findGroupMembers = (targetId: string) => {
+                        const obj = state.currentPage?.objects.find(o => o.id === targetId);
+                        if (obj && obj.groupId) {
+                            return state.currentPage?.objects
+                                .filter(o => o.groupId === obj.groupId)
+                                .map(o => o.id) || [targetId];
+                        }
+                        return [targetId];
+                    };
+
+                    const idsToSelect = findGroupMembers(objectId);
+
                     if (multi) {
                         const currentSet = new Set(state.selectedObjectIds);
-                        if (currentSet.has(objectId)) currentSet.delete(objectId);
-                        else currentSet.add(objectId);
-                        return { selectedObjectIds: Array.from(currentSet) };
+                        // Check if ALL these ids are already selected
+                        const allSelected = idsToSelect.every(id => currentSet.has(id));
+                        const newSet = new Set(currentSet);
+
+                        if (allSelected) {
+                            // Deselect all
+                            idsToSelect.forEach(id => newSet.delete(id));
+                        } else {
+                            // Select all
+                            idsToSelect.forEach(id => newSet.add(id));
+                        }
+                        return { selectedObjectIds: Array.from(newSet) };
                     }
+
                     return { selectedObjectIds: idsToSelect };
                 });
             },
 
             selectObjects: (objectIds) => {
-                set({ selectedObjectIds: objectIds });
+                set(state => {
+                    if (!state.currentPage) return {};
+
+                    const finalIds = new Set<string>();
+
+                    // Optimization: Cache groupIds we've already processed to avoid O(N^2) lookups
+                    const processedGroups = new Set<string>();
+
+                    objectIds.forEach(id => {
+                        const obj = state.currentPage?.objects.find(o => o.id === id);
+                        if (!obj) return;
+
+                        if (obj.groupId) {
+                            if (!processedGroups.has(obj.groupId)) {
+                                processedGroups.add(obj.groupId);
+                                // Add all members of this group
+                                const members = state.currentPage?.objects
+                                    .filter(o => o.groupId === obj.groupId)
+                                    .map(o => o.id);
+                                members?.forEach(mid => finalIds.add(mid));
+                            }
+                        } else {
+                            finalIds.add(id);
+                        }
+                    });
+
+                    return { selectedObjectIds: Array.from(finalIds) };
+                });
+            },
+
+            duplicateObject: (objectIds) => {
+                const { currentPage, saveToHistory } = get();
+                if (!currentPage || objectIds.length === 0) return;
+                saveToHistory();
+
+                set(state => {
+                    if (!state.currentPage) return state;
+                    const newObjects = [...state.currentPage.objects];
+                    const idsToSelect: string[] = [];
+
+                    objectIds.forEach(id => {
+                        const original = newObjects.find(o => o.id === id);
+                        if (original) {
+                            const newId = `obj-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                            newObjects.push({
+                                ...original,
+                                id: newId,
+                                x: original.x + 20,
+                                y: original.y + 20,
+                                groupId: undefined // Do not clone group association, fresh clones are ungrouped or need new logic
+                            });
+                            idsToSelect.push(newId);
+                        }
+                    });
+
+                    return {
+                        currentPage: {
+                            ...state.currentPage,
+                            objects: newObjects,
+                            isEdited: true
+                        },
+                        selectedObjectIds: idsToSelect
+                    };
+                });
             },
 
             clearSelection: () => set({ selectedObjectIds: [] }),
+
+            groupObjects: (objectIds) => {
+                const { currentPage, saveToHistory } = get();
+                if (!currentPage || objectIds.length < 2) return;
+                saveToHistory();
+
+                const newGroupId = `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                set(state => {
+                    if (!state.currentPage) return state;
+                    return {
+                        currentPage: {
+                            ...state.currentPage,
+                            objects: state.currentPage.objects.map(obj =>
+                                objectIds.includes(obj.id) ? { ...obj, groupId: newGroupId } : obj
+                            ),
+                            isEdited: true
+                        },
+                        selectedObjectIds: objectIds // Keep selected
+                    };
+                });
+            },
+
+            ungroupObjects: (objectIds) => {
+                const { currentPage, saveToHistory } = get();
+                if (!currentPage) return;
+                saveToHistory();
+
+                // Find groups involved in selection
+                const groupsToUngroup = new Set<string>();
+                currentPage.objects.forEach(obj => {
+                    if (objectIds.includes(obj.id) && obj.groupId) {
+                        groupsToUngroup.add(obj.groupId);
+                    }
+                });
+
+                if (groupsToUngroup.size === 0) return;
+
+                set(state => {
+                    if (!state.currentPage) return state;
+                    return {
+                        currentPage: {
+                            ...state.currentPage,
+                            objects: state.currentPage.objects.map(obj =>
+                                obj.groupId && groupsToUngroup.has(obj.groupId) ? { ...obj, groupId: undefined } : obj
+                            ),
+                            isEdited: true
+                        }
+                    };
+                });
+            }
         })
     )
 );
