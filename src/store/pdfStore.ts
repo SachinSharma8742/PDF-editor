@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 
-export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature';
+export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature' | 'measure' | 'redaction' | 'form-text' | 'form-checkbox' | 'ocr';
 export type PageSource = 'pdf' | 'image' | 'blank';
 
 // --- Core Data Models ---
@@ -13,7 +13,7 @@ export interface Point {
 
 export interface PDFObject {
     id: string;
-    type: 'text' | 'image' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path';
+    type: 'text' | 'image' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path' | 'measure' | 'redaction' | 'form-text' | 'form-checkbox';
     x: number;
     y: number;
     width?: number;
@@ -25,6 +25,11 @@ export interface PDFObject {
     stroke?: string;
     strokeWidth?: number;
     opacity?: number;
+    dash?: number[];
+    dashOffset?: number;
+    sides?: number; // For polygons (3=triangle, 5=pentagon, etc.)
+    innerRadius?: number; // For stars
+    outerRadius?: number; // For stars
 
     // Path specific
     points?: number[];
@@ -39,6 +44,9 @@ export interface PDFObject {
 
     // Image specific
     src?: string; // Data URL or Object URL
+
+    // Stamp specific
+    content?: string; // Raw SVG string
 
     isLocked?: boolean;
     groupId?: string; // For grouping objects
@@ -108,6 +116,9 @@ interface ToolSettings {
     fontSize: number;
     fontWeight: string;
     fontStyle: string;
+    sides?: number;
+    innerRadiusRatio?: number;
+    dash?: number[];
 }
 
 interface PDFStore {
@@ -139,6 +150,13 @@ interface PDFStore {
     selectedPageIds: string[]; // For pages
     isMultiSelection: boolean;
 
+    // Calibration
+    calibration: {
+        scale: number; // pixels per unit (e.g. 50px = 1 unit)
+        unit: string; // e.g. 'cm', 'in', 'ft', 'm'
+    };
+
+
     // Theme
     theme: 'light' | 'dark';
     toggleTheme: () => void;
@@ -165,6 +183,8 @@ interface PDFStore {
     setScale: (scale: number) => void;
     setCurrentPage: (page: number) => void;
     setIsLoading: (loading: boolean) => void;
+    setCalibration: (scale: number, unit: string) => void;
+
 
     // Tool Actions
     setActiveTool: (tool: ToolType) => void;
@@ -233,16 +253,28 @@ export const usePDFStore = create<PDFStore>()(
                 text: { ...DEFAULT_SETTINGS, color: '#000000' },
                 rectangle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
                 circle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                triangle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                star: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                polygon: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                ellipse: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
                 arrow: { ...DEFAULT_SETTINGS, color: '#000000' },
                 line: { ...DEFAULT_SETTINGS, color: '#000000' },
                 image: { ...DEFAULT_SETTINGS },
                 stamp: { ...DEFAULT_SETTINGS },
-                signature: { ...DEFAULT_SETTINGS }
+                signature: { ...DEFAULT_SETTINGS },
+                measure: { ...DEFAULT_SETTINGS, color: '#ef4444', size: 2 },
+                ocr: { ...DEFAULT_SETTINGS }
             },
 
             selectedObjectIds: [],
             selectedPageIds: [],
             isMultiSelection: false,
+
+            calibration: {
+                scale: 1, // 1px = 1px default
+                unit: 'px'
+            },
+
 
             // History Helpers
             canUndo: () => get().history.past.length > 0,
@@ -461,6 +493,8 @@ export const usePDFStore = create<PDFStore>()(
             setScale: (scale) => set({ scale }),
             setCurrentPage: (page) => set({ currentPage: page }),
             setIsLoading: (loading) => set({ isLoading: loading }),
+            setCalibration: (scale, unit) => set({ calibration: { scale, unit } }),
+
 
             setActiveTool: (tool) => {
                 set({ activeTool: tool, selectedObjectIds: [] });
@@ -611,11 +645,20 @@ export const usePDFStore = create<PDFStore>()(
                     text: { ...DEFAULT_SETTINGS, color: '#000000' },
                     rectangle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
                     circle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                    triangle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                    star: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                    polygon: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                    ellipse: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
                     arrow: { ...DEFAULT_SETTINGS, color: '#000000' },
                     line: { ...DEFAULT_SETTINGS, color: '#000000' },
                     image: { ...DEFAULT_SETTINGS },
                     stamp: { ...DEFAULT_SETTINGS },
-                    signature: { ...DEFAULT_SETTINGS }
+                    signature: { ...DEFAULT_SETTINGS },
+                    measure: { ...DEFAULT_SETTINGS, color: '#ef4444', size: 2 },
+                    redaction: { ...DEFAULT_SETTINGS, color: '#000000', size: 0 },
+                    'form-text': { ...DEFAULT_SETTINGS },
+                    'form-checkbox': { ...DEFAULT_SETTINGS },
+                    'ocr': { ...DEFAULT_SETTINGS }
                 }
             }),
 

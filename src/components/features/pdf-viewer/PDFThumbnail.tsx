@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { usePDFStore, type PDFObject } from '../../../store/pdfStore';
+import { useEditorStore } from '../../../store/editorStore';
 import { FileText, Image as ImageIcon } from 'lucide-react';
 import clsx from 'clsx';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -256,7 +257,15 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
     }
 
     return (
-        <div className={clsx("w-full h-full bg-white flex items-center justify-center relative", rendering ? "animate-pulse bg-gray-200" : "")}>
+        <div
+            className={clsx("w-full h-full bg-white flex items-center justify-center relative", rendering ? "animate-pulse bg-gray-200" : "")}
+            onContextMenu={(e) => {
+                e.preventDefault();
+                if (pageState) {
+                    useEditorStore.getState().openContextMenu(e.clientX, e.clientY, 'thumbnail', { pageId: pageState.id });
+                }
+            }}
+        >
             {/* PDF Layer */}
             <canvas ref={pdfCanvasRef} className="block mx-auto shadow-sm" />
 

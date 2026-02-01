@@ -278,6 +278,9 @@ export const EditorCanvas: React.FC = () => {
             const rect = selectionRect;
 
             currentPage.objects.forEach(obj => {
+                // Skip locked objects - they cannot be selected
+                if (obj.isLocked) return;
+
                 const objRight = obj.x + (obj.width || 0);
                 const objBottom = obj.y + (obj.height || 0);
                 const rectRight = rect.x + rect.width;
@@ -443,9 +446,12 @@ export const EditorCanvas: React.FC = () => {
             selectedObjectIds.forEach(objId => {
                 const node = stageRef.current.findOne('#' + objId);
                 if (node) {
+                    // Node position is center-based (due to offset), convert back to top-left
+                    const offsetX = node.offsetX() || 0;
+                    const offsetY = node.offsetY() || 0;
                     updateObject(objId, {
-                        x: node.x(),
-                        y: node.y()
+                        x: node.x() - offsetX,
+                        y: node.y() - offsetY
                     });
                 }
             });
@@ -459,39 +465,51 @@ export const EditorCanvas: React.FC = () => {
                 const scaleX = node.scaleX();
                 const scaleY = node.scaleY();
 
+                // Find object to determine type and current dimensions
+                const object = currentPage.objects.find(o => o.id === id);
+                if (!object) return;
+
+                // Calculate new width/height
+                const oldWidth = object.width || 0;
+                const oldHeight = object.height || 0;
+                const newWidth = oldWidth * scaleX;
+                const newHeight = oldHeight * scaleY;
+
+                // The node position is center-based (due to offsetX/Y in PDFObjectRenderer)
+                // node.x() = original_x + oldWidth/2
+                // After scaling, the offset changes to newWidth/2
+                // So: new_x = node.x() - newWidth/2
+                const newX = node.x() - newWidth / 2;
+                const newY = node.y() - newHeight / 2;
+
                 // Reset node scale to avoid compounding
                 node.scaleX(1);
                 node.scaleY(1);
 
-                // Rotation
+                // Get rotation
                 const rotation = node.rotation();
 
-                // Find object to determine type for correct scaling
-                const object = currentPage.objects.find(o => o.id === id);
-                if (!object) return;
-
                 const updates: any = {
-                    x: node.x(),
-                    y: node.y(),
+                    x: newX,
+                    y: newY,
                     rotation: rotation
                 };
 
                 if (object.type === 'path' && object.points) {
-                    // Normalize scaling to points
+                    // Scale the path points
                     const newPoints = object.points.map((val, i) => {
                         return i % 2 === 0 ? val * scaleX : val * scaleY;
                     });
                     updates.points = newPoints;
-                    updates.width = (object.width || 0) * scaleX;
-                    updates.height = (object.height || 0) * scaleY;
-
+                    updates.width = newWidth;
+                    updates.height = newHeight;
                 } else if (object.type === 'text') {
                     updates.fontSize = (object.fontSize || 16) * scaleY;
-                    updates.width = (object.width || 0) * scaleX;
-                    updates.height = (object.height || 0) * scaleY;
+                    updates.width = newWidth;
+                    updates.height = newHeight;
                 } else {
-                    updates.width = (object.width || 0) * scaleX;
-                    updates.height = (object.height || 0) * scaleY;
+                    updates.width = newWidth;
+                    updates.height = newHeight;
                 }
 
                 updateObject(id, updates);
@@ -535,9 +553,12 @@ export const EditorCanvas: React.FC = () => {
         selectedObjectIds.forEach(objId => {
             const node = stageRef.current.findOne('#' + objId);
             if (node) {
+                // Convert from center-based position to top-left for storage
+                const offsetX = node.offsetX() || 0;
+                const offsetY = node.offsetY() || 0;
                 updateObject(objId, {
-                    x: node.x(),
-                    y: node.y()
+                    x: node.x() - offsetX,
+                    y: node.y() - offsetY
                 });
             }
         });
@@ -742,9 +763,29 @@ export const EditorCanvas: React.FC = () => {
                         <Transformer
                             ref={transformerRef}
                             borderStroke="#3b82f6"
+                            borderStrokeWidth={1}
                             anchorFill="white"
                             anchorStroke="#3b82f6"
-                            anchorCornerRadius={5}
+                            anchorStrokeWidth={1.5}
+                            anchorSize={8}
+                            anchorCornerRadius={10}
+                            rotateEnabled={true}
+                            rotateAnchorOffset={30}
+                            rotateAnchorCursor="grab"
+                            rotationSnaps={[0, 45, 90, 135, 180, 225, 270, 315]}
+                            rotationSnapTolerance={5}
+                            anchorStyleFunc={(anchor) => {
+                                // Make rotation anchor bigger and styled differently
+                                if (anchor.hasName('rotater')) {
+                                    anchor.fill('#3b82f6');
+                                    anchor.stroke('#ffffff');
+                                    anchor.strokeWidth(2);
+                                    anchor.width(12);
+                                    anchor.height(12);
+                                    anchor.offsetX(6);
+                                    anchor.offsetY(6);
+                                }
+                            }}
                             boundBoxFunc={(oldBox, newBox) => {
                                 if (newBox.width < 5 || newBox.height < 5) return oldBox;
                                 return newBox;

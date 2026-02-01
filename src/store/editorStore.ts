@@ -21,6 +21,10 @@ interface ToolSettings {
     fontStyle: string;
     textAlign: 'left' | 'center' | 'right';
     eraserMode: 'standard' | 'object';
+    smartShapeMode?: boolean;
+    sides?: number;
+    innerRadiusRatio?: number;
+    dash?: number[];
 }
 
 const DEFAULT_SETTINGS: ToolSettings = {
@@ -32,7 +36,8 @@ const DEFAULT_SETTINGS: ToolSettings = {
     fontWeight: 'normal',
     fontStyle: 'normal',
     textAlign: 'left',
-    eraserMode: 'standard'
+    eraserMode: 'standard',
+    smartShapeMode: false
 };
 
 const DEFAULT_TOOL_PREFERENCES: Record<ToolType, ToolSettings> = {
@@ -44,11 +49,20 @@ const DEFAULT_TOOL_PREFERENCES: Record<ToolType, ToolSettings> = {
     text: { ...DEFAULT_SETTINGS, color: '#000000' },
     rectangle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
     circle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+    triangle: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+    star: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+    polygon: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+    ellipse: { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
     arrow: { ...DEFAULT_SETTINGS, color: '#000000' },
     line: { ...DEFAULT_SETTINGS, color: '#000000' },
     image: { ...DEFAULT_SETTINGS },
     stamp: { ...DEFAULT_SETTINGS },
-    signature: { ...DEFAULT_SETTINGS }
+    signature: { ...DEFAULT_SETTINGS },
+    measure: { ...DEFAULT_SETTINGS, color: '#ef4444', size: 2 },
+    redaction: { ...DEFAULT_SETTINGS, color: '#000000', size: 0 },
+    'form-text': { ...DEFAULT_SETTINGS },
+    'form-checkbox': { ...DEFAULT_SETTINGS },
+    'ocr': { ...DEFAULT_SETTINGS }
 };
 
 interface EditorStore {
@@ -98,7 +112,25 @@ interface EditorStore {
 
     groupObjects: (objectIds: string[]) => void;
     ungroupObjects: (objectIds: string[]) => void;
+
+    // Context Menu State
+    contextMenu: {
+        isOpen: boolean;
+        x: number;
+        y: number;
+        type: 'object' | 'page' | 'thumbnail' | 'editor-background' | null;
+        data?: any;
+    };
+    openContextMenu: (x: number, y: number, type: 'object' | 'page' | 'thumbnail' | 'editor-background', data?: any) => void;
+    closeContextMenu: () => void;
 }
+
+const deepClone = <T>(obj: T): T => {
+    if (typeof structuredClone === 'function') {
+        return structuredClone(obj);
+    }
+    return JSON.parse(JSON.stringify(obj));
+};
 
 export const useEditorStore = create<EditorStore>()(
     devtools(
@@ -110,17 +142,27 @@ export const useEditorStore = create<EditorStore>()(
             activeTool: 'select',
             toolPreferences: DEFAULT_TOOL_PREFERENCES,
             selectedObjectIds: [],
-            recentColors: ['#000000', '#df4b26', '#10B981', '#3B82F6', '#6366F1', '#ffffff', '#ef4444', '#f59e0b'], // Initial palette
+            recentColors: ['#000000', '#df4b26', '#10B981', '#3B82F6', '#6366F1', '#ffffff', '#ef4444', '#f59e0b', '#8B5CF6'], // Initial palette (9 colors)
             history: { past: [], future: [] },
 
             addColorToHistory: (color) => set(state => {
-                const newRecent = [color, ...state.recentColors.filter(c => c !== color)].slice(0, 8);
+                const newRecent = [color, ...state.recentColors.filter(c => c !== color)].slice(0, 9);
                 return { recentColors: newRecent };
+            }),
+
+            contextMenu: { isOpen: false, x: 0, y: 0, type: null },
+
+            openContextMenu: (x, y, type, data) => set({
+                contextMenu: { isOpen: true, x, y, type, data }
+            }),
+
+            closeContextMenu: () => set({
+                contextMenu: { isOpen: false, x: 0, y: 0, type: null, data: undefined }
             }),
 
             initEditor: (page) => {
                 // Deep clone the page to ensure isolation
-                const pageClone = JSON.parse(JSON.stringify(page));
+                const pageClone = deepClone(page);
                 set({
                     isActive: true,
                     originalPageId: page.id,
@@ -128,7 +170,8 @@ export const useEditorStore = create<EditorStore>()(
                     history: { past: [], future: [] },
                     selectedObjectIds: [],
                     scale: 1, // Start at 100% or fit? Let's say 1 for now.
-                    activeTool: 'select'
+                    activeTool: 'select',
+                    contextMenu: { isOpen: false, x: 0, y: 0, type: null }
                 });
             },
 
@@ -163,7 +206,7 @@ export const useEditorStore = create<EditorStore>()(
                 const { currentPage, history } = get();
                 if (!currentPage) return;
 
-                const snapshot = JSON.parse(JSON.stringify(currentPage));
+                const snapshot = deepClone(currentPage);
                 const newPast = [...history.past, snapshot].slice(-50);
                 set({
                     history: {
@@ -178,6 +221,8 @@ export const useEditorStore = create<EditorStore>()(
                 if (history.past.length === 0 || !currentPage) return;
 
                 const previous = history.past[history.past.length - 1];
+                if (!previous) return; // Stability check
+
                 const newPast = history.past.slice(0, -1);
 
                 set({
@@ -191,6 +236,8 @@ export const useEditorStore = create<EditorStore>()(
                 if (history.future.length === 0 || !currentPage) return;
 
                 const next = history.future[0];
+                if (!next) return; // Stability check
+
                 const newFuture = history.future.slice(1);
 
                 set({

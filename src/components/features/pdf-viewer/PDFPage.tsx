@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { usePDFStore } from '../../../store/pdfStore';
+import { useEditorStore } from '../../../store/editorStore';
 import { Loader2 } from 'lucide-react';
 import { PageSelectionOverlay } from '../page-operations/PageSelectionOverlay';
 import { CanvasLayer } from '../editor/CanvasLayer';
@@ -111,6 +112,11 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                 height: dimensions ? dimensions.height : '800px',
                 transform: `rotate(${pageState.rotation || 0}deg) scaleX(${pageState.flipX ? -1 : 1}) scaleY(${pageState.flipY ? -1 : 1})`,
                 transition: 'transform 0.3s ease-in-out'
+            }}
+            onContextMenu={(e) => {
+                e.preventDefault();
+                const { openContextMenu } = useEditorStore.getState();
+                openContextMenu(e.clientX, e.clientY, 'page', { pageId: pageState.id });
             }}
         >
             <PageSelectionOverlay pageNumber={pageNumber} pageId={pageState.id!} />

@@ -1,13 +1,12 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { usePDFStore } from '../../../store/pdfStore';
 import { useEditorStore } from '../../../store/editorStore';
-import { Copy, Trash2, ArrowUp, ArrowDown, Edit3, Upload, ClipboardPaste, Sun, Moon, RotateCcw } from 'lucide-react'; // Added Icons
+import { Copy, Trash2, ArrowUp, ArrowDown, Edit3, Upload, ClipboardPaste, Sun, Moon, Split, StickyNote, RefreshCw, Ruler } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { loadPDF } from '../../../utils/pdfOps'; // Import loadPDF
+import { loadPDF } from '../../../utils/pdfOps';
 
 export const ContextMenu: React.FC = () => {
     const {
-        selectedObjectIds,
         deleteObjects,
         duplicateObject,
         reorderObject,
@@ -20,332 +19,213 @@ export const ContextMenu: React.FC = () => {
         redo
     } = usePDFStore();
 
-    const { initEditor } = useEditorStore();
+    const {
+        contextMenu,
+        closeContextMenu,
+        initEditor,
+        currentPage,
+        addObject,
+        deleteObjects: editorDeleteObjects,
+        duplicateObject: editorDuplicateObject,
+        reorderObject: editorReorderObject
+    } = useEditorStore();
 
-    // Simple state for menu position and visibility
-    const [visible, setVisible] = useState(false);
-    const [position, setPosition] = useState({ x: 0, y: 0 });
-    const [targetPageId, setTargetPageId] = useState<string | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null); // Ref for hidden input
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Global right click listener
+    // Close on click outside or escape
     useEffect(() => {
-        const handleContextMenu = (e: MouseEvent) => {
-            // Check if we are right-clicking on a canvas or object
-
-            // NOTE: We allow the menu even if editor is not "active" in the strict sense, 
-            // as we want to support Home Page actions (Upload etc)
-
-            // 1. If Object Selected -> Show Object Menu
-            if (selectedObjectIds.length > 0) {
-                e.preventDefault();
-                setPosition({ x: e.pageX, y: e.pageY });
-                setTargetPageId(null);
-                setVisible(true);
-                return;
-            }
-
-            // 2. If Clicked on a Page -> Show Page Menu (Edit Page, Delete, Duplicate)
-            const target = e.target as HTMLElement;
-            const pageIdElement = target.closest('[data-page-id]');
-
-            let foundPageId: string | null = null;
-
-            if (pageIdElement) {
-                foundPageId = pageIdElement.getAttribute('data-page-id');
-            } else {
-                // Fallback to legacy ID check just in case, or for validation
-                const pageElement = target.closest('[id^="page-"]');
-                if (pageElement) {
-                    const pageNumber = parseInt(pageElement.id.replace('page-', ''));
-                    const page = usePDFStore.getState().pages.find(p => p.pageNumber === pageNumber);
-                    if (page) foundPageId = page.id;
-                }
-            }
-
-            if (foundPageId) {
-                e.preventDefault();
-                e.stopPropagation(); // Stop bubbling to prevent double-handling if any
-                setPosition({ x: e.pageX, y: e.pageY });
-                setTargetPageId(foundPageId);
-                setVisible(true);
-                return;
-            }
-
-            // 3. If Clicked on Background (Home Page) -> Show Global Menu
-            // We assume if it wasn't an object or a page, it's the background.
-            // But we should verify it's not some other UI element like the sidebar or toolbar.
-            // A simple check is if it's within the main scroll container or body, but not inside sidebar/toolbar.
-            const isInsideToolbar = target.closest('.toolbar-container') || target.closest('nav') || target.closest('[role="toolbar"]');
-            const isInsideSidebar = target.closest('.sidebar-container') || target.closest('aside');
-
-            if (!isInsideToolbar && !isInsideSidebar) {
-                e.preventDefault();
-                setPosition({ x: e.pageX, y: e.pageY });
-                setTargetPageId(null);
-                setVisible(true);
+        const handleClickOutside = (e: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+                closeContextMenu();
             }
         };
 
-        const handleClick = () => setVisible(false);
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                closeContextMenu();
+            }
+        };
 
-        // Use capture phase to ensure we catch the event before any child stops it
-        document.addEventListener('contextmenu', handleContextMenu, true);
-        document.addEventListener('click', handleClick);
+        if (contextMenu.isOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+            document.addEventListener('keydown', handleKeyDown);
+        }
 
         return () => {
-            document.removeEventListener('contextmenu', handleContextMenu, true);
-            document.removeEventListener('click', handleClick);
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleKeyDown);
         };
-    }, [selectedObjectIds]);
+    }, [contextMenu.isOpen, closeContextMenu]);
 
-    if (!visible) return null;
+    if (!contextMenu.isOpen) return null;
 
-    const getObjectContext = () => {
-        if (selectedObjectIds.length === 0) return null;
-        const objId = selectedObjectIds[0];
-        // Find page containing this object
-        const page = pages.find(p => p.objects.some(o => o.id === objId));
-        return page ? { pageId: page.id, objectId: objId } : null;
+    const { x, y, type, data } = contextMenu;
+
+    // --- Actions ---
+
+    const handleObjectAction = (action: () => void) => {
+        action();
+        closeContextMenu();
     };
 
-    const handleDelete = () => {
-        if (selectedObjectIds.length > 0) {
-            deleteObjects(selectedObjectIds);
-        }
-        setVisible(false);
-    }
-
-    const handleDuplicate = () => {
-        const ctx = getObjectContext();
-        if (ctx) {
-            duplicateObject(ctx.pageId, ctx.objectId);
-        }
-        setVisible(false);
+    const handlePageAction = (action: () => void) => {
+        action();
+        closeContextMenu();
     };
 
-    const handleLayering = (direction: 'front' | 'back') => {
-        const ctx = getObjectContext();
-        if (ctx) {
-            reorderObject(ctx.pageId, ctx.objectId, direction);
-        }
-        setVisible(false);
-    };
+    // --- Render Sections ---
 
-    const handleEditPage = () => {
-        if (targetPageId) {
-            const page = pages.find(p => p.id === targetPageId);
-            if (page) {
-                initEditor(page);
-            }
-        }
-        setVisible(false);
-    };
+    // --- Render Sections ---
 
-    const handleDeletePage = () => {
-        if (targetPageId) {
-            if (confirm('Delete this page?')) {
-                usePDFStore.getState().deletePage(targetPageId);
-            }
-        }
-        setVisible(false);
-    };
+    // ...
 
-    const handleDuplicatePage = () => {
-        if (targetPageId) {
-            usePDFStore.getState().duplicatePage(targetPageId);
-        }
-        setVisible(false);
-    };
 
-    // --- Global / Home Actions ---
+    // ...
 
-    const handleUploadClick = () => {
-        fileInputRef.current?.click();
-        setVisible(false);
-    };
+    const renderObjectMenu = () => (
+        <>
+            <div className="px-3 py-1.5 text-[10px] font-black text-gray-400 dark:text-zinc-600 uppercase tracking-widest">
+                Object
+            </div>
+            <button key="del" onClick={() => handleObjectAction(() => editorDeleteObjects(data?.objectIds || []))} className="w-full text-left px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-3 text-sm transition-colors">
+                <Trash2 size={15} /> Delete
+            </button>
+            <button key="dup" onClick={() => handleObjectAction(() => editorDuplicateObject(data?.objectIds || []))} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 flex items-center gap-3 text-sm transition-colors">
+                <Copy size={15} /> Duplicate
+            </button>
+            <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+            <button key="front" onClick={() => handleObjectAction(() => editorReorderObject(data?.objectIds[0], 'front'))} disabled={data?.objectIds?.length !== 1} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 disabled:opacity-50 flex items-center gap-3 text-sm transition-colors">
+                <ArrowUp size={15} /> Bring to Front
+            </button>
+            <button key="back" onClick={() => handleObjectAction(() => editorReorderObject(data?.objectIds[0], 'back'))} disabled={data?.objectIds?.length !== 1} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 disabled:opacity-50 flex items-center gap-3 text-sm transition-colors">
+                <ArrowDown size={15} /> Send to Back
+            </button>
+            {currentPage?.objects.find(o => o.id === data?.objectIds?.[0])?.type === 'measure' && (
+                <>
+                    <button key="calibrate" onClick={() => handleObjectAction(() => {
+                        const obj = currentPage.objects.find(o => o.id === data?.objectIds[0]);
+                        if (obj && obj.type === 'measure' && obj.points) {
+                            const [x1, y1, x2, y2] = obj.points;
+                            const distPx = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
 
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = async (ev) => {
-                const arrayBuffer = ev.target?.result as ArrayBuffer;
-                if (!arrayBuffer) return;
-                try {
-                    setIsLoading(true);
-                    const doc = await loadPDF(arrayBuffer.slice(0));
-                    setPdfDocument(doc, arrayBuffer, file.name);
-                } catch (error) {
-                    console.error("Failed to load PDF:", error);
-                    alert("Error loading PDF");
-                } finally {
-                    setIsLoading(false);
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        }
-        e.target.value = '';
-    };
-
-    const handlePaste = async () => {
-        try {
-            const items = await navigator.clipboard.read();
-            for (const item of items) {
-                if (item.types.includes('image/png') || item.types.includes('image/jpeg')) {
-                    const blob = await item.getType(item.types.includes('image/png') ? 'image/png' : 'image/jpeg');
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        // Insert image logic (Requires active page usually, but for Home we might not have one)
-                        // If we have pages, add to current page.
-                        const { currentPage, pages, addObject } = usePDFStore.getState();
-                        const page = pages.find(p => p.pageNumber === currentPage);
-                        if (page) {
-                            const img = new Image();
-                            img.onload = () => {
-                                addObject(page.id, {
-                                    id: crypto.randomUUID(),
-                                    type: 'image',
-                                    x: 100, y: 100,
-                                    width: 200, height: (img.height / img.width) * 200,
-                                    src: e.target?.result as string
-                                });
-                            };
-                            img.src = e.target?.result as string;
-                        } else {
-                            alert("Load a PDF first to paste images.");
+                            const knownDistStr = prompt(`Enter the actual distance for this measurement (current: ${Math.round(distPx)}px):`);
+                            if (knownDistStr) {
+                                const knownDist = parseFloat(knownDistStr);
+                                if (!isNaN(knownDist) && knownDist > 0) {
+                                    const unit = prompt("Enter the unit (e.g. cm, m, inch):", "cm") || "cm";
+                                    // Scale = px / unit
+                                    const newScale = distPx / knownDist;
+                                    usePDFStore.getState().setCalibration(newScale, unit);
+                                }
+                            }
                         }
-                    };
-                    reader.readAsDataURL(blob);
-                }
-            }
-        } catch (err) {
-            console.error('Failed to read clipboard contents: ', err);
-            // Fallback for simple text paste potentially, or just alert
-        }
-        setVisible(false);
-    };
+                    })} className="w-full text-left px-4 py-2 hover:bg-green-50 dark:hover:bg-green-900/10 text-green-600 dark:text-green-400 flex items-center gap-3 text-sm transition-colors">
+                        <Ruler size={15} /> Calibrate Scale
+                    </button>
+                    <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+                </>
+            )}
+        </>
+    );
 
+    const renderPageMenu = () => (
+        <>
+            <div className="px-3 py-1.5 text-[10px] font-black text-gray-400 dark:text-zinc-600 uppercase tracking-widest">
+                Page
+            </div>
+            <button key="edit" onClick={() => handlePageAction(async () => {
+                // If we are on Home page list, finding page by ID. If in editor, existing logic applies.
+                const page = pages.find(p => p.id === data?.pageId);
+                if (page) initEditor(page);
+            })} className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center gap-3 text-sm font-medium transition-colors">
+                <Edit3 size={15} /> Edit Page
+            </button>
+            <button key="dup_page" onClick={() => handlePageAction(() => usePDFStore.getState().duplicatePage(data?.pageId))} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-zinc-200 flex items-center gap-3 text-sm font-medium transition-colors">
+                <Copy size={15} /> Duplicate Page
+            </button>
+            <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+            <button key="del_page" onClick={() => handlePageAction(() => { if (confirm('Delete page?')) usePDFStore.getState().deletePage(data?.pageId); })} className="w-full text-left px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-3 text-sm font-medium transition-colors">
+                <Trash2 size={15} /> Delete Page
+            </button>
+        </>
+    );
+
+    const renderThumbnailMenu = () => renderPageMenu(); // Thumbnails share page actions mostly
+
+    const renderEditorBackgroundMenu = () => (
+        <>
+            <div className="px-3 py-1.5 text-[10px] font-black text-gray-400 dark:text-zinc-600 uppercase tracking-widest">
+                Editor
+            </div>
+            <button
+                onClick={() => {
+                    addObject({
+                        id: crypto.randomUUID(),
+                        type: 'text',
+                        x: (data?.x || 100), // Use click position if available (need to map store coords)
+                        y: (data?.y || 100),
+                        text: 'New Text',
+                        fontSize: 24,
+                        fill: '#000000',
+                        width: 200,
+                        height: 50
+                    });
+                    closeContextMenu();
+                }}
+                className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-zinc-200 flex items-center gap-3 text-sm font-medium transition-colors"
+            >
+                <StickyNote size={15} /> Add Text Here
+            </button>
+
+            <button
+                onClick={async () => {
+                    try {
+                        const items = await navigator.clipboard.read();
+                        // Paste logic similar to before, but adapted
+                        for (const item of items) {
+                            if (item.types.includes('image/png') || item.types.includes('image/jpeg')) {
+                                const blob = await item.getType(item.types.includes('image/png') ? 'image/png' : 'image/jpeg');
+                                const reader = new FileReader();
+                                reader.onload = (e) => {
+                                    addObject({
+                                        id: crypto.randomUUID(),
+                                        type: 'image',
+                                        x: data?.x || 100, y: data?.y || 100,
+                                        width: 200, height: 200, // Placeholder aspect
+                                        src: e.target?.result as string
+                                    });
+                                };
+                                reader.readAsDataURL(blob);
+                            }
+                        }
+                    } catch (e) { console.error(e); }
+                    closeContextMenu();
+                }}
+                className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-zinc-200 flex items-center gap-3 text-sm font-medium transition-colors"
+            >
+                <ClipboardPaste size={15} /> Paste
+            </button>
+            <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+            {renderPageMenu()}
+        </>
+    );
 
     return createPortal(
-        <>
-            <div
-                ref={menuRef}
-                style={{ top: position.y, left: position.x }}
-                className="fixed z-[100] bg-white dark:bg-zinc-900 rounded-xl shadow-2xl shadow-black/20 dark:shadow-black/50 border border-gray-100 dark:border-white/10 min-w-[220px] py-1.5 animate-in fade-in zoom-in-95 duration-150 overflow-hidden"
-            >
-                {/* 1. OBJECT ACTIONS */}
-                {selectedObjectIds.length > 0 && (
-                    <>
-                        <div className="px-3 py-1.5 text-[10px] font-black text-gray-400 dark:text-zinc-600 uppercase tracking-widest">
-                            Object Actions
-                        </div>
-                        <button onClick={handleDelete} className="w-full text-left px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-3 text-sm transition-colors">
-                            <Trash2 size={15} /> Delete
-                        </button>
-
-                        <button
-                            onClick={handleDuplicate}
-                            disabled={selectedObjectIds.length !== 1}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 disabled:text-gray-400 dark:disabled:text-zinc-600 flex items-center gap-3 text-sm transition-colors"
-                        >
-                            <Copy size={15} /> Duplicate
-                        </button>
-
-                        <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
-
-                        <button
-                            onClick={() => handleLayering('front')}
-                            disabled={selectedObjectIds.length !== 1}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 disabled:text-gray-400 dark:disabled:text-zinc-600 flex items-center gap-3 text-sm transition-colors"
-                        >
-                            <ArrowUp size={15} /> Bring to Front
-                        </button>
-                        <button
-                            onClick={() => handleLayering('back')}
-                            disabled={selectedObjectIds.length !== 1}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 disabled:text-gray-400 dark:disabled:text-zinc-600 flex items-center gap-3 text-sm transition-colors"
-                        >
-                            <ArrowDown size={15} /> Send to Back
-                        </button>
-                    </>
-                )}
-
-                {/* 2. PAGE ACTIONS */}
-                {selectedObjectIds.length === 0 && targetPageId && (
-                    <>
-                        <div className="px-3 py-1.5 text-[10px] font-black text-gray-400 dark:text-zinc-600 uppercase tracking-widest">
-                            Page Actions
-                        </div>
-
-                        <button
-                            onClick={handleEditPage}
-                            className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center gap-3 text-sm font-medium transition-colors"
-                        >
-                            <Edit3 size={15} /> Edit Page
-                        </button>
-
-                        <button
-                            onClick={handleDuplicatePage}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-zinc-200 flex items-center gap-3 text-sm font-medium transition-colors"
-                        >
-                            <Copy size={15} /> Duplicate Page
-                        </button>
-
-                        <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
-
-                        <button
-                            onClick={handleDeletePage}
-                            className="w-full text-left px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-3 text-sm font-medium transition-colors"
-                        >
-                            <Trash2 size={15} /> Delete Page
-                        </button>
-                    </>
-                )}
-
-                {/* 3. GLOBAL / HOME ACTIONS (Default if nothing else matches) */}
-                {selectedObjectIds.length === 0 && !targetPageId && (
-                    <>
-                        <div className="px-3 py-1.5 text-[10px] font-black text-gray-400 dark:text-zinc-600 uppercase tracking-widest">
-                            Editor Actions
-                        </div>
-
-                        <button
-                            onClick={handleUploadClick}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-zinc-200 flex items-center gap-3 text-sm font-medium transition-colors"
-                        >
-                            <Upload size={15} className="text-blue-500" /> Upload PDF
-                        </button>
-
-                        <button
-                            onClick={handlePaste}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-zinc-200 flex items-center gap-3 text-sm font-medium transition-colors"
-                        >
-                            <ClipboardPaste size={15} className="text-orange-500" /> Paste
-                        </button>
-
-                        <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
-
-                        <button
-                            onClick={() => { toggleTheme(); setVisible(false); }}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-zinc-200 flex items-center gap-3 text-sm font-medium transition-colors"
-                        >
-                            {theme === 'dark' ? <Sun size={15} className="text-yellow-400" /> : <Moon size={15} className="text-indigo-400" />}
-                            {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-                        </button>
-                    </>
-                )}
-            </div>
-            {/* Hidden Input for Upload */}
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                onChange={handleFileChange}
-            />
-        </>,
+        <div
+            ref={menuRef}
+            style={{
+                top: Math.min(y, window.innerHeight - 300), // Prevent overflow bottom
+                left: Math.min(x, window.innerWidth - 220), // Prevent overflow right
+            }}
+            className="fixed z-[9999] bg-white dark:bg-zinc-900 rounded-xl shadow-2xl shadow-black/20 dark:shadow-black/50 border border-gray-100 dark:border-white/10 min-w-[220px] py-1.5 animate-in fade-in zoom-in-95 duration-100 origin-top-left overflow-hidden"
+            onContextMenu={(e) => e.preventDefault()}
+        >
+            {type === 'object' && renderObjectMenu()}
+            {type === 'page' && renderPageMenu()}
+            {type === 'thumbnail' && renderThumbnailMenu()}
+            {type === 'editor-background' && renderEditorBackgroundMenu()}
+        </div>,
         document.body
     );
 };

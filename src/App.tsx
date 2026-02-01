@@ -4,11 +4,13 @@ import { PDFViewer } from './components/features/pdf-viewer/PDFViewer';
 import './utils/pdfWorker'; // Import worker config
 import { EditorMode } from './components/features/editor/EditorMode';
 import { ContextMenu } from './components/features/editor/ContextMenu';
+import { useEditorStore } from './store/editorStore';
 
 import { usePDFStore } from './store/pdfStore';
 
 export default function App() {
   const { theme } = usePDFStore();
+  const { isActive } = useEditorStore();
 
   return (
     <div className={`flex flex-col h-screen w-screen overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}>
@@ -37,7 +39,7 @@ export default function App() {
           </div>
         </div>
       </div>
-      <EditorMode />
+      {isActive && <EditorMode />}
       <ContextMenu />
     </div>
   );

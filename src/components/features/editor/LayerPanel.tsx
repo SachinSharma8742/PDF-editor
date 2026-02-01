@@ -189,14 +189,8 @@ export const LayerPanel: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-white dark:bg-zinc-900 select-none">
-            <div className="p-4 border-b border-gray-100 dark:border-zinc-800 flex justify-between items-center bg-gray-50/50 dark:bg-zinc-900">
-                <h3 className="text-xs font-black uppercase text-gray-400 dark:text-zinc-500 tracking-widest">
-                    Layers ({currentPage.objects.length})
-                </h3>
-            </div>
-
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+        <div className="flex flex-col h-full bg-transparent select-none overflow-hidden">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
                 <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
