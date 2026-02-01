@@ -83,6 +83,10 @@ export interface PageState {
 
     // State
     isEdited: boolean;
+
+    // Transformations
+    flipX?: boolean;
+    flipY?: boolean;
 }
 
 // --- History Model ---
@@ -147,12 +151,15 @@ interface PDFStore {
     reorderPages: (fromIndex: number, toIndex: number) => void;
     deletePage: (pageId: string) => void;
     deleteSelectedPages: () => void;
+    rotatePage: (pageId: string, direction: 'cw' | 'ccw') => void;
+    flipPage: (pageId: string, direction: 'horizontal' | 'vertical') => void;
 
     // Page Selection
     togglePageSelection: (pageId: string) => void;
     selectAllPages: () => void;
     deselectAllPages: () => void;
     duplicateSelectedPages: () => void;
+    duplicatePage: (pageId: string) => void;
 
     // View Actions
     setScale: (scale: number) => void;
@@ -210,7 +217,7 @@ export const usePDFStore = create<PDFStore>()(
             history: { past: [], future: [] },
 
             // Global Theme
-            theme: 'light',
+            theme: 'dark',
             toggleTheme: () => set(state => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
 
             activeTool: 'select',
@@ -421,6 +428,33 @@ export const usePDFStore = create<PDFStore>()(
                 set(state => ({
                     pages: [...state.pages, ...newPages].map((p, i) => ({ ...p, pageNumber: i + 1 })),
                     selectedPageIds: newPages.map(p => p.id)
+                }));
+            },
+
+            duplicatePage: (pageId: string) => {
+                const { pages, saveToHistory } = get();
+                const page = pages.find(p => p.id === pageId);
+                if (!page) return;
+
+                saveToHistory();
+
+                const newPage = {
+                    ...page,
+                    id: `page-dup-${Date.now()}`,
+                    pageNumber: pages.length + 1, // Will be re-indexed
+                    originalPageIndex: page.originalPageIndex,
+                    paths: JSON.parse(JSON.stringify(page.paths)),
+                    objects: JSON.parse(JSON.stringify(page.objects)),
+                    isEdited: true
+                };
+
+                // Insert after the current page
+                const index = pages.findIndex(p => p.id === pageId);
+                const newPages = [...pages];
+                newPages.splice(index + 1, 0, newPage);
+
+                set(state => ({
+                    pages: newPages.map((p, i) => ({ ...p, pageNumber: i + 1 }))
                 }));
             },
 
@@ -651,6 +685,34 @@ export const usePDFStore = create<PDFStore>()(
                             ),
                             isEdited: true
                         };
+                    })
+                }));
+            },
+
+            rotatePage: (pageId, direction) => {
+                get().saveToHistory();
+                set(state => ({
+                    pages: state.pages.map(p => {
+                        if (p.id !== pageId) return p;
+                        const currentRotation = p.rotation || 0;
+                        const delta = direction === 'cw' ? 90 : -90;
+                        let newRotation = (currentRotation + delta) % 360;
+                        if (newRotation < 0) newRotation += 360;
+                        return { ...p, rotation: newRotation, isEdited: true };
+                    })
+                }));
+            },
+
+            flipPage: (pageId, direction) => {
+                get().saveToHistory();
+                set(state => ({
+                    pages: state.pages.map(p => {
+                        if (p.id !== pageId) return p;
+                        if (direction === 'horizontal') {
+                            return { ...p, flipX: !p.flipX, isEdited: true };
+                        } else {
+                            return { ...p, flipY: !p.flipY, isEdited: true };
+                        }
                     })
                 }));
             }

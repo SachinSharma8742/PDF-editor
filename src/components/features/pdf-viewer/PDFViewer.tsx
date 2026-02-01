@@ -3,8 +3,6 @@ import { usePDFStore } from '../../../store/pdfStore';
 import { PDFPage } from './PDFPage';
 import { FileText } from 'lucide-react';
 
-import { ContextMenu } from '../editor/ContextMenu';
-
 
 export const PDFViewer: React.FC = () => {
     const {
@@ -135,7 +133,6 @@ export const PDFViewer: React.FC = () => {
             {(pages as any[]).map((page: any) => (
                 <PDFPage key={page.pageNumber} pageNumber={page.pageNumber} />
             ))}
-            <ContextMenu />
         </div>
     );
 };

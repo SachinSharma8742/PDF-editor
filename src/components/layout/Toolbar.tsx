@@ -35,6 +35,9 @@ import {
     Moon,
     Palette,
     Layers,
+    RotateCw,
+    FlipHorizontal,
+    FlipVertical,
     Type as TypeIcon,
     Hash
 } from 'lucide-react';
@@ -76,6 +79,8 @@ export const Toolbar: React.FC = () => {
         ungroupObjects,
         duplicateObject,
         reorderObject,
+        rotatePage,
+        flipPage,
         theme,
         toggleTheme
     } = usePDFStore();
@@ -205,26 +210,19 @@ export const Toolbar: React.FC = () => {
                 </div>
 
                 <div className={clsx("flex items-center gap-1 pr-2 mr-2 border-r border-gray-200 dark:border-white/10", !hasPages && "opacity-40 pointer-events-none")}>
-                    {drawingTools.map((t) => (
-                        <Tooltip key={t.id} content={t.label}>
-                            <button onClick={() => setActiveTool(t.id as any)} disabled={!hasPages} className={clsx("p-2 rounded-xl transition-all duration-200 relative group", activeTool === t.id ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5", !hasPages && "cursor-not-allowed")}>
-                                <t.icon size={18} strokeWidth={activeTool === t.id ? 2.5 : 2} />
-                            </button>
-                        </Tooltip>
-                    ))}
-                </div>
-
-                <div className={clsx("flex items-center gap-1 pr-2 mr-2 border-r border-gray-200 dark:border-white/10", !hasPages && "opacity-40 pointer-events-none")}>
-                    {shapeTools.map((t) => (
-                        <Tooltip key={t.id} content={t.label}>
-                            <button onClick={() => setActiveTool(t.id as any)} disabled={!hasPages} className={clsx("p-2 rounded-xl transition-all duration-200 relative group", activeTool === t.id ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5", !hasPages && "cursor-not-allowed")}>
-                                <t.icon size={18} strokeWidth={activeTool === t.id ? 2.5 : 2} />
-                            </button>
-                        </Tooltip>
-                    ))}
-                    <Tooltip content="Insert Image">
-                        <button onClick={() => imageInputRef.current?.click()} disabled={!hasPages} className={clsx("p-2 rounded-xl text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-100 hover:bg-gray-100 dark:hover:bg-white/5 transition-all", !hasPages && "cursor-not-allowed")}>
-                            <ImageIcon size={18} strokeWidth={2} />
+                    <Tooltip content="Rotate Page">
+                        <button onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) rotatePage(p.id, 'cw'); }} disabled={!hasPages} className={clsx("p-2 rounded-xl transition-all duration-200 relative group text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5", !hasPages && "cursor-not-allowed")}>
+                            <RotateCw size={18} strokeWidth={2} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip content="Flip Horizontal">
+                        <button onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) flipPage(p.id, 'horizontal'); }} disabled={!hasPages} className={clsx("p-2 rounded-xl transition-all duration-200 relative group text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5", !hasPages && "cursor-not-allowed")}>
+                            <FlipHorizontal size={18} strokeWidth={2} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip content="Flip Vertical">
+                        <button onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) flipPage(p.id, 'vertical'); }} disabled={!hasPages} className={clsx("p-2 rounded-xl transition-all duration-200 relative group text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5", !hasPages && "cursor-not-allowed")}>
+                            <FlipVertical size={18} strokeWidth={2} />
                         </button>
                     </Tooltip>
                 </div>

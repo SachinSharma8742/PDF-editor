@@ -45,6 +45,7 @@ export const SortablePageItem: React.FC<SortablePageItemProps> = ({
         <div
             ref={setNodeRef}
             style={style}
+            data-page-id={id}
             className={clsx(
                 "relative group cursor-pointer transition-all duration-300 rounded-[24px] p-3 mb-4",
                 isSelected

@@ -30,6 +30,10 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
     const groupRef = useRef<any>(null);
     const [isEditing, setIsEditing] = React.useState(object.isNew);
 
+    // Debug Log
+    console.log(`[Renderer] ${object.id} (${object.type}) Opacity:`, object.opacity);
+
+
     // If it's a new text object, focus it immediately
     useEffect(() => {
         if (object.type === 'text' && object.isNew && !isEditing) {
@@ -99,12 +103,21 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
         width: width,
         height: height,
         rotation: object.rotation || 0,
+        // opacity: object.opacity ?? 1, <--- Removed from Group to avoid issues, applying to children directly
         draggable: isSelectionEnabled && !isLocked && !isEditing,
         listening: isSelectionEnabled,
         onClick: (e: any) => { if (isSelectionEnabled) onSelect(e); },
         onDblClick: handleTextDblClick,
         onTap: (e: any) => { if (isSelectionEnabled) onSelect(e); },
         onDblTap: handleTextDblClick,
+        onContextMenu: (e: any) => {
+            if (isSelectionEnabled) {
+                e.evt.preventDefault(); // Stop Browser Menu immediately
+                // Tag the event so global listener knows we hit an object
+                e.evt._pdfEditorHit = 'object';
+                onSelect(e);
+            }
+        },
         onMouseEnter: (e: any) => {
             if (isSelectionEnabled && !isLocked) {
                 e.target.getStage().container().style.cursor = object.type === 'text' ? 'text' : 'move';
@@ -132,7 +145,7 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                         textDecoration={object.fontStyle?.includes('underline') ? 'underline' : ''}
                         align={object.align || 'left'}
                         verticalAlign="middle"
-                        opacity={object.opacity}
+                        opacity={object.opacity ?? 1}
                         visible={!isEditing}
                     />
                     {isEditing && (
@@ -152,6 +165,7 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     strokeWidth={object.strokeWidth || 2}
                     fill={object.fill || 'transparent'}
                     cornerRadius={5}
+                    opacity={object.opacity ?? 1}
                 />
             )}
 
@@ -164,10 +178,11 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     stroke={object.stroke || 'black'}
                     strokeWidth={object.strokeWidth || 2}
                     fill={object.fill || 'transparent'}
+                    opacity={object.opacity ?? 1}
                 />
             )}
 
-            {object.type === 'image' && <URLImage {...innerProps} object={object} />}
+            {object.type === 'image' && <URLImage {...innerProps} object={object} opacity={object.opacity ?? 1} />}
 
             {object.type === 'path' && object.points && (
                 <Line
@@ -177,7 +192,6 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     tension={0.5}
                     lineCap="round"
                     lineJoin="round"
-                    opacity={object.opacity}
                     x={innerX}
                     y={innerY}
                     fill="transparent"

@@ -353,7 +353,85 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 </span>
             </div>
 
-            {/* Color Palette (Common) */}
+            {/* Opacity Slider */}
+            {/* Show for Image tool, or if we have a selection (Image/Shape/Text) */}
+            {(activeTool === 'image' || (hasSelection && selectedObj)) && (
+                <div className="space-y-3">
+                    <SectionLabel label="Opacity" icon={<Hash size={12} />} />
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={Math.round((hasSelection && selectedObj ? (selectedObj.opacity ?? 1) : (currentSettings.opacity ?? 1)) * 100)}
+                            onChange={(e) => {
+                                const val = Number(e.target.value) / 100;
+                                if (hasSelection && selectedObj) {
+                                    updateObject(selectedObj.id, { opacity: val });
+                                } else {
+                                    updateToolSettings({ opacity: val });
+                                }
+                            }}
+                            className="flex-1 h-1 bg-zinc-700 rounded-full appearance-none accent-blue-500"
+                        />
+                        <span className="text-xs font-mono text-zinc-500 w-8 text-right">
+                            {Math.round((hasSelection && selectedObj ? (selectedObj.opacity ?? 1) : (currentSettings.opacity ?? 1)) * 100)}%
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {/* Shape Fill (Selection Only) */}
+            {/* We only allow editing Fill for existing shapes, as ToolSettings doesn't support fill preference yet */}
+            {(hasSelection && selectedObj && ['rectangle', 'circle'].includes(selectedObj.type)) && (
+                <div className="space-y-4 pt-4 border-t border-white/5">
+                    {/* Fill Section */}
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <SectionLabel label="Fill" icon={<Palette size={12} />} />
+                            <button
+                                onClick={() => updateObject(selectedObj.id, { fill: selectedObj.fill === 'transparent' ? '#000000' : 'transparent' })}
+                                className={clsx(
+                                    "text-[10px] font-bold px-2 py-1 rounded border transition-all flex items-center gap-1.5",
+                                    selectedObj.fill === 'transparent'
+                                        ? "bg-blue-600/20 text-blue-400 border-blue-500/30"
+                                        : "bg-zinc-800 text-zinc-400 border-white/5 hover:bg-zinc-700"
+                                )}
+                            >
+                                <div className={clsx("w-3 h-3 rounded-sm border", selectedObj.fill === 'transparent' ? "border-blue-400 bg-transparent" : "border-zinc-500 bg-white")} />
+                                NO FILL
+                            </button>
+                        </div>
+
+                        {selectedObj.fill !== 'transparent' && (
+                            <div className="grid grid-cols-5 gap-2">
+                                {recentColors.slice(0, 5).map((color: string, i: number) => (
+                                    <button
+                                        key={i}
+                                        onClick={() => updateObject(selectedObj.id, { fill: color })}
+                                        className={clsx(
+                                            "aspect-square rounded-md border border-white/10 hover:border-white/50 transition-all",
+                                            selectedObj.fill === color && "ring-2 ring-blue-500 ring-offset-2 ring-offset-[#121214]"
+                                        )}
+                                        style={{ backgroundColor: color }}
+                                    />
+                                ))}
+                                <div className="relative aspect-square rounded-md overflow-hidden border border-white/10 group">
+                                    <input
+                                        type="color"
+                                        value={selectedObj.fill || '#000000'}
+                                        onChange={(e) => updateObject(selectedObj.id, { fill: e.target.value })}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 opacity-50 group-hover:opacity-100 transition-opacity" />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Color Palette (Text & Stroke) */}
             {activeTool !== 'eraser' && activeTool !== 'image' && activeTool !== 'pan' && (
                 <div className="space-y-3">
                     <SectionLabel label="Colors" icon={<Palette size={12} />} />

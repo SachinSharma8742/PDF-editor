@@ -3,6 +3,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { PDFViewer } from './components/features/pdf-viewer/PDFViewer';
 import './utils/pdfWorker'; // Import worker config
 import { EditorMode } from './components/features/editor/EditorMode';
+import { ContextMenu } from './components/features/editor/ContextMenu';
 
 import { usePDFStore } from './store/pdfStore';
 
@@ -13,10 +14,10 @@ export default function App() {
     <div className={`flex flex-col h-screen w-screen overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}>
       {/* Background Layer for Dark Mode depth */}
       <div className="fixed inset-0 pointer-events-none z-0 opacity-0 dark:opacity-100 transition-opacity duration-700 bg-[radial-gradient(circle_at_50%_-20%,#3b82f615,transparent_50%)]" />
-      
+
       <div className="flex flex-1 overflow-hidden relative bg-gray-50 dark:bg-[#09090b] text-gray-900 dark:text-zinc-100 transition-colors duration-500 z-10">
         <SidebarHelpWrapper />
-        
+
         <div className="flex-1 flex flex-col relative w-full h-full bg-gray-100 dark:bg-transparent overflow-hidden transition-colors duration-500">
           {/* Surface texture in dark mode */}
           <div className="absolute inset-0 dark:bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none mix-blend-overlay" />
@@ -37,6 +38,7 @@ export default function App() {
         </div>
       </div>
       <EditorMode />
+      <ContextMenu />
     </div>
   );
 }

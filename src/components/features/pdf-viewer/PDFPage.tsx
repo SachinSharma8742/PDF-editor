@@ -103,11 +103,14 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
     return (
         <div
             id={`page-${pageNumber}`}
+            data-page-id={pageState.id}
             ref={wrapperRef}
             className="relative mb-8 bg-white mx-auto scroll-mt-4 transition-all duration-500 shadow-2xl shadow-black/5 dark:shadow-none dark:ring-1 dark:ring-white/10"
             style={{
                 width: dimensions ? dimensions.width : 'auto',
-                height: dimensions ? dimensions.height : '800px'
+                height: dimensions ? dimensions.height : '800px',
+                transform: `rotate(${pageState.rotation || 0}deg) scaleX(${pageState.flipX ? -1 : 1}) scaleY(${pageState.flipY ? -1 : 1})`,
+                transition: 'transform 0.3s ease-in-out'
             }}
         >
             <PageSelectionOverlay pageNumber={pageNumber} pageId={pageState.id!} />
