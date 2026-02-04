@@ -44,7 +44,7 @@ export const OCRPanel: React.FC = () => {
 
             // 2. Run Tesseract
             const worker = await createWorker('eng', 1, {
-                logger: m => {
+                logger: (m: any) => {
                     if (m.status === 'recognizing text') {
                         setProgress(Math.round(m.progress * 100));
                         setStatus(`Recognizing text... ${Math.round(m.progress * 100)}%`);
