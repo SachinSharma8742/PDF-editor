@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { usePDFStore, type PDFObject } from '../../../store/pdfStore';
 import { useEditorStore } from '../../../store/editorStore';
-import { FileText, Image as ImageIcon } from 'lucide-react';
+import { ThumbnailCache } from '../../../utils/thumbnailCache';
 import clsx from 'clsx';
-import * as pdfjsLib from 'pdfjs-dist';
+// import * as pdfjsLib from 'pdfjs-dist'; // Not directly used, store has it
 
 interface PDFThumbnailProps {
     pageNumber: number;
@@ -32,7 +32,7 @@ const drawObject = (ctx: CanvasRenderingContext2D, obj: PDFObject, scale: number
         if (obj.points.length >= 2) {
             ctx.moveTo(x + obj.points[0] * scale, y + obj.points[1] * scale);
             for (let i = 2; i < obj.points.length; i += 2) {
-                ctx.lineTo(x + obj.points[i] * scale, y + obj.points[i + 1] * scale);
+                ctx.lineTo(x + obj.points[i] * scale, y + obj.points[1 + 1] * scale);
             }
         }
         ctx.stroke();
@@ -126,74 +126,123 @@ const BlankThumbnail: React.FC<{
 };
 
 export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 120 }) => {
-    const { pdfDocument, pages } = usePDFStore();
-    const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
+    const { pdfDocument, pages, fileName } = usePDFStore();
+    const { openContextMenu } = useEditorStore();
+    const containerRef = useRef<HTMLDivElement>(null);
     const annotationCanvasRef = useRef<HTMLCanvasElement>(null);
+
+    // State
+    const [isVisible, setIsVisible] = useState(false);
+    const [imageSrc, setImageSrc] = useState<string | null>(null);
     const [rendering, setRendering] = useState(false);
     const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
     const [scaleFactor, setScaleFactor] = useState(1);
 
-    // We subscribe to the specific page state to trigger re-renders only when this page changes
     const pageState = pages.find(p => p.pageNumber === pageNumber);
 
-    // 1. Render Base PDF Layer
+    // 1. Intersection Observer (Lazy Loading)
     useEffect(() => {
-        if (!pageState || pageState.source !== 'pdf' || !pdfDocument || !pdfCanvasRef.current) return;
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    setIsVisible(true);
+                    observer.disconnect(); // Once loaded, keep it (or we could unload to save MEM, but caching handles reload speed)
+                }
+            },
+            { rootMargin: '200px' } // Load when within 200px of viewport
+        );
 
-        let renderTask: any = null;
+        if (containerRef.current) {
+            observer.observe(containerRef.current);
+        }
+
+        return () => observer.disconnect();
+    }, []);
+
+    // 2. Render PDF Layer (with Caching)
+    useEffect(() => {
+        if (!isVisible || !pageState || pageState.source !== 'pdf' || !pdfDocument) return;
+
+        // Key for cache: Filename + PageIndex + Width
+        // Ideally we use a hash, but fileName is a decent proxy for now alongside page count/size checks if we had them.
+        const cacheKey = ThumbnailCache.getKey(fileName || 'untitled', pageState.originalPageIndex || 0, width);
         let isCancelled = false;
 
-        const renderPDF = async () => {
-            try {
-                setRendering(true);
-                const indexToFetch = pageState.originalPageIndex;
-                if (!indexToFetch) return;
+        const render = async () => {
+            // Check Cache First
+            const cachedBlob = await ThumbnailCache.get(cacheKey);
+            if (cachedBlob && !isCancelled) {
+                const url = URL.createObjectURL(cachedBlob);
+                setImageSrc(url);
 
-                const page = await pdfDocument.getPage(indexToFetch);
+                // We still need dimensions to set up annotation layer
+                const img = new Image();
+                img.onload = () => {
+                    setCanvasSize({ width: img.width, height: img.height });
+                    // Calculate scale relative to original PageState check? 
+                    // Actually we rendered it at 'width'.
+                    // So scale factor = img.width / pageState.width.
+                    if (pageState.width) {
+                        setScaleFactor(img.width / pageState.width);
+                    }
+                };
+                img.src = url;
+                return;
+            }
+
+            // Render fresh
+            setRendering(true);
+            try {
+                const page = await pdfDocument.getPage(pageState.originalPageIndex);
                 if (isCancelled) return;
 
                 const viewport = page.getViewport({ scale: 1 });
                 const boxScale = width / viewport.width;
                 const scaledViewport = page.getViewport({ scale: boxScale });
 
-                const canvas = pdfCanvasRef.current;
-                if (!canvas) return;
-
+                const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
                 if (!context) return;
 
-                // Set dimensions
                 canvas.width = scaledViewport.width;
                 canvas.height = scaledViewport.height;
-                setCanvasSize({ width: scaledViewport.width, height: scaledViewport.height });
-                setScaleFactor(boxScale);
 
-                renderTask = page.render({
+                await page.render({
                     canvasContext: context,
                     viewport: scaledViewport,
+                }).promise;
+
+                if (isCancelled) return;
+
+                // Save to Cache
+                canvas.toBlob(async (blob) => {
+                    if (blob) {
+                        await ThumbnailCache.save(cacheKey, blob);
+                        if (!isCancelled) {
+                            const url = URL.createObjectURL(blob);
+                            setImageSrc(url);
+                            setCanvasSize({ width: canvas.width, height: canvas.height });
+                            setScaleFactor(boxScale);
+                        }
+                    }
                 });
 
-                await renderTask.promise;
-            } catch (err: any) {
-                if (err.name !== 'RenderingCancelledException') {
-                    console.error('Thumbnail PDF render error:', err);
-                }
+            } catch (error) {
+                console.error('Thumbnail render error:', error);
             } finally {
                 if (!isCancelled) setRendering(false);
             }
         };
 
-        renderPDF();
+        render();
 
         return () => {
             isCancelled = true;
-            if (renderTask) {
-                renderTask.cancel();
-            }
+            // Cleanup object URLs if needed? usually React handles simple src swaps but good practice if heavily unloading
         };
-    }, [pdfDocument, pageState?.originalPageIndex, pageState?.source, width]); // Only re-render PDF if source/doc/width changes
+    }, [isVisible, pageState?.id, pageState?.originalPageIndex, width, pdfDocument, fileName]); // Re-run if page changes
 
-    // 2. Render Annotation Layer (Drawings, Objects)
+    // 3. Render Annotation Layer (Drawings, Objects)
     useEffect(() => {
         const canvas = annotationCanvasRef.current;
         if (!canvas || !pageState || canvasSize.width === 0) return;
@@ -211,29 +260,38 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
             drawObject(ctx, obj, scaleFactor);
         });
 
-    }, [pageState?.objects, canvasSize, scaleFactor]); // Re-run when objects change or canvas resizes
+    }, [pageState?.objects, canvasSize, scaleFactor]);
 
     if (!pageState) return null;
 
+    // Handle Image Source Pages
     if (pageState.source === 'image' && pageState.content) {
         return (
-            <div className="w-full h-full flex items-center justify-center bg-gray-100 overflow-hidden relative">
-                <img src={pageState.content} alt={`Page ${pageNumber}`} className="max-w-full max-h-full object-contain" />
-                {/* Overlay Annotations for Image Pages too */}
-                <canvas
-                    ref={annotationCanvasRef}
-                    className="absolute inset-0 pointer-events-none mx-auto"
-                    style={{
-                        // We might need to adjust this if image doesn't fill the container 
-                        // But for now, assuming full cover or consistent aspect ratio
-                        width: '100%',
-                        height: '100%'
-                    }}
-                />
+            <div
+                ref={containerRef}
+                className="w-full h-full flex items-center justify-center bg-gray-100 overflow-hidden relative"
+                onContextMenu={(e) => {
+                    e.preventDefault();
+                    openContextMenu(e.clientX, e.clientY, 'thumbnail', { pageId: pageState.id });
+                }}
+            >
+                {isVisible ? (
+                    <>
+                        <img src={pageState.content} alt={`Page ${pageNumber}`} className="max-w-full max-h-full object-contain" />
+                        <canvas
+                            ref={annotationCanvasRef}
+                            className="absolute inset-0 pointer-events-none mx-auto"
+                            style={{ width: '100%', height: '100%' }}
+                        />
+                    </>
+                ) : (
+                    <div className="w-full h-full animate-pulse bg-gray-200" />
+                )}
             </div>
         );
     }
 
+    // Handle Blank Pages
     if (pageState.source === 'blank') {
         const bgColor = pageState.backgroundColor || '#ffffff';
         const isDark = bgColor !== '#ffffff' && bgColor !== 'white';
@@ -245,29 +303,52 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
         const blankScale = thumbWidth / pageState.width;
 
         return (
-            <BlankThumbnail
-                bgColor={bgColor}
-                isDark={isDark}
-                thumbWidth={thumbWidth}
-                thumbHeight={thumbHeight}
-                blankScale={blankScale}
-                objects={pageState.objects}
-            />
+            <div ref={containerRef} className="w-full h-full"
+                onContextMenu={(e) => {
+                    e.preventDefault();
+                    openContextMenu(e.clientX, e.clientY, 'thumbnail', { pageId: pageState.id });
+                }}
+            >
+                <BlankThumbnail
+                    bgColor={bgColor}
+                    isDark={isDark}
+                    thumbWidth={thumbWidth}
+                    thumbHeight={thumbHeight}
+                    blankScale={blankScale}
+                    objects={pageState.objects}
+                />
+            </div>
+
         );
     }
 
+    // Standard PDF Page
     return (
         <div
-            className={clsx("w-full h-full bg-white flex items-center justify-center relative", rendering ? "animate-pulse bg-gray-200" : "")}
+            ref={containerRef}
+            className={clsx(
+                "w-full h-full bg-white flex items-center justify-center relative transition-colors",
+                rendering ? "bg-gray-50" : ""
+            )}
+            style={{ minHeight: width * 1.414 }} // Approx A4 aspect ratio placeholder
             onContextMenu={(e) => {
                 e.preventDefault();
-                if (pageState) {
-                    useEditorStore.getState().openContextMenu(e.clientX, e.clientY, 'thumbnail', { pageId: pageState.id });
-                }
+                openContextMenu(e.clientX, e.clientY, 'thumbnail', { pageId: pageState.id });
             }}
         >
-            {/* PDF Layer */}
-            <canvas ref={pdfCanvasRef} className="block mx-auto shadow-sm" />
+            {!isVisible || rendering ? (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+            ) : null}
+
+            {imageSrc && (
+                <img
+                    src={imageSrc}
+                    className="block shadow-sm object-contain max-w-full max-h-full"
+                    alt={`Page ${pageNumber}`}
+                />
+            )}
 
             {/* Annotation Layer (Overlay) */}
             <canvas

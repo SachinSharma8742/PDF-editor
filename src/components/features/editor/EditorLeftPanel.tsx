@@ -9,8 +9,10 @@ import { StampsPanel } from './StampsPanel';
 import { OCRPanel } from './OCRPanel';
 import { CalibrationPanel } from './CalibrationPanel';
 import { LeftColorPanel } from './LeftColorPanel';
+import { PageEffectsPanel } from './PageEffectsPanel';
+import { ImageEditorPanel } from './ImageEditorPanel';
 
-type TabId = 'stamps' | 'ocr' | 'scale' | 'properties';
+type TabId = 'stamps' | 'ocr' | 'scale' | 'properties' | 'image-editor' | 'page-effects';
 
 export const EditorLeftPanel: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabId>('properties');
@@ -41,11 +43,26 @@ export const EditorLeftPanel: React.FC = () => {
         } else if (activeTool === 'measure') {
             setActiveTab('scale');
             setIsCollapsed(false);
-        } else if (hasSelection || ['pen', 'highlighter', 'rectangle', 'circle', 'text', 'line', 'arrow', 'eraser'].includes(activeTool)) {
+        } else if (hasSelection) {
+            if (activeTab === 'page-effects') {
+                // If we were on page effects, switch to properties for the selection
+                setActiveTab('properties');
+            }
+            if (selectedObj?.type === 'image') {
+                setActiveTab('image-editor');
+            } else {
+                setActiveTab('properties');
+            }
+            setIsCollapsed(false);
+        } else if (activeTool === 'select' && !hasSelection) {
+            // Default to Page Effects when standard selection mode is active but nothing selected
+            setActiveTab('page-effects');
+            setIsCollapsed(false);
+        } else if (['pen', 'highlighter', 'rectangle', 'circle', 'text', 'line', 'arrow', 'eraser'].includes(activeTool)) {
             setActiveTab('properties');
             setIsCollapsed(false);
         }
-    }, [activeTool, hasSelection, userHasSelectedTab]);
+    }, [activeTool, hasSelection, userHasSelectedTab, selectedObj?.type]);
 
     const handleTabChange = (tab: TabId) => {
         setActiveTab(tab);
@@ -86,7 +103,9 @@ export const EditorLeftPanel: React.FC = () => {
                     )}>
                         {activeTab === 'stamps' ? 'Stamp Library' :
                             activeTab === 'ocr' ? 'AI OCR Engine' :
-                                activeTab === 'scale' ? 'Measurement' : 'Properties'}
+                                activeTab === 'scale' ? 'Measurement' :
+                                    activeTab === 'image-editor' ? 'Image Studio' :
+                                        activeTab === 'page-effects' ? 'Page Effects' : 'Properties'}
                     </h2>
                 </div>
                 <button
@@ -111,6 +130,10 @@ export const EditorLeftPanel: React.FC = () => {
                         selectedObjectIds={selectedObjectIds}
                         updateObject={updateObject}
                     />
+                ) : activeTab === 'image-editor' ? (
+                    <ImageEditorPanel />
+                ) : activeTab === 'page-effects' ? (
+                    <PageEffectsPanel />
                 ) : (
                     <div className="px-4 py-4">
                         <div className="flex items-center justify-between mb-4 px-1">

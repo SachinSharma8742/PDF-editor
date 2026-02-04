@@ -1,10 +1,12 @@
 import React from 'react';
 import { usePDFStore } from '../../../store/pdfStore';
-import { Ruler, Scale, Maximize2, Check } from 'lucide-react';
+import { Ruler, Scale, Maximize2, Check, Grid as GridIcon } from 'lucide-react';
 import { Button } from '../../ui/Button';
+import { useEditorStore } from '../../../store/editorStore';
 
 export const CalibrationPanel: React.FC = () => {
     const { calibration, setCalibration } = usePDFStore();
+    const { snapToGrid, toggleSnapToGrid, gridSize, setGridSize } = useEditorStore();
 
     const units = ['px', 'in', 'cm', 'mm', 'ft', 'm'];
 
@@ -54,6 +56,35 @@ export const CalibrationPanel: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div className="bg-zinc-800/50 rounded-2xl p-4 border border-white/5 space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                    <GridIcon size={20} className="text-blue-500" />
+                    <h3 className="font-bold text-sm uppercase tracking-wider text-zinc-400">Grid & Precision</h3>
+                </div>
+
+                <div className="flex items-center justify-between p-2 bg-zinc-900 rounded-xl border border-white/5">
+                    <span className="text-xs font-bold text-zinc-400">Snap to Grid</span>
+                    <button
+                        onClick={toggleSnapToGrid}
+                        className={`w-10 h-6 rounded-full transition-colors relative ${snapToGrid ? 'bg-blue-600' : 'bg-zinc-700'}`}
+                    >
+                        <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${snapToGrid ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                </div>
+
+                {snapToGrid && (
+                    <div className="space-y-2 pt-2">
+                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest pl-1">Grid Size (px)</label>
+                        <input
+                            type="number"
+                            value={gridSize}
+                            onChange={(e) => setGridSize(parseInt(e.target.value) || 20)}
+                            className="w-full bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all outline-none"
+                        />
+                    </div>
+                )}
             </div>
 
             <div className="space-y-3">

@@ -1,28 +1,33 @@
-import React, { useState } from 'react';
-import { Settings2, Layers } from 'lucide-react';
+import React from 'react';
+import { Settings2, Layers, Download } from 'lucide-react';
 import { EditorProperties } from './EditorProperties';
 import { LayerPanel } from './LayerPanel';
-import clsx from 'clsx'; // Assuming clsx is available or needs to be imported
 
-type Tab = 'properties' | 'layers';
+import { useEditorStore } from '../../../store/editorStore';
+import clsx from 'clsx';
+
+type Tab = 'properties' | 'layers' | 'export';
 
 export const EditorRightPanel: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<Tab>('properties');
+    const { activePanelTab, setActivePanelTab } = useEditorStore();
+
+    // Mapping for tabs
+    const tabs = [
+        { id: 'properties', icon: Settings2, label: 'Settings' },
+        { id: 'layers', icon: Layers, label: 'Layers' }
+    ];
 
     return (
         <div className="w-80 bg-[#1e1e20] border-l border-white/5 flex flex-col h-full z-40 shadow-2xl flex-shrink-0 transition-colors duration-200 font-sans">
             {/* Contextual Tab Header */}
             <div className="flex bg-[#18181b] p-1 gap-1 border-b border-white/5">
-                {[
-                    { id: 'properties', icon: Settings2, label: 'Settings' },
-                    { id: 'layers', icon: Layers, label: 'Layers' }
-                ].map((t) => (
+                {tabs.map((t) => (
                     <button
                         key={t.id}
-                        onClick={() => setActiveTab(t.id as Tab)}
+                        onClick={() => setActivePanelTab(t.id as Tab)}
                         className={clsx(
                             "flex-1 flex flex-row items-center justify-center gap-2 py-2 rounded-md transition-all duration-200",
-                            activeTab === t.id
+                            activePanelTab === t.id
                                 ? "bg-[#27272a] text-white shadow-sm border border-white/10"
                                 : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
                         )}
@@ -35,8 +40,8 @@ export const EditorRightPanel: React.FC = () => {
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto custom-scrollbar relative text-white bg-[#1e1e20]">
-                {activeTab === 'properties' && <EditorProperties />}
-                {activeTab === 'layers' && <LayerPanel />}
+                {activePanelTab === 'properties' && <EditorProperties />}
+                {activePanelTab === 'layers' && <LayerPanel />}
             </div>
 
             {/* Footer Label */}

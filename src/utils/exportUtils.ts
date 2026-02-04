@@ -187,146 +187,250 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
     }
 };
 
-export const exportPageAsPNG = async (page: PageState) => {
-    try {
-        // 1. Create a canvas for the export
-        const canvas = document.createElement('canvas');
-        const scale = 2; // High resolution
-        const width = page.width || 595;
-        const height = page.height || 842;
+// Helper to get PDF Page viewport
+const getPdfPageViewport = async (pdfDoc: any, pageIndex: number, scale: number) => {
+    const page = await pdfDoc.getPage(pageIndex + 1); // pdfjs is 1-based
+    const viewport = page.getViewport({ scale });
+    return { page, viewport };
+};
 
-        canvas.width = width * scale;
-        canvas.height = height * scale;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+export const saveDocumentFlattened = async (pages: PageState[], pdfDocSource: any, quality: number) => {
+    // Flatten logic: Render each page to image, then embed
+    const newPdf = await PDFDocument.create();
 
-        ctx.scale(scale, scale);
+    for (const pageState of pages) {
+        const { blob } = await renderPageToBlob(pageState, 'jpg', quality, pdfDocSource);
+        if (!blob) continue;
 
-        // 2. Draw Background (White)
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
+        const arrayBuffer = await blob.arrayBuffer();
+        const embeddedImage = await newPdf.embedJpg(arrayBuffer);
 
-        // 3. Draw Base Content (PDF or Image)
-        if (page.source === 'image' && page.content) {
-            await new Promise<void>((resolve) => {
-                const img = new Image();
-                img.crossOrigin = 'anonymous';
-                img.onload = () => {
-                    ctx.drawImage(img, 0, 0, width, height);
-                    resolve();
-                };
-                img.onerror = () => resolve();
-                img.src = page.content!;
-            });
+        const newPage = newPdf.addPage([embeddedImage.width, embeddedImage.height]);
+        newPage.drawImage(embeddedImage, {
+            x: 0,
+            y: 0,
+            width: embeddedImage.width,
+            height: embeddedImage.height,
+        });
+    }
+
+    const pdfBytes = await newPdf.save();
+    downloadFile(new Blob([pdfBytes as any], { type: 'application/pdf' }), `flattened_export_${Date.now()}.pdf`);
+};
+
+export const exportPageAsImage = async (page: PageState, format: 'png' | 'jpg', quality: number, pdfDocSource: any) => {
+    const { blob } = await renderPageToBlob(page, format, quality, pdfDocSource);
+    if (blob) {
+        downloadFile(blob, `page-${page.pageNumber}.${format}`);
+    }
+};
+
+const downloadFile = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+};
+
+const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality: number, pdfDocSource: any): Promise<{ blob: Blob | null }> => {
+    const scale = 2; // High DPI export
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { blob: null };
+
+    // 1. Render Background (PDF or Image)
+    if (page.source === 'pdf' && page.originalPageIndex !== undefined && pdfDocSource) {
+        try {
+            const { page: pdfPage, viewport } = await getPdfPageViewport(pdfDocSource, page.originalPageIndex, scale);
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+
+            const renderContext = {
+                canvasContext: ctx,
+                viewport: viewport,
+            };
+            await pdfPage.render(renderContext).promise;
+        } catch (e) {
+            console.error("PDF Render failed", e);
+            // Fallback dimensions
+            canvas.width = (page.width || 595) * scale;
+            canvas.height = (page.height || 842) * scale;
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
-        // NOTE: For PDF pages, we can't easily rasterize the underlying PDF here without pdf.js logic 
-        // that is currently in the PageView component. 
-        // Ideally, we should capture the canvas from the DOM if possible, OR re-render pdf.js here.
-        // For now, if it's a PDF page, we might miss the background if we don't have access to the rendered canvas.
-        // BUT, since we want to "Export as PNG", users likely want the ANNOTATIONS + CONTENT.
-        // A robust way requires using the PDF helper (pdfjsLib) to render the page onto this canvas.
+    } else if (page.source === 'image' && page.content) {
+        canvas.width = (page.width || 800) * scale;
+        canvas.height = (page.height || 600) * scale;
 
-        if (page.source === 'pdf' && page.originalPageIndex) {
-            // Attempt to find the already rendered canvas in the DOM
-            // This ensures we capture the PDF content exactly as the user sees it (if rendered)
-            const domPage = document.getElementById(`page-${page.pageNumber}`);
-            if (domPage) {
-                const existingCanvas = domPage.querySelector('canvas');
-                if (existingCanvas) {
-                    ctx.drawImage(existingCanvas, 0, 0, width, height);
-                } else {
-                    // Fallback: This might happen if the page is virtualized out, or loading.
-                    // For now, we leave it white or maybe add a text watermark?
-                    console.warn("Could not find PDF canvas for page", page.pageNumber);
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        await new Promise<void>((resolve) => {
+            img.onload = () => {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve();
+            }
+            img.src = page.content!;
+        });
+    } else {
+        canvas.width = (page.width || 595) * scale;
+        canvas.height = (page.height || 842) * scale;
+        ctx.fillStyle = page.backgroundColor || 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // 2. Render Annotations (manually for now to allow headless)
+    ctx.save();
+    ctx.scale(scale, scale); // Scale context to match canvas DPI
+
+    // Draw Paths
+    if (page.paths) {
+        page.paths.forEach(path => {
+            ctx.beginPath();
+            ctx.strokeStyle = path.stroke;
+            ctx.lineWidth = path.strokeWidth;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.globalAlpha = path.opacity !== undefined ? path.opacity : 1;
+
+            if (path.points && path.points.length > 0) {
+                ctx.moveTo(path.points[0], path.points[1]);
+                for (let i = 2; i < path.points.length; i += 2) {
+                    ctx.lineTo(path.points[i], path.points[i + 1]);
                 }
             }
-        }
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        });
+    }
 
-        // --- DRAW ANNOTATIONS (Same as saveDocument) ---
+    // Draw Objects
+    if (page.objects) {
+        for (const obj of page.objects) {
+            ctx.save();
+            ctx.globalAlpha = obj.opacity !== undefined ? obj.opacity : 1;
 
-        // Draw Paths (Freehand)
-        if (page.paths && page.paths.length > 0) {
-            page.paths.forEach(path => {
-                ctx.beginPath();
-                ctx.strokeStyle = path.stroke;
-                ctx.lineWidth = path.strokeWidth;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
+            // Translate to object center for rotation if needed, simply use top-left for now as per Konva default anchor
+            // Konva rotates around center usually, but X/Y in our store depends on transformer. 
+            // Our store calculates X/Y as top-left corner (unrotated bounding box corner ideally).
+            // Actually, `EditorCanvas` updates X/Y to be the center-offset adjusted position...
+            // Let's assume standard canvas rotation: translate to center, rotate, translate back.
 
-                if (path.points.length > 0) {
-                    ctx.moveTo(path.points[0], path.points[1]);
-                    for (let i = 2; i < path.points.length; i += 2) {
-                        ctx.lineTo(path.points[i], path.points[i + 1]);
-                    }
-                }
+            const w = obj.width || 0;
+            const h = obj.height || 0;
+            const cx = obj.x + w / 2;
+            const cy = obj.y + h / 2;
+
+            if (obj.rotation) {
+                // Konva rotation
+                ctx.translate(obj.x + w / 2, obj.y + h / 2); // Move to center ? 
+                // Wait, our Konva setup in PDFObjectRenderer uses [x,y] as Top-Left of the shape, BUT the rotation transforms around center?
+                // No, Konva defaults to rotating around (0,0) of the shape. If offset is not set.
+                // In `PDFObjectRenderer`, we use `offsetX={object.width / 2}` and `offsetY={object.height / 2}` and map `x={object.x + object.width/2}`.
+                // Wait, let's check PDFObjectRenderer.
+                // `x={object.x + (object.width || 0) / 2}`
+                // `offsetX={(object.width || 0) / 2}`
+                // So the `object.x` in STORE is the Top-Left. 
+                // The Renderer moves it to center to handle rotation.
+
+                // So here:
+                ctx.translate(obj.x + w / 2, obj.y + h / 2);
+                ctx.rotate((obj.rotation * Math.PI) / 180);
+                ctx.translate(-(obj.x + w / 2), -(obj.y + h / 2));
+            }
+
+            if (obj.type === 'text') {
+                // Text Rendering
+                const fontSize = obj.fontSize || 16;
+                ctx.font = `${obj.fontWeight || ''} ${obj.fontStyle || ''} ${fontSize}px ${obj.fontFamily || 'Inter'}`;
+                ctx.textBaseline = 'top';
+                ctx.fillStyle = obj.fill || 'black';
+
+                // Handle multiline text?
+                // Simple implementation
+                ctx.fillText(obj.text || '', obj.x, obj.y);
+
+            } else if (obj.type === 'sticky-note') {
+                // Sticky Note Rendering
+                // Background
+                ctx.fillStyle = obj.fill || '#fef08a';
+                ctx.strokeStyle = obj.stroke || '#eab308';
+                ctx.roundRect ? ctx.roundRect(obj.x, obj.y, w, h, 2) : ctx.rect(obj.x, obj.y, w, h);
+                ctx.fill();
                 ctx.stroke();
-            });
-        }
 
-        // Draw Objects (Text, Shapes, Images)
-        if (page.objects && page.objects.length > 0) {
-            for (const obj of page.objects) {
-                ctx.save();
+                // Text
+                ctx.font = `14px Arial`;
+                ctx.fillStyle = 'black';
+                ctx.textBaseline = 'top';
+                // Simple wrap required? Just clip for now
+                ctx.fillText(obj.text || '', obj.x + 10, obj.y + 10);
 
-                if (obj.type === 'image') {
+            } else if (obj.type === 'rectangle') {
+                ctx.beginPath();
+                ctx.rect(obj.x, obj.y, w, h);
+                if (obj.fill) { ctx.fillStyle = obj.fill; ctx.fill(); }
+                if (obj.stroke) { ctx.strokeStyle = obj.stroke; ctx.lineWidth = obj.strokeWidth || 1; ctx.stroke(); }
+
+            } else if (obj.type === 'line') {
+                // Line is usually height 0 or small? Or points?
+                // Our 'line' tool creates a shape with width/height, but specific rendering logic?
+                // Let's check Renderer. It uses <Line> with points [0,0, width, height] relative?
+                // Actually `EditorCanvas`: `points={[0, 0, object.width, 0]}` for horizontal line starter?
+                // Let's assume simple stroke from x,y to x+w, y+h
+                ctx.beginPath();
+                ctx.moveTo(obj.x, obj.y);
+                ctx.lineTo(obj.x + w, obj.y + h); // Simplified
+                ctx.strokeStyle = obj.stroke || 'black';
+                ctx.lineWidth = obj.strokeWidth || 2;
+                ctx.stroke();
+
+            } else if (obj.type === 'arrow') {
+                // Arrow
+                const headlen = (obj.strokeWidth || 2) * 3;
+                const angle = Math.atan2(h, w);
+                const tox = obj.x + w;
+                const toy = obj.y + h;
+
+                ctx.beginPath();
+                ctx.moveTo(obj.x, obj.y);
+                ctx.lineTo(tox, toy);
+                ctx.strokeStyle = obj.stroke || 'black';
+                ctx.lineWidth = obj.strokeWidth || 2;
+                ctx.stroke();
+
+                // Head
+                ctx.beginPath();
+                ctx.moveTo(tox, toy);
+                ctx.lineTo(tox - headlen * Math.cos(angle - Math.PI / 6), toy - headlen * Math.sin(angle - Math.PI / 6));
+                ctx.moveTo(tox, toy);
+                ctx.lineTo(tox - headlen * Math.cos(angle + Math.PI / 6), toy - headlen * Math.sin(angle + Math.PI / 6));
+                ctx.stroke();
+            } else if (obj.type === 'stamp' || obj.type === 'image') {
+                // Images / Stamps
+                if ((obj as any).src) {
                     await new Promise<void>((resolve) => {
                         const img = new Image();
-                        img.crossOrigin = 'anonymous';
                         img.onload = () => {
-                            const w = obj.width || img.width;
-                            const h = obj.height || img.height;
                             ctx.drawImage(img, obj.x, obj.y, w, h);
                             resolve();
                         };
                         img.onerror = () => resolve();
-                        img.src = (obj as any).src || (obj as any).url;
+                        img.src = (obj as any).src;
                     });
-                } else if (obj.type === 'text') {
-                    const fontSize = obj.fontSize || 16;
-                    ctx.font = `${obj.fontWeight || 'normal'} ${obj.fontStyle || 'normal'} ${fontSize}px ${obj.fontFamily || 'Inter'}`;
-                    ctx.fillStyle = obj.fill || 'black';
-                    ctx.fillText(obj.text || '', obj.x, obj.y + fontSize); // Adjust baseline approx
-                } else if (obj.type === 'rectangle') {
-                    ctx.beginPath();
-                    ctx.rect(obj.x, obj.y, obj.width || 0, obj.height || 0);
-
-                    if (obj.fill && obj.fill !== 'transparent') {
-                        ctx.fillStyle = obj.fill;
-                        ctx.fill();
-                    }
-
-                    ctx.strokeStyle = obj.stroke || 'black';
-                    ctx.lineWidth = obj.strokeWidth || 2;
-                    ctx.stroke();
-                } else if (obj.type === 'circle') {
-                    ctx.beginPath();
-                    const w = obj.width || 0;
-                    const radius = w / 2;
-                    ctx.ellipse(obj.x + radius, obj.y + radius, radius, radius, 0, 0, 2 * Math.PI);
-
-                    if (obj.fill && obj.fill !== 'transparent') {
-                        ctx.fillStyle = obj.fill;
-                        ctx.fill();
-                    }
-
-                    ctx.strokeStyle = obj.stroke || 'black';
-                    ctx.lineWidth = obj.strokeWidth || 2;
-                    ctx.stroke();
                 }
-
-                ctx.restore();
             }
+
+            ctx.restore();
         }
-
-        // 4. Download
-        const dataUrl = canvas.toDataURL('image/png');
-        const a = document.createElement('a');
-        a.href = dataUrl;
-        a.download = `page-${page.pageNumber}.png`;
-        a.click();
-
-    } catch (e) {
-        console.error("Failed to export PNG", e);
-        alert("Could not export page as PNG.");
     }
+
+    ctx.restore();
+
+    return new Promise((resolve) => {
+        canvas.toBlob((blob) => {
+            resolve({ blob });
+        }, format === 'jpg' ? 'image/jpeg' : 'image/png', quality);
+    });
 };

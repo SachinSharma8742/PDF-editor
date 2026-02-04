@@ -209,6 +209,96 @@ export const EditorProperties: React.FC = () => {
                     )}
                 </div>
 
+                {/* Style & Content Controls */}
+                <div className="space-y-4">
+                    <PropertyLabel label="Style & Appearance" />
+
+                    {/* Opacity - Common to all */}
+                    <div className="space-y-2">
+                        <div className="flex justify-between items-center text-[10px] text-zinc-400">
+                            <span>Opacity</span>
+                            <span>{Math.round(opacity * 100)}%</span>
+                        </div>
+                        <Slider
+                            value={opacity} min={0} max={1} step={0.01}
+                            onChange={(v) => {
+                                selectedObjects.forEach(o => updateObject(o.id, { opacity: v }));
+                            }}
+                        />
+                    </div>
+
+                    {/* Text Specific */}
+                    {firstObj.type === 'text' && (
+                        <div className="space-y-3 pt-2 border-t border-white/5">
+                            <PropertyLabel label="Typography" icon={<Type size={12} />} />
+                            <SimpleInput
+                                label="Font Size"
+                                value={getCommonValue(selectedObjects, 'fontSize', 16)}
+                                onChange={(v) => selectedObjects.forEach(o => updateObject(o.id, { fontSize: v }))}
+                            />
+                            {/* Color Picker for Text */}
+                            <div>
+                                <span className="text-[9px] text-zinc-500 mb-2 block">Color</span>
+                                <ColorGrid
+                                    current={getCommonValue(selectedObjects, 'fill', '#000000')}
+                                    recentColors={recentColors}
+                                    onSelect={(c) => {
+                                        addColorToHistory(c);
+                                        selectedObjects.forEach(o => updateObject(o.id, { fill: c }));
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Shape Specific (Fill/Stroke) */}
+                    {(firstObj.type === 'rectangle' || firstObj.type === 'circle' || firstObj.type === 'triangle' || firstObj.type === 'star' || firstObj.type === 'polygon') && (
+                        <div className="space-y-3 pt-2 border-t border-white/5">
+                            <PropertyLabel label="Fill & Stroke" icon={<Palette size={12} />} />
+                            <div>
+                                <span className="text-[9px] text-zinc-500 mb-2 block">Fill Color</span>
+                                <ColorGrid
+                                    current={getCommonValue(selectedObjects, 'fill', 'transparent')}
+                                    recentColors={recentColors}
+                                    onSelect={(c) => {
+                                        addColorToHistory(c);
+                                        selectedObjects.forEach(o => updateObject(o.id, { fill: c }));
+                                    }}
+                                />
+                            </div>
+                            <div>
+                                <span className="text-[9px] text-zinc-500 mb-2 block">Stroke Color</span>
+                                <ColorGrid
+                                    current={getCommonValue(selectedObjects, 'stroke', '#000000')}
+                                    recentColors={recentColors}
+                                    onSelect={(c) => {
+                                        addColorToHistory(c);
+                                        selectedObjects.forEach(o => updateObject(o.id, { stroke: c }));
+                                    }}
+                                />
+                            </div>
+                            <SimpleInput
+                                label="Thickness"
+                                value={getCommonValue(selectedObjects, 'strokeWidth', 2)}
+                                onChange={(v) => selectedObjects.forEach(o => updateObject(o.id, { strokeWidth: v }))}
+                            />
+                        </div>
+                    )}
+
+                    {/* Image Specific (Crop) */}
+                    {firstObj.type === 'image' && (
+                        <div className="space-y-3 pt-2 border-t border-white/5">
+                            <PropertyLabel label="Image Tools" icon={<ImageIcon size={12} />} />
+                            <ActionButton
+                                label={useEditorStore.getState().isCropping ? "Done Cropping" : "Crop Image"}
+                                icon={<Box size={13} />}
+                                onClick={() => useEditorStore.getState().setCropping(!useEditorStore.getState().isCropping)}
+                                className={useEditorStore.getState().isCropping ? "bg-blue-600 text-white" : ""}
+                            />
+                        </div>
+                    )}
+                </div>
+
                 {/* Layout & Alignment */}
                 <div className="space-y-4">
                     <PropertyLabel label="Align to Canvas" />

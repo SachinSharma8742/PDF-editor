@@ -6,7 +6,8 @@ import {
     PenTool, Brush, EraserIcon, Trash2, Copy, BringToFront, SendToBack,
     Bold, Italic, AlignLeft, AlignCenter, AlignRight,
     Palette, ChevronRight, Pipette, Hash, PlusCircle, Shapes, Ruler,
-    Triangle, Star, Pentagon, Signature, ShieldAlert, FileText, Type, CheckSquare, Smile, ScanText
+    Triangle, Star, Pentagon, Signature, ShieldAlert, FileText, Type, CheckSquare, Smile, ScanText, MoveUpRight, Minus,
+    Download
 } from 'lucide-react';
 import clsx from 'clsx';
 import { Tooltip } from '../../ui/Tooltip';
@@ -49,6 +50,8 @@ const TOOL_GROUPS: Record<ToolGroupKey, { groupLabel: string; groupIcon?: React.
             { id: 'star', icon: Star, label: 'Star' },
             { id: 'polygon', icon: Pentagon, label: 'Polygon' },
             { id: 'ellipse', icon: CircleDot, label: 'Ellipse' },
+            { id: 'line', icon: Minus, label: 'Line', shortcut: 'L' },
+            { id: 'arrow', icon: MoveUpRight, label: 'Arrow', shortcut: 'A' },
         ]
     },
     insert: {
@@ -85,7 +88,7 @@ export const EditorToolbar: React.FC = () => {
     const {
         activeTool, setActiveTool, addObject, toolPreferences, updateToolSettings,
         selectedObjectIds, deleteObjects, currentPage, updateObject,
-        recentColors, addColorToHistory
+        recentColors, addColorToHistory, setActivePanelTab
     } = useEditorStore();
 
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -273,6 +276,8 @@ export const EditorToolbar: React.FC = () => {
                         currentDefault={groupDefaults.insert}
                         onSelect={handleToolSelect}
                     />
+
+
                 </div>
             </div>
 

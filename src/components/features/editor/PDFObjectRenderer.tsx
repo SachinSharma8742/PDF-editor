@@ -19,9 +19,94 @@ interface PDFObjectRendererProps {
     isSelectionEnabled?: boolean;
 }
 
-const URLImage = ({ object, ...props }: any) => {
+import Konva from 'konva';
+
+const URLImage = ({ object, opacity, ...props }: any) => {
     const [img] = useImage(object.src || '');
-    return <KonvaImage image={img} {...props} />;
+    const imageRef = useRef<Konva.Image>(null);
+
+    // Apply filters and cache
+    useEffect(() => {
+        if (img && imageRef.current) {
+            const node = imageRef.current;
+
+            // Map our stored filter config to Konva filters
+            const activeFilters: any[] = [];
+
+            if (object.filters) {
+                object.filters.forEach((f: any) => {
+                    if (f.name === 'Brightness') {
+                        activeFilters.push(Konva.Filters.Brighten);
+                        node.brightness(f.value);
+                    } else if (f.name === 'Contrast') {
+                        activeFilters.push(Konva.Filters.Contrast);
+                        node.contrast(f.value);
+                    } else if (f.name === 'Blur') {
+                        activeFilters.push(Konva.Filters.Blur);
+                        node.blurRadius(f.value);
+                    } else if (f.name === 'Noise') {
+                        activeFilters.push(Konva.Filters.Noise);
+                        node.noise(f.value);
+                    } else if (f.name === 'Grayscale' && f.value === 1) {
+                        activeFilters.push(Konva.Filters.Grayscale);
+                    } else if (f.name === 'Invert' && f.value === 1) {
+                        activeFilters.push(Konva.Filters.Invert);
+                    } else if (f.name === 'Sepia' && f.value === 1) {
+                        activeFilters.push(Konva.Filters.Sepia);
+                    } else if (f.name === 'HSL') {
+                        activeFilters.push(Konva.Filters.HSL);
+                        node.saturation(f.value); // Currently only mapping saturation
+                    }
+                });
+            }
+
+            node.filters(activeFilters);
+
+            // Caching is required for filters to work
+            node.cache();
+            node.getLayer()?.batchDraw();
+        }
+    }, [
+        img,
+        object.filters,
+        object.width,
+        object.height,
+        object.cornerRadius,
+        object.stroke,
+        object.strokeWidth,
+        object.shadowColor,
+        object.shadowBlur,
+        object.shadowOffsetX,
+        object.shadowOffsetY,
+        object.shadowOpacity
+    ]);
+
+    return (
+        <KonvaImage
+            ref={imageRef}
+            image={img}
+            opacity={opacity}
+            scaleX={object.flipX ? -1 : 1}
+            scaleY={object.flipY ? -1 : 1}
+            offsetX={object.flipX ? object.width : 0}
+            offsetY={object.flipY ? object.height : 0}
+            crop={object.crop}
+
+            // Styling
+            cornerRadius={object.cornerRadius || 0}
+            stroke={object.stroke}
+            strokeWidth={object.strokeWidth}
+
+            // Shadow
+            shadowColor={object.shadowColor}
+            shadowBlur={object.shadowBlur}
+            shadowOffsetX={object.shadowOffsetX}
+            shadowOffsetY={object.shadowOffsetY}
+            shadowOpacity={object.shadowOpacity}
+
+            {...props}
+        />
+    );
 };
 
 export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
@@ -52,9 +137,11 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
         }
     }, [object.isNew, object.type, isEditing, onChange]);
 
-    const handleTextDblClick = () => {
-        if (object.type === 'text' && !isLocked) {
+    const handleObjectDblClick = () => {
+        if (object.type === 'text') {
             setIsEditing(true);
+        } else if (object.type === 'image') {
+            useEditorStore.getState().setCropping(true);
         }
     };
 
@@ -121,6 +208,7 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
         offsetX: offsetX,
         offsetY: offsetY,
         rotation: object.rotation || 0,
+        visible: object.visible !== false, // Use the visible flag
         // Locked objects cannot be dragged
         draggable: isSelectionEnabled && !isLocked && !isEditing,
         // We MUST listen to events even if locked to show the 'not-allowed' cursor
@@ -128,11 +216,11 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
         onClick: (e: any) => {
             if (isSelectionEnabled && !isLocked) onSelect?.(e);
         },
-        onDblClick: isLocked ? undefined : handleTextDblClick,
+        onDblClick: isLocked ? undefined : handleObjectDblClick,
         onTap: (e: any) => {
             if (isSelectionEnabled && !isLocked) onSelect?.(e);
         },
-        onDblTap: isLocked ? undefined : handleTextDblClick,
+        onDblTap: isLocked ? undefined : handleObjectDblClick,
         onDragStart: isLocked ? undefined : onDragStart,
         onDragMove: isLocked ? undefined : onDragMove,
         onDragEnd: isLocked ? undefined : onDragEnd,
@@ -205,11 +293,12 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
             )}
 
             {object.type === 'circle' && (
-                <KonvaCircle
+                <KonvaEllipse
                     {...innerProps}
                     x={width / 2}
                     y={height / 2}
-                    radius={Math.max(width, height) / 2}
+                    radiusX={width / 2}
+                    radiusY={height / 2}
                     stroke={object.stroke || 'black'}
                     strokeWidth={object.strokeWidth || 2}
                     fill={object.fill || 'transparent'}
@@ -241,9 +330,11 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     x={width / 2}
                     y={height / 2}
                     sides={object.type === 'triangle' ? 3 : (object.sides || 5)}
-                    radius={Math.min(width, height) / 2}
+                    radius={50} // Base radius
+                    scaleX={width / 100}
+                    scaleY={height / 100}
                     stroke={object.stroke || 'black'}
-                    strokeWidth={object.strokeWidth || 2}
+                    strokeWidth={(object.strokeWidth || 2) / (width / 100)} // Normalize stroke width
                     fill={object.fill || 'transparent'}
                     opacity={object.opacity ?? 1}
                     dash={object.dash}
@@ -257,8 +348,10 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     x={width / 2}
                     y={height / 2}
                     numPoints={object.sides || 5}
-                    innerRadius={(object.innerRadius || (Math.min(width, height) / 4))}
-                    outerRadius={(object.outerRadius || (Math.min(width, height) / 2))}
+                    innerRadius={25}
+                    outerRadius={50}
+                    scaleX={width / 100}
+                    scaleY={height / 100}
                     stroke={object.stroke || 'black'}
                     strokeWidth={object.strokeWidth || 2}
                     fill={object.fill || 'transparent'}
@@ -282,8 +375,8 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     y={innerY}
                     fill="transparent"
                     opacity={object.opacity ?? 1}
-                    pointerLength={object.type === 'arrow' ? 10 : 0}
-                    pointerWidth={object.type === 'arrow' ? 10 : 0}
+                    pointerLength={object.type === 'arrow' ? (object.strokeWidth || 2) * 3 : 0}
+                    pointerWidth={object.type === 'arrow' ? (object.strokeWidth || 2) * 3 : 0}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -304,18 +397,23 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     {(() => {
                         const [x1, y1, x2, y2] = object.points;
                         const angle = Math.atan2(y2 - y1, x2 - x1);
-                        const tickLen = 10;
+                        const tickLen = 14;
                         const perpAngle = angle + Math.PI / 2;
 
                         const distPx = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
                         const distUnit = distPx / (calibration?.scale || 1);
                         const unitLabel = calibration?.unit || 'px';
+                        const text = `${Math.round(distUnit * 100) / 100}${unitLabel}`;
 
                         const dx = Math.cos(perpAngle) * tickLen / 2;
                         const dy = Math.sin(perpAngle) * tickLen / 2;
 
+                        const centerX = innerX + (x1 + x2) / 2;
+                        const centerY = innerY + (y1 + y2) / 2;
+
                         return (
-                            <>
+                            <Group>
+                                {/* End Ticks */}
                                 <Line
                                     points={[x1 - dx, y1 - dy, x1 + dx, y1 + dy]}
                                     stroke={object.stroke || '#ef4444'}
@@ -330,20 +428,29 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                                     x={innerX}
                                     y={innerY}
                                 />
-                                <Text
-                                    x={innerX + (x1 + x2) / 2}
-                                    y={innerY + (y1 + y2) / 2}
-                                    text={`${Math.round(distUnit * 100) / 100}${unitLabel}`}
-                                    fontSize={12}
-                                    fontFamily="Inter"
-                                    fill={object.stroke || '#ef4444'}
-                                    align="center"
-                                    verticalAlign="middle"
-                                    offsetX={20}
-                                    offsetY={20}
-                                    rotation={(angle * 180 / Math.PI)}
-                                />
-                            </>
+
+                                {/* Label with shadow for readability */}
+                                <Group x={centerX} y={centerY} rotation={(angle * 180 / Math.PI)}>
+                                    {/* Background Rect for Text */}
+                                    {/* We use a simple guess for width or just use shadow */}
+                                    <Text
+                                        text={text}
+                                        fontSize={12}
+                                        fontFamily="Inter"
+                                        fill={object.stroke || '#ef4444'}
+                                        fontStyle="bold"
+                                        align="center"
+                                        verticalAlign="middle"
+                                        offsetY={12} // Adjusted to sit above the line
+                                        offsetX={text.length * 3.5} // Rough centering
+                                        shadowColor="white"
+                                        shadowBlur={2}
+                                        shadowOpacity={1}
+                                        shadowOffsetX={0}
+                                        shadowOffsetY={0}
+                                    />
+                                </Group>
+                            </Group>
                         );
                     })()}
                 </>
@@ -390,6 +497,42 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     }}
                     opacity={object.opacity ?? 1}
                 />
+            )}
+
+            {object.type === 'sticky-note' && (
+                <Group>
+                    <Rect
+                        {...innerProps}
+                        fill={object.fill || '#fef08a'} // Default yellow
+                        stroke={object.stroke || '#eab308'}
+                        strokeWidth={1}
+                        cornerRadius={2}
+                        shadowColor="black"
+                        shadowBlur={5}
+                        shadowOpacity={0.2}
+                        shadowOffsetX={2}
+                        shadowOffsetY={2}
+                    />
+                    <Text
+                        {...innerProps}
+                        text={isEditing ? '' : (object.text || "Double click to edit")}
+                        fontSize={object.fontSize || 14}
+                        fontFamily={object.fontFamily || 'Arial'}
+                        fill="black"
+                        padding={10}
+                        align="left"
+                        verticalAlign="top"
+                        width={width} // Ensure wrapping
+                        opacity={isEditing ? 0 : 1}
+                    />
+                    {isEditing && (
+                        <TextEditorOverlay
+                            object={object}
+                            onBlur={handleTextBlur}
+                            onKeyDown={handleTextKeyDown}
+                        />
+                    )}
+                </Group>
             )}
         </Group>
     );

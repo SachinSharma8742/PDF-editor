@@ -411,6 +411,49 @@ export const LeftColorPanel: React.FC<LeftColorPanelProps> = ({
                                         <option value="500">Medium</option>
                                         <option value="bold">Bold</option>
                                     </select>
+
+                                    {/* Text Align */}
+                                    <div className="col-span-2 grid grid-cols-3 gap-1 bg-zinc-800 border border-white/10 rounded-lg p-1">
+                                        <button
+                                            onClick={() => {
+                                                if (hasSelection && selectedObj) updateObject(selectedObj.id, { align: 'left' });
+                                                else updateToolSettings({ align: 'left' }); // Need to add align to toolSettings defaults if not present
+                                            }}
+                                            className={clsx(
+                                                "flex items-center justify-center p-1 rounded hover:bg-white/10 transition-all",
+                                                (hasSelection && selectedObj ? selectedObj.align === 'left' : currentSettings.align === 'left') && "bg-white/20 text-white"
+                                            )}
+                                            title="Align Left"
+                                        >
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (hasSelection && selectedObj) updateObject(selectedObj.id, { align: 'center' });
+                                                else updateToolSettings({ align: 'center' });
+                                            }}
+                                            className={clsx(
+                                                "flex items-center justify-center p-1 rounded hover:bg-white/10 transition-all",
+                                                (hasSelection && selectedObj ? selectedObj.align === 'center' : currentSettings.align === 'center') && "bg-white/20 text-white"
+                                            )}
+                                            title="Align Center"
+                                        >
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="10" x2="6" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="18" y1="18" x2="6" y2="18"></line></svg>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (hasSelection && selectedObj) updateObject(selectedObj.id, { align: 'right' });
+                                                else updateToolSettings({ align: 'right' });
+                                            }}
+                                            className={clsx(
+                                                "flex items-center justify-center p-1 rounded hover:bg-white/10 transition-all",
+                                                (hasSelection && selectedObj ? selectedObj.align === 'right' : currentSettings.align === 'right') && "bg-white/20 text-white"
+                                            )}
+                                            title="Align Right"
+                                        >
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="21" y1="10" x2="7" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="7" y2="18"></line></svg>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}

@@ -5,6 +5,8 @@ import { EditorToolbar } from './EditorToolbar';
 import { EditorLeftPanel } from './EditorLeftPanel';
 import { EditorRightPanel } from './EditorRightPanel';
 import { EditorCanvas } from './EditorCanvas';
+import { usePDFStore } from '../../../store/pdfStore';
+import { loadPDF } from '../../../utils/pdfOps';
 
 export const EditorMode: React.FC = () => {
     const {
@@ -72,8 +74,52 @@ export const EditorMode: React.FC = () => {
         return () => { document.body.style.overflow = 'auto'; };
     }, []);
 
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    const handleDrop = async (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length === 0) return;
+
+        const file = files[0];
+
+        if (file.type === 'application/pdf') {
+            if (confirm('Open this PDF? Unsaved changes will be lost.')) {
+                const buffer = await file.arrayBuffer();
+                const doc = await loadPDF(buffer);
+                usePDFStore.getState().setPdfDocument(doc, buffer, file.name);
+            }
+        } else if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const src = event.target?.result as string;
+                if (src) {
+                    useEditorStore.getState().addObject({
+                        id: crypto.randomUUID(),
+                        type: 'image',
+                        x: 100, // Default position
+                        y: 100,
+                        width: 200,
+                        height: 200,
+                        src: src
+                    });
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     return (
-        <div className="h-screen w-screen flex flex-col bg-zinc-950 text-white overflow-hidden select-none">
+        <div
+            className="h-screen w-screen flex flex-col bg-zinc-950 text-white overflow-hidden select-none"
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+        >
             {/* Unified Header */}
             <EditorTopBar />
 

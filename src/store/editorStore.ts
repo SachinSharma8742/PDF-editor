@@ -123,6 +123,19 @@ interface EditorStore {
     };
     openContextMenu: (x: number, y: number, type: 'object' | 'page' | 'thumbnail' | 'editor-background', data?: any) => void;
     closeContextMenu: () => void;
+
+    isCropping: boolean;
+    setCropping: (isCropping: boolean) => void;
+
+    // Grid Snap
+    snapToGrid: boolean;
+    gridSize: number;
+    toggleSnapToGrid: () => void;
+    setGridSize: (size: number) => void;
+
+    // UI Panel State
+    activePanelTab: 'properties' | 'layers' | 'export';
+    setActivePanelTab: (tab: 'properties' | 'layers' | 'export') => void;
 }
 
 const deepClone = <T>(obj: T): T => {
@@ -159,6 +172,17 @@ export const useEditorStore = create<EditorStore>()(
             closeContextMenu: () => set({
                 contextMenu: { isOpen: false, x: 0, y: 0, type: null, data: undefined }
             }),
+
+            isCropping: false,
+            setCropping: (isCropping) => set({ isCropping }),
+
+            snapToGrid: false,
+            gridSize: 20,
+            toggleSnapToGrid: () => set(state => ({ snapToGrid: !state.snapToGrid })),
+            setGridSize: (gridSize) => set({ gridSize }),
+
+            activePanelTab: 'properties',
+            setActivePanelTab: (tab) => set({ activePanelTab: tab }),
 
             initEditor: (page) => {
                 // Deep clone the page to ensure isolation

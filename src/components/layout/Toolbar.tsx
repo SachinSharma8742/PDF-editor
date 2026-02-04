@@ -42,7 +42,7 @@ import {
     Hash
 } from 'lucide-react';
 import { loadPDF } from '../../utils/pdfOps';
-import { saveDocument, exportPageAsPNG } from '../../utils/exportUtils';
+import { saveDocument, exportPageAsImage } from '../../utils/exportUtils';
 import { useEditorStore } from '../../store/editorStore';
 import clsx from 'clsx';
 import { Tooltip } from '../ui/Tooltip';
@@ -248,19 +248,18 @@ export const Toolbar: React.FC = () => {
                     </button>
 
                     <div className="relative ml-2">
-                        <button onClick={() => setIsExportOpen(!isExportOpen)} className="h-9 px-4 bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-gray-100 text-white dark:text-zinc-900 rounded-lg transition-all shadow-lg active:scale-95 flex items-center gap-2 group">
+                        <button
+                            onClick={() => {
+                                usePDFStore.getState().setIsSelectionMode(true);
+                                // Optional: Select all automatically to be helpful
+                                usePDFStore.getState().selectAllPages();
+                                // We might want to focus the sidebar or ensure it's visible if hidden (if there's a visibility toggle)
+                            }}
+                            className="h-9 px-4 bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-gray-100 text-white dark:text-zinc-900 rounded-lg transition-all shadow-lg active:scale-95 flex items-center gap-2 group"
+                        >
                             <span className="text-xs font-bold tracking-wide">Export</span>
-                            <ChevronDown size={12} className={clsx("transition-transform duration-300 opacity-60", isExportOpen ? "rotate-180" : "")} />
+                            <ChevronDown size={12} className="transition-transform duration-300 opacity-60 -rotate-90 group-hover:translate-x-1" />
                         </button>
-                        {isExportOpen && (
-                            <>
-                                <div className="fixed inset-0 z-40" onClick={() => setIsExportOpen(false)} />
-                                <div className="absolute top-full right-0 mt-3 w-60 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-200 flex flex-col gap-0.5">
-                                    <button onClick={() => { saveDocument(pages, originalPdfBytes); setIsExportOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 flex items-center gap-3 text-gray-700 dark:text-zinc-300 transition-all"><FileText size={14} className="opacity-70" /><span className="text-xs font-medium">Save PDF</span></button>
-                                    <button onClick={() => { const cp = pages.find(p => p.pageNumber === currentPage); if (cp) exportPageAsPNG(cp); setIsExportOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 flex items-center gap-3 text-gray-700 dark:text-zinc-300 transition-all"><ImageIcon size={14} className="opacity-70" /><span className="text-xs font-medium">Export Page Image</span></button>
-                                </div>
-                            </>
-                        )}
                     </div>
                 </div>
             </div>

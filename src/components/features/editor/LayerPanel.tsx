@@ -85,6 +85,14 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
             {/* Quick Actions (Hover Only unless selected or menu open) */}
             <div className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${isMenuOpen ? 'opacity-100' : ''}`}>
                 <button
+                    onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
+                    className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 ${object.visible === false ? 'text-gray-400 opacity-100' : 'text-gray-400'}`}
+                    title={object.visible === false ? "Show" : "Hide"}
+                >
+                    {object.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}
+                </button>
+
+                <button
                     onClick={(e) => { e.stopPropagation(); onToggleLock(); }}
                     className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 ${object.isLocked ? 'text-red-500 opacity-100' : 'text-gray-400'}`}
                     title={object.isLocked ? "Unlock" : "Lock"}
@@ -215,7 +223,7 @@ export const LayerPanel: React.FC = () => {
                                     isSelected={selectedObjectIds.includes(obj.id)}
                                     onSelect={() => selectObject(obj.id, false)}
                                     onToggleLock={() => updateObject(obj.id, { isLocked: !obj.isLocked })}
-                                    onToggleVisibility={() => updateObject(obj.id, { opacity: (obj.opacity === 0 ? 1 : 0) })} // Simple visibility toggle
+                                    onToggleVisibility={() => updateObject(obj.id, { visible: !(obj.visible !== false) })} // Toggle visible
                                 />
                             ))}
                         </div>

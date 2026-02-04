@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { usePDFStore } from '../../store/pdfStore';
-import { FileText, Plus, Upload, CheckSquare, Trash2, Copy, Layers } from 'lucide-react';
+import { FileText, Plus, Upload, CheckSquare, Trash2, Copy, Layers, RotateCw, RotateCcw } from 'lucide-react';
 import { AddPageModal } from '../../components/features/page-operations/AddPageModal';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
@@ -12,16 +12,19 @@ import clsx from 'clsx';
 
 export const Sidebar: React.FC = () => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    // Removed local isSelectionMode
 
     const {
         pages,
         currentPage,
         selectedPageIds,
+        isSelectionMode, // From store
+        setIsSelectionMode, // From store
         setCurrentPage,
         togglePageSelection,
         selectAllPages,
         deselectAllPages,
+        selectPages,
         deleteSelectedPages,
         duplicateSelectedPages,
         reorderPages,
@@ -129,6 +132,138 @@ export const Sidebar: React.FC = () => {
         setIsSelectionMode(!isSelectionMode);
     };
 
+    // Export State
+    const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+    const [exportFormat, setExportFormat] = useState<'pdf' | 'png' | 'jpg'>('pdf');
+    const [exportQuality, setExportQuality] = useState(0.9);
+    const [isExporting, setIsExporting] = useState(false);
+
+    const handleAdvancedExport = async () => {
+        setIsExporting(true);
+        try {
+            // Dynamic import
+            const { exportPageAsImage, saveDocumentFlattened } = await import('../../utils/exportUtils');
+            const { pdfDocument, pages } = usePDFStore.getState();
+            if (!pdfDocument) return;
+
+            // Filter pages to only selected ones
+            const selectedPages = pages.filter(p => selectedPageIds.includes(p.id));
+
+            if (exportFormat === 'pdf') {
+                // Export flattened PDF
+                // We create a temporary logical document of just the selected pages?
+                // saveDocumentFlattened usually takes (pages, pdfDoc). Behavior might default to all.
+                // We need to support selected-only.
+                // If the util doesn't support filtering, we might need to modify it or pass filtered list.
+                // Assuming saveDocumentFlattened handles the list passed to it:
+                await saveDocumentFlattened(selectedPages, pdfDocument, exportQuality);
+            } else {
+                // Export Images
+                // If multiple, probably zip? Or individual downloads?
+                // For simplicity, download individually loop for now.
+                for (const page of selectedPages) {
+                    await exportPageAsImage(page, exportFormat, exportQuality, pdfDocument);
+                }
+            }
+            setIsExportMenuOpen(false);
+            setIsSelectionMode(false);
+            deselectAllPages();
+        } catch (e) {
+            console.error(e);
+            alert('Export failed');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const renderExportMenu = () => {
+        if (!isExportMenuOpen) return null;
+        return (
+            <div className="mt-3 p-4 bg-[#1e1e20] border border-white/5 rounded-2xl shadow-2xl animate-in zoom-in-95 duration-200">
+                <div className="space-y-5">
+                    {/* Header */}
+                    <div className="flex justify-between items-center">
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Export Settings</span>
+                        <button
+                            onClick={() => setIsExportMenuOpen(false)}
+                            className="text-zinc-500 hover:text-white transition-colors"
+                        >
+                            <Plus size={14} className="rotate-45" />
+                        </button>
+                    </div>
+
+                    {/* Format Selection */}
+                    <div className="space-y-2">
+                        <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">Format</label>
+                        <div className="grid grid-cols-3 gap-1 p-1 bg-black/20 rounded-xl border border-white/5">
+                            {(['pdf', 'png', 'jpg'] as const).map(f => (
+                                <button
+                                    key={f}
+                                    onClick={() => setExportFormat(f)}
+                                    className={clsx(
+                                        "py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all duration-300",
+                                        exportFormat === f
+                                            ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20"
+                                            : "text-zinc-600 hover:text-zinc-300 hover:bg-white/5"
+                                    )}
+                                >
+                                    {f}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Quality Slider */}
+                    <div className="space-y-3">
+                        <div className="flex justify-between items-center text-[9px] font-bold text-zinc-400">
+                            <span className="uppercase tracking-wider">Quality</span>
+                            <span className="text-blue-400">{Math.round(exportQuality * 100)}%</span>
+                        </div>
+                        <div className="relative h-2 w-full rounded-full bg-black/20 border border-white/5">
+                            <div
+                                className="absolute top-0 left-0 h-full rounded-full bg-blue-600/50"
+                                style={{ width: `${exportQuality * 100}%` }}
+                            />
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="1"
+                                step="0.1"
+                                value={exportQuality}
+                                onChange={(e) => setExportQuality(parseFloat(e.target.value))}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            />
+                            {/* Pro Slider Thumb Visual */}
+                            <div
+                                className="absolute top-1/2 -translate-y-1/2 h-4 w-4 bg-blue-500 rounded-full border-2 border-[#1e1e20] shadow-lg pointer-events-none transition-all"
+                                style={{ left: `calc(${exportQuality * 100}% - 8px)` }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Action Button */}
+                    <button
+                        onClick={handleAdvancedExport}
+                        disabled={isExporting}
+                        className="w-full py-3 bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 mt-2"
+                    >
+                        {isExporting ? (
+                            <>
+                                <RotateCw className="animate-spin" size={12} />
+                                Exporting...
+                            </>
+                        ) : (
+                            <>
+                                <Upload size={12} />
+                                Download {selectedPageIds.length} Page{selectedPageIds.length > 1 ? 's' : ''}
+                            </>
+                        )}
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
     const renderHeader = () => {
         return (
             <div className={clsx(
@@ -154,32 +289,103 @@ export const Sidebar: React.FC = () => {
                                 </button>
                             </div>
 
-                            <div className="relative overflow-hidden rounded-2xl border border-blue-100 dark:border-blue-900/30 bg-gradient-to-br from-blue-50/50 to-white dark:from-blue-900/10 dark:to-zinc-900 p-3.5 shadow-sm">
+                            <div className="relative rounded-2xl border border-blue-100 dark:border-blue-900/30 bg-gradient-to-br from-blue-50/50 to-white dark:from-blue-900/10 dark:to-zinc-900 p-3.5 shadow-sm">
                                 <div className="relative z-10 flex flex-col gap-3.5">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest tabular-nums">
-                                            {selectedPageIds.length === 0
-                                                ? "0 PAGES SELECTED"
-                                                : `${selectedPageIds.length} SELECTED`}
-                                        </span>
-                                        <div className="flex items-center gap-1 bg-white/80 dark:bg-zinc-800/80 p-0.5 rounded-lg border border-blue-100/50 dark:border-blue-900/30 shadow-sm">
-                                            <button
-                                                onClick={selectAllPages}
-                                                className="text-[9px] px-2.5 py-1 rounded-md text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all font-black uppercase tracking-tight active:scale-95"
-                                            >
-                                                All
-                                            </button>
-                                            <div className="w-px h-2.5 bg-blue-100/50 dark:bg-blue-800/30 mx-0.5" />
-                                            <button
-                                                onClick={deselectAllPages}
-                                                className="text-[9px] px-2.5 py-1 rounded-md text-gray-400 dark:text-zinc-500 hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all font-black uppercase tracking-tight active:scale-95"
-                                            >
-                                                None
-                                            </button>
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex items-center justify-between">
+                                            {selectedPageIds.length > 0 ? (
+                                                <div className="text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest tabular-nums overflow-hidden text-ellipsis whitespace-nowrap max-w-[120px]" title={(() => {
+                                                    // Tooltip logic
+                                                    const nums = pages
+                                                        .filter(p => selectedPageIds.includes(p.id))
+                                                        .map(p => p.pageNumber)
+                                                        .sort((a, b) => a - b);
+                                                    return `Pages: ${nums.join(', ')}`;
+                                                })()}>
+                                                    {(() => {
+                                                        // Smart Summary Logic (e.g. "1-3, 5")
+                                                        const nums = pages
+                                                            .filter(p => selectedPageIds.includes(p.id))
+                                                            .map(p => p.pageNumber)
+                                                            .sort((a, b) => a - b);
+
+                                                        let ranges = [];
+                                                        for (let i = 0; i < nums.length; i++) {
+                                                            let start = nums[i];
+                                                            while (i + 1 < nums.length && nums[i + 1] === nums[i] + 1) {
+                                                                i++;
+                                                            }
+                                                            let end = nums[i];
+                                                            ranges.push(start === end ? start : `${start}-${end}`);
+                                                        }
+                                                        return ranges.length > 0 ? `PAGES ${ranges.join(', ')}` : "NO PAGES SELECTED";
+                                                    })()}
+                                                </div>
+                                            ) : (
+                                                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Select Pages</span>
+                                            )}
+
+                                            <div className="flex items-center gap-1 bg-white/80 dark:bg-zinc-800/80 p-0.5 rounded-lg border border-blue-100/50 dark:border-blue-900/30 shadow-sm">
+                                                <button
+                                                    onClick={selectAllPages}
+                                                    className="text-[9px] px-2.5 py-1 rounded-md text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all font-black uppercase tracking-tight active:scale-95"
+                                                >
+                                                    All
+                                                </button>
+                                                <div className="w-px h-2.5 bg-blue-100/50 dark:bg-blue-800/30 mx-0.5" />
+                                                <button
+                                                    onClick={deselectAllPages}
+                                                    className="text-[9px] px-2.5 py-1 rounded-md text-gray-400 dark:text-zinc-500 hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all font-black uppercase tracking-tight active:scale-95"
+                                                >
+                                                    None
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Smart Input */}
+                                        <div className="relative group">
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. 1-5, 8, 10-12"
+                                                className="w-full bg-white dark:bg-zinc-800/50 border border-blue-100 dark:border-blue-900/30 rounded-lg py-1.5 px-2 text-[10px] font-bold text-zinc-700 dark:text-zinc-300 placeholder:text-zinc-500/50 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all uppercase tracking-wide"
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        const val = e.currentTarget.value.trim();
+                                                        if (!val) return;
+
+                                                        const newSelectedIds = new Set<string>();
+                                                        const parts = val.split(',');
+
+                                                        parts.forEach(part => {
+                                                            part = part.trim();
+                                                            if (part.includes('-')) {
+                                                                const [start, end] = part.split('-').map(n => parseInt(n.trim()));
+                                                                if (!isNaN(start) && !isNaN(end)) {
+                                                                    for (let i = start; i <= end; i++) {
+                                                                        const page = pages.find(p => p.pageNumber === i);
+                                                                        if (page) newSelectedIds.add(page.id);
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                const num = parseInt(part);
+                                                                if (!isNaN(num)) {
+                                                                    const page = pages.find(p => p.pageNumber === num);
+                                                                    if (page) newSelectedIds.add(page.id);
+                                                                }
+                                                            }
+                                                        });
+
+                                                        if (newSelectedIds.size > 0) {
+                                                            selectPages(Array.from(newSelectedIds));
+                                                        }
+                                                        e.currentTarget.value = '';
+                                                    }
+                                                }}
+                                            />
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 relative">
                                         <button
                                             onClick={handleDeleteSelected}
                                             disabled={selectedPageIds.length === 0}
@@ -194,37 +400,27 @@ export const Sidebar: React.FC = () => {
                                             <span>Delete</span>
                                         </button>
 
-                                        <button
-                                            onClick={handleExportSelected}
-                                            disabled={selectedPageIds.length === 0}
-                                            className={clsx(
-                                                "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 border shadow-sm active:scale-95",
-                                                selectedPageIds.length > 0
-                                                    ? "bg-blue-600 border-blue-600 text-white hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-500/20"
-                                                    : "bg-gray-50 dark:bg-zinc-800/50 border-transparent text-gray-300 dark:text-zinc-700 opacity-60 cursor-not-allowed shadow-none"
-                                            )}
-                                        >
-                                            <FileText size={13} />
-                                            <span>Export</span>
-                                        </button>
-
-                                        <button
-                                            onClick={handleDuplicateSelected}
-                                            disabled={selectedPageIds.length === 0}
-                                            className={clsx(
-                                                "p-3 rounded-xl transition-all duration-300 border shadow-sm active:scale-95",
-                                                selectedPageIds.length > 0
-                                                    ? "bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-300 hover:bg-zinc-900 dark:hover:bg-zinc-700 hover:text-white hover:border-zinc-900"
-                                                    : "bg-gray-50 dark:bg-zinc-800/50 border-transparent text-gray-300 dark:text-zinc-700 opacity-60 cursor-not-allowed shadow-none"
-                                            )}
-                                            title="Clone Pages"
-                                        >
-                                            <Copy size={13} />
-                                        </button>
+                                        <div className="relative flex-1">
+                                            <button
+                                                onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+                                                disabled={selectedPageIds.length === 0}
+                                                className={clsx(
+                                                    "w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 border shadow-sm active:scale-95",
+                                                    selectedPageIds.length > 0
+                                                        ? "bg-blue-600 border-blue-600 text-white hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-500/20"
+                                                        : "bg-gray-50 dark:bg-zinc-800/50 border-transparent text-gray-300 dark:text-zinc-700 opacity-60 cursor-not-allowed shadow-none"
+                                                )}
+                                            >
+                                                <FileText size={13} />
+                                                <span>Export</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                            {renderExportMenu()}
                         </div>
+
                     ) : (
                         <div className="flex justify-between items-center px-0.5 animate-in fade-in zoom-in-95 duration-300 overflow-hidden">
                             <div className="flex items-center gap-3 min-w-0">
@@ -269,7 +465,7 @@ export const Sidebar: React.FC = () => {
                         </div>
                     )}
                 </div>
-            </div>
+            </div >
         );
     };
 
