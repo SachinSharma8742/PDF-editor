@@ -360,53 +360,64 @@ const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality:
             }
 
             if (obj.type === 'text') {
-                // Text Rendering
                 const fontSize = obj.fontSize || 16;
                 ctx.font = `${obj.fontWeight || ''} ${obj.fontStyle || ''} ${fontSize}px ${obj.fontFamily || 'Inter'}`;
                 ctx.textBaseline = 'top';
                 ctx.fillStyle = obj.fill || 'black';
-
-                // Handle multiline text?
-                // Simple implementation
                 ctx.fillText(obj.text || '', obj.x, obj.y);
 
             } else if (obj.type === 'sticky-note') {
-                // Sticky Note Rendering
-                // Background
                 ctx.fillStyle = obj.fill || '#fef08a';
                 ctx.strokeStyle = obj.stroke || '#eab308';
-                ctx.roundRect ? ctx.roundRect(obj.x, obj.y, w, h, 2) : ctx.rect(obj.x, obj.y, w, h);
+                if ((ctx as any).roundRect) {
+                    (ctx as any).roundRect(obj.x, obj.y, w, h, 2);
+                } else {
+                    ctx.rect(obj.x, obj.y, w, h);
+                }
                 ctx.fill();
                 ctx.stroke();
 
-                // Text
                 ctx.font = `14px Arial`;
                 ctx.fillStyle = 'black';
                 ctx.textBaseline = 'top';
-                // Simple wrap required? Just clip for now
                 ctx.fillText(obj.text || '', obj.x + 10, obj.y + 10);
 
             } else if (obj.type === 'rectangle') {
                 ctx.beginPath();
                 ctx.rect(obj.x, obj.y, w, h);
-                if (obj.fill) { ctx.fillStyle = obj.fill; ctx.fill(); }
-                if (obj.stroke) { ctx.strokeStyle = obj.stroke; ctx.lineWidth = obj.strokeWidth || 1; ctx.stroke(); }
+                if (obj.fill && obj.fill !== 'transparent') {
+                    ctx.fillStyle = obj.fill;
+                    ctx.fill();
+                }
+                if (obj.stroke) {
+                    ctx.strokeStyle = obj.stroke;
+                    ctx.lineWidth = obj.strokeWidth || 1;
+                    ctx.stroke();
+                }
+
+            } else if (obj.type === 'circle') {
+                ctx.beginPath();
+                const radius = w / 2;
+                ctx.ellipse(obj.x + radius, obj.y + radius, radius, radius, 0, 0, 2 * Math.PI);
+                if (obj.fill && obj.fill !== 'transparent') {
+                    ctx.fillStyle = obj.fill;
+                    ctx.fill();
+                }
+                if (obj.stroke) {
+                    ctx.strokeStyle = obj.stroke;
+                    ctx.lineWidth = obj.strokeWidth || 1;
+                    ctx.stroke();
+                }
 
             } else if (obj.type === 'line') {
-                // Line is usually height 0 or small? Or points?
-                // Our 'line' tool creates a shape with width/height, but specific rendering logic?
-                // Let's check Renderer. It uses <Line> with points [0,0, width, height] relative?
-                // Actually `EditorCanvas`: `points={[0, 0, object.width, 0]}` for horizontal line starter?
-                // Let's assume simple stroke from x,y to x+w, y+h
                 ctx.beginPath();
                 ctx.moveTo(obj.x, obj.y);
-                ctx.lineTo(obj.x + w, obj.y + h); // Simplified
+                ctx.lineTo(obj.x + w, obj.y + h);
                 ctx.strokeStyle = obj.stroke || 'black';
                 ctx.lineWidth = obj.strokeWidth || 2;
                 ctx.stroke();
 
             } else if (obj.type === 'arrow') {
-                // Arrow
                 const headlen = (obj.strokeWidth || 2) * 3;
                 const angle = Math.atan2(h, w);
                 const tox = obj.x + w;
@@ -419,15 +430,28 @@ const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality:
                 ctx.lineWidth = obj.strokeWidth || 2;
                 ctx.stroke();
 
-                // Head
                 ctx.beginPath();
                 ctx.moveTo(tox, toy);
                 ctx.lineTo(tox - headlen * Math.cos(angle - Math.PI / 6), toy - headlen * Math.sin(angle - Math.PI / 6));
                 ctx.moveTo(tox, toy);
                 ctx.lineTo(tox - headlen * Math.cos(angle + Math.PI / 6), toy - headlen * Math.sin(angle + Math.PI / 6));
                 ctx.stroke();
+
+            } else if (obj.type === 'path' && obj.points) {
+                ctx.beginPath();
+                ctx.strokeStyle = obj.stroke || 'black';
+                ctx.lineWidth = obj.strokeWidth || 2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                if (obj.points.length > 0) {
+                    ctx.moveTo(obj.x + obj.points[0], obj.y + obj.points[1]);
+                    for (let i = 2; i < obj.points.length; i += 2) {
+                        ctx.lineTo(obj.x + obj.points[i], obj.y + obj.points[i + 1]);
+                    }
+                }
+                ctx.stroke();
+
             } else if (obj.type === 'stamp' || obj.type === 'image') {
-                // Images / Stamps
                 if ((obj as any).src) {
                     await new Promise<void>((resolve) => {
                         const img = new Image();
@@ -438,61 +462,6 @@ const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality:
                         img.onerror = () => resolve();
                         img.src = (obj as any).src;
                     });
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-                } else if (obj.type === 'text') {
-                    const fontSize = obj.fontSize || 16;
-                    ctx.font = `${obj.fontWeight || 'normal'} ${obj.fontStyle || 'normal'} ${fontSize}px ${obj.fontFamily || 'Inter'}`;
-                    ctx.fillStyle = obj.fill || 'black';
-                    ctx.fillText(obj.text || '', obj.x, obj.y + fontSize); // Adjust baseline approx
-                } else if (obj.type === 'rectangle') {
-                    ctx.beginPath();
-                    ctx.rect(obj.x, obj.y, obj.width || 0, obj.height || 0);
-
-                    if (obj.fill && obj.fill !== 'transparent') {
-                        ctx.fillStyle = obj.fill;
-                        ctx.fill();
-                    }
-
-                    ctx.strokeStyle = obj.stroke || 'black';
-                    ctx.lineWidth = obj.strokeWidth || 2;
-                    ctx.stroke();
-                } else if (obj.type === 'circle') {
-                    ctx.beginPath();
-                    const w = obj.width || 0;
-                    const radius = w / 2;
-                    ctx.ellipse(obj.x + radius, obj.y + radius, radius, radius, 0, 0, 2 * Math.PI);
-
-                    if (obj.fill && obj.fill !== 'transparent') {
-                        ctx.fillStyle = obj.fill;
-                        ctx.fill();
-                    }
-
-                    ctx.strokeStyle = obj.stroke || 'black';
-                    ctx.lineWidth = obj.strokeWidth || 2;
-                    ctx.stroke();
-                } else if (obj.type === 'path' && obj.points) {
-                    ctx.beginPath();
-                    ctx.strokeStyle = obj.stroke || 'black';
-                    ctx.lineWidth = obj.strokeWidth || 2;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    if (typeof obj.opacity === 'number') {
-                        ctx.globalAlpha = obj.opacity;
-                    }
-
-                    if (obj.points.length > 0) {
-                        ctx.moveTo(obj.x + obj.points[0], obj.y + obj.points[1]);
-                        for (let i = 2; i < obj.points.length; i += 2) {
-                            ctx.lineTo(obj.x + obj.points[i], obj.y + obj.points[i + 1]);
-                        }
-                    }
-                    ctx.stroke();
-                    ctx.globalAlpha = 1; // Reset
->>>>>>> 6c11700ac2d90d3c5c9ad649357e67c63562aa47
-=======
->>>>>>> 420336153f6c5e7ff99ffd66b27c3fd22b84c997
                 }
             }
 
