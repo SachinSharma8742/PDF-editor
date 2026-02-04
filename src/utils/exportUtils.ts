@@ -150,6 +150,25 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
                             ctx.strokeStyle = obj.stroke || 'black';
                             ctx.lineWidth = obj.strokeWidth || 2;
                             ctx.stroke();
+                        } else if (obj.type === 'path' && obj.points) {
+                            ctx.beginPath();
+                            ctx.strokeStyle = obj.stroke || 'black';
+                            ctx.lineWidth = obj.strokeWidth || 2;
+                            ctx.lineCap = 'round';
+                            ctx.lineJoin = 'round';
+                            if (typeof obj.opacity === 'number') {
+                                ctx.globalAlpha = obj.opacity;
+                            }
+
+                            if (obj.points.length > 0) {
+                                // Points are relative to obj.x, obj.y
+                                ctx.moveTo(obj.x + obj.points[0], obj.y + obj.points[1]);
+                                for (let i = 2; i < obj.points.length; i += 2) {
+                                    ctx.lineTo(obj.x + obj.points[i], obj.y + obj.points[i + 1]);
+                                }
+                            }
+                            ctx.stroke();
+                            ctx.globalAlpha = 1; // Reset
                         }
 
                         ctx.restore();
@@ -419,6 +438,55 @@ const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality:
                         img.onerror = () => resolve();
                         img.src = (obj as any).src;
                     });
+                } else if (obj.type === 'text') {
+                    const fontSize = obj.fontSize || 16;
+                    ctx.font = `${obj.fontWeight || 'normal'} ${obj.fontStyle || 'normal'} ${fontSize}px ${obj.fontFamily || 'Inter'}`;
+                    ctx.fillStyle = obj.fill || 'black';
+                    ctx.fillText(obj.text || '', obj.x, obj.y + fontSize); // Adjust baseline approx
+                } else if (obj.type === 'rectangle') {
+                    ctx.beginPath();
+                    ctx.rect(obj.x, obj.y, obj.width || 0, obj.height || 0);
+
+                    if (obj.fill && obj.fill !== 'transparent') {
+                        ctx.fillStyle = obj.fill;
+                        ctx.fill();
+                    }
+
+                    ctx.strokeStyle = obj.stroke || 'black';
+                    ctx.lineWidth = obj.strokeWidth || 2;
+                    ctx.stroke();
+                } else if (obj.type === 'circle') {
+                    ctx.beginPath();
+                    const w = obj.width || 0;
+                    const radius = w / 2;
+                    ctx.ellipse(obj.x + radius, obj.y + radius, radius, radius, 0, 0, 2 * Math.PI);
+
+                    if (obj.fill && obj.fill !== 'transparent') {
+                        ctx.fillStyle = obj.fill;
+                        ctx.fill();
+                    }
+
+                    ctx.strokeStyle = obj.stroke || 'black';
+                    ctx.lineWidth = obj.strokeWidth || 2;
+                    ctx.stroke();
+                } else if (obj.type === 'path' && obj.points) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = obj.stroke || 'black';
+                    ctx.lineWidth = obj.strokeWidth || 2;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    if (typeof obj.opacity === 'number') {
+                        ctx.globalAlpha = obj.opacity;
+                    }
+
+                    if (obj.points.length > 0) {
+                        ctx.moveTo(obj.x + obj.points[0], obj.y + obj.points[1]);
+                        for (let i = 2; i < obj.points.length; i += 2) {
+                            ctx.lineTo(obj.x + obj.points[i], obj.y + obj.points[i + 1]);
+                        }
+                    }
+                    ctx.stroke();
+                    ctx.globalAlpha = 1; // Reset
                 }
             }
 
