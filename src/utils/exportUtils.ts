@@ -150,6 +150,25 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
                             ctx.strokeStyle = obj.stroke || 'black';
                             ctx.lineWidth = obj.strokeWidth || 2;
                             ctx.stroke();
+                        } else if (obj.type === 'path' && obj.points) {
+                            ctx.beginPath();
+                            ctx.strokeStyle = obj.stroke || 'black';
+                            ctx.lineWidth = obj.strokeWidth || 2;
+                            ctx.lineCap = 'round';
+                            ctx.lineJoin = 'round';
+                            if (typeof obj.opacity === 'number') {
+                                ctx.globalAlpha = obj.opacity;
+                            }
+
+                            if (obj.points.length > 0) {
+                                // Points are relative to obj.x, obj.y
+                                ctx.moveTo(obj.x + obj.points[0], obj.y + obj.points[1]);
+                                for (let i = 2; i < obj.points.length; i += 2) {
+                                    ctx.lineTo(obj.x + obj.points[i], obj.y + obj.points[i + 1]);
+                                }
+                            }
+                            ctx.stroke();
+                            ctx.globalAlpha = 1; // Reset
                         }
 
                         ctx.restore();
@@ -312,6 +331,24 @@ export const exportPageAsPNG = async (page: PageState) => {
                     ctx.strokeStyle = obj.stroke || 'black';
                     ctx.lineWidth = obj.strokeWidth || 2;
                     ctx.stroke();
+                } else if (obj.type === 'path' && obj.points) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = obj.stroke || 'black';
+                    ctx.lineWidth = obj.strokeWidth || 2;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    if (typeof obj.opacity === 'number') {
+                        ctx.globalAlpha = obj.opacity;
+                    }
+
+                    if (obj.points.length > 0) {
+                        ctx.moveTo(obj.x + obj.points[0], obj.y + obj.points[1]);
+                        for (let i = 2; i < obj.points.length; i += 2) {
+                            ctx.lineTo(obj.x + obj.points[i], obj.y + obj.points[i + 1]);
+                        }
+                    }
+                    ctx.stroke();
+                    ctx.globalAlpha = 1; // Reset
                 }
 
                 ctx.restore();
