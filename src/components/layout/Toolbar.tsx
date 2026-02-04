@@ -250,10 +250,9 @@ export const Toolbar: React.FC = () => {
                     <div className="relative ml-2">
                         <button
                             onClick={() => {
+                                usePDFStore.getState().setSidebarTab('export');
                                 usePDFStore.getState().setIsSelectionMode(true);
-                                // Optional: Select all automatically to be helpful
                                 usePDFStore.getState().selectAllPages();
-                                // We might want to focus the sidebar or ensure it's visible if hidden (if there's a visibility toggle)
                             }}
                             className="h-9 px-4 bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-gray-100 text-white dark:text-zinc-900 rounded-lg transition-all shadow-lg active:scale-95 flex items-center gap-2 group"
                         >

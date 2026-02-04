@@ -1,8 +1,10 @@
 import { create } from 'zustand';
-import { devtools, persist } from 'zustand/middleware';
+import { createJSONStorage, devtools, persist } from 'zustand/middleware';
 import microdiff from 'microdiff';
+import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
+import { savePDFToStorage } from '../utils/storage';
 
-export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature' | 'measure' | 'redaction' | 'form-text' | 'form-checkbox' | 'ocr';
+export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature' | 'measure' | 'redaction' | 'form-text' | 'form-checkbox' | 'ocr' | 'sticky-note' | 'callout' | 'search';
 export type PageSource = 'pdf' | 'image' | 'blank';
 
 // --- Core Data Models ---
@@ -12,9 +14,19 @@ export interface Point {
     y: number;
 }
 
+export interface Comment {
+    id: string;
+    text: string;
+    author: string;
+    timestamp: number;
+    replies?: Comment[];
+    isResolved?: boolean;
+}
+
 export interface PDFObject {
     id: string;
-    type: 'text' | 'image' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path' | 'measure' | 'redaction' | 'sticky-note' | 'form-text' | 'form-checkbox';
+    comments?: Comment[]; // For collaboration/notes
+    type: 'text' | 'image' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path' | 'measure' | 'redaction' | 'sticky-note' | 'callout' | 'form-text' | 'form-checkbox';
     x: number;
     y: number;
     width?: number;
@@ -49,6 +61,7 @@ export interface PDFObject {
     flipX?: boolean;
     flipY?: boolean;
     crop?: { x: number; y: number; width: number; height: number };
+    cropShape?: 'rect' | 'circle';
 
     // Styling
     blendMode?: string;
@@ -60,11 +73,41 @@ export interface PDFObject {
     shadowOffsetX?: number;
     shadowOffsetY?: number;
     shadowOpacity?: number;
+    shadowBlurQuality?: string; // Konva 'quality' or similar
+
+    // Advanced Text
+    letterSpacing?: number;
+    lineHeight?: number;
+    textDecoration?: string; // 'underline', 'line-through', ''
+    isCurved?: boolean;
+    curveRadius?: number;
+
+    // Advanced Image
+    brightness?: number;
+    contrast?: number;
+    saturation?: number;
+    blurRadius?: number;
+    hue?: number;
+    tintColor?: string;
+    noise?: number;
+    pixelate?: number;
+
+    // Transform
+    skewX?: number;
+    skewY?: number;
 
     // Stamp specific
     content?: string; // Raw SVG string
 
+    // Callout specific
+    pointerDirection?: 'up' | 'down' | 'left' | 'right';
+    pointerWidth?: number;
+    pointerHeight?: number;
+    bgFill?: string; // Background for the label tag
+
     isLocked?: boolean;
+    isWrapped?: boolean;
+    lockAspectRatio?: boolean;
     visible?: boolean; // New visibility flag
     groupId?: string; // For grouping objects
     isNew?: boolean; // Temporary flag for auto-focusing new objects
@@ -114,14 +157,46 @@ export interface PageState {
     flipY?: boolean;
 
     // Module C: Page Effects
+    filter?: 'none' | 'sepia' | 'grayscale' | 'vintage' | 'cool' | 'warm';
+    filterIntensity?: number; // 0 to 1
+    texture?: 'none' | 'paper' | 'grain' | 'canvas';
+    textureOpacity?: number; // 0 to 1
+    overlayColor?: string; // Hex for tint
+    overlayOpacity?: number; // 0 to 1
+    watermark?: {
+        text: string;
+        fontSize?: number;
+        opacity?: number;
+        color?: string;
+        rotate?: number; // degrees
+        isRepeating?: boolean;
+    };
+    structure?: {
+        header?: {
+            text: string;
+            align: 'left' | 'center' | 'right';
+            fontSize: number;
+            color: string;
+            opacity: number;
+        };
+        footer?: {
+            text: string;
+            align: 'left' | 'center' | 'right';
+            fontSize: number;
+            color: string;
+            opacity: number;
+        };
+    };
+
+    // Legacy/Advanced granular filters (optional)
     pageFilters?: {
-        brightness: number; // 1 = normal
-        contrast: number;   // 1 = normal
-        grayscale: number;  // 0 = none, 1 = full
-        sepia: number;      // 0 = none, 1 = full
-        invert: number;     // 0 = none, 1 = full
-        hueRotate: number;  // 0 deg
-        blur: number;       // 0 px
+        brightness: number;
+        contrast: number;
+        grayscale: number;
+        sepia: number;
+        invert: number;
+        hueRotate: number;
+        blur: number;
     };
     pageBackground?: {
         color?: string;
@@ -166,6 +241,7 @@ interface PDFStore {
     scale: number;
     isLoading: boolean;
     fileName: string | null;
+    sidebarTab: 'pages' | 'export';
 
     // History
     history: HistoryState;
@@ -198,6 +274,7 @@ interface PDFStore {
     // Theme
     theme: 'light' | 'dark';
     toggleTheme: () => void;
+    setSidebarTab: (tab: 'pages' | 'export') => void;
 
     // Actions
     setPdfDocument: (doc: any, bytes: ArrayBuffer, fileName: string) => void;
@@ -205,6 +282,7 @@ interface PDFStore {
     addPage: (source: PageSource, content?: string, width?: number, height?: number, backgroundColor?: string) => void;
     updatePage: (pageId: string, updates: Partial<PageState>) => void;
     reorderPages: (fromIndex: number, toIndex: number) => void;
+    applyStructureToAllPages: (type: 'header' | 'footer' | 'both', structure: PageState['structure']) => void;
     deletePage: (pageId: string) => void;
     deleteSelectedPages: () => void;
     rotatePage: (pageId: string, direction: 'cw' | 'ccw') => void;
@@ -218,6 +296,7 @@ interface PDFStore {
     setIsSelectionMode: (isSelectionMode: boolean) => void; // Added action
     duplicateSelectedPages: () => void;
     duplicatePage: (pageId: string) => void;
+    removeBlankPages: () => void;
 
     // View Actions
     setScale: (scale: number) => void;
@@ -300,6 +379,7 @@ export const usePDFStore = create<PDFStore>()(
                 scale: 1.0,
                 isLoading: false,
                 fileName: null,
+                sidebarTab: 'pages',
 
                 history: { past: [], future: [] },
                 lastSavedState: null,
@@ -307,6 +387,7 @@ export const usePDFStore = create<PDFStore>()(
                 // Global Theme
                 theme: 'dark',
                 toggleTheme: () => set(state => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
+                setSidebarTab: (tab) => set({ sidebarTab: tab }),
 
                 activeTool: 'select',
                 eraserMode: 'path', // Default to path eraser
@@ -449,6 +530,9 @@ export const usePDFStore = create<PDFStore>()(
                         history: { past: [], future: [] },
                         lastSavedState: initialPages // Initialize baseline
                     });
+
+                    // Persist bytes to IndexedDB for reloads
+                    savePDFToStorage(bytes, { fileName, lastSaved: Date.now() });
                 },
 
                 appendPDF: (doc, bytes, addedPagesCount) => {
@@ -472,6 +556,7 @@ export const usePDFStore = create<PDFStore>()(
                         originalPdfBytes: bytes,
                         pages: [...state.pages, ...newPages]
                     }));
+                    savePDFToStorage(bytes, { fileName: get().fileName || 'Document.pdf', lastSaved: Date.now() });
                 },
 
                 addPage: (source, content, width = 595, height = 842, backgroundColor) => {
@@ -513,6 +598,23 @@ export const usePDFStore = create<PDFStore>()(
                         newPages.splice(toIndex, 0, moved);
                         return {
                             pages: newPages.map((p, i) => ({ ...p, pageNumber: i + 1 }))
+                        };
+                    });
+                },
+
+                removeBlankPages: () => {
+                    get().saveToHistory();
+                    set(state => {
+                        const newPages = state.pages.filter(p => {
+                            // Keep if source is NOT blank OR if it has objects/paths/content
+                            if (p.source !== 'blank') return true;
+                            // If blank, keep ONLY if it has added content
+                            return (p.objects && p.objects.length > 0) || (p.paths && p.paths.length > 0) || !!p.content;
+                        }).map((p, i) => ({ ...p, pageNumber: i + 1 }));
+
+                        return {
+                            pages: newPages,
+                            currentPage: Math.min(state.currentPage, newPages.length) || 1
                         };
                     });
                 },
@@ -777,7 +879,10 @@ export const usePDFStore = create<PDFStore>()(
                         redaction: { ...DEFAULT_SETTINGS, color: '#000000', size: 0 },
                         'form-text': { ...DEFAULT_SETTINGS },
                         'form-checkbox': { ...DEFAULT_SETTINGS },
-                        'ocr': { ...DEFAULT_SETTINGS }
+                        'ocr': { ...DEFAULT_SETTINGS },
+                        'search': { ...DEFAULT_SETTINGS },
+                        'sticky-note': { ...DEFAULT_SETTINGS, color: '#fef08a' }, // Default yellow note
+                        'callout': { ...DEFAULT_SETTINGS, color: '#000000', size: 14 } // Default text settings
                     }
                 }),
 
@@ -877,18 +982,47 @@ export const usePDFStore = create<PDFStore>()(
                             }
                         })
                     }));
-                }
+                },
+
+                applyStructureToAllPages: (type, structure) => {
+                    if (!structure) return;
+                    get().saveToHistory();
+                    set(state => ({
+                        pages: state.pages.map(p => {
+                            const newStructure = { ...(p.structure || {}) };
+                            if (type === 'header' || type === 'both') {
+                                if (structure.header) newStructure.header = { ...structure.header };
+                                else delete newStructure.header;
+                            }
+                            if (type === 'footer' || type === 'both') {
+                                if (structure.footer) newStructure.footer = { ...structure.footer };
+                                else delete newStructure.footer;
+                            }
+                            return { ...p, structure: newStructure, isEdited: true };
+                        })
+                    }));
+                },
             })
         ),
         {
             name: 'pdf-editor-storage',
-            partialize: (state) => ({
+            storage: createJSONStorage(() => ({
+                getItem: async (name) => {
+                    const val = await idbGet(name);
+                    return val ? JSON.stringify(val) : null;
+                },
+                setItem: async (name, value) => {
+                    await idbSet(name, JSON.parse(value));
+                },
+                removeItem: async (name) => {
+                    await idbDel(name);
+                },
+            })),
+            partialize: (state: PDFStore) => ({
                 toolPreferences: state.toolPreferences,
                 theme: state.theme,
                 calibration: state.calibration,
                 activeTool: state.activeTool,
-                // We persist pages (annotations). Note: reloading without PDF content 
-                // might show annotations on blank background until PDF is reloaded.
                 pages: state.pages
             })
         }

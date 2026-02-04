@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Group, Rect, Line, Image as KonvaImage, Text } from 'react-konva';
+import { Group, Rect, Line, Image as KonvaImage, Text, Path } from 'react-konva';
 import { useEditorStore } from '../../../store/editorStore';
 import Konva from 'konva';
+import { Square, Circle, Check } from 'lucide-react'; // For UI controls
 
 interface CropOverlayProps {
     objectId: string;
@@ -128,24 +129,66 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({ objectId }) => {
                 opacity={0.3}
             />
 
-            {/* 2. Dark Overlay for outside crop area (4 rects) */}
-            <Group x={fullImgX} y={fullImgY}>
-                <Rect width={fullStageWidth} x={0} y={0} height={crop.y * displayScaleY} fill="black" opacity={0.5} />
-                <Rect width={fullStageWidth} x={0} y={(crop.y + crop.height) * displayScaleY} height={fullStageHeight - (crop.y + crop.height) * displayScaleY} fill="black" opacity={0.5} />
-                <Rect width={crop.x * displayScaleX} x={0} y={crop.y * displayScaleY} height={crop.height * displayScaleY} fill="black" opacity={0.5} />
-                <Rect width={fullStageWidth - (crop.x + crop.width) * displayScaleX} x={(crop.x + crop.width) * displayScaleX} y={crop.y * displayScaleY} height={crop.height * displayScaleY} fill="black" opacity={0.5} />
-            </Group>
+            {/* 2. Dark Overlay (Path with hole) */}
+            <Path
+                x={fullImgX}
+                y={fullImgY}
+                fill="black"
+                opacity={0.5}
+                fillRule="evenodd"
+                data={(() => {
+                    // Outer Rectangle (Full Image)
+                    const outer = `M 0 0 L ${fullStageWidth} 0 L ${fullStageWidth} ${fullStageHeight} L 0 ${fullStageHeight} Z`;
+
+                    // Inner Hole
+                    let inner = '';
+                    const cx = crop.x * displayScaleX;
+                    const cy = crop.y * displayScaleY;
+                    const cw = crop.width * displayScaleX;
+                    const ch = crop.height * displayScaleY;
+
+                    if (object.cropShape === 'circle') {
+                        // Ellipse / Circle Hole
+                        // Approximate ellipse using cubic bezier or just use A command
+                        // M cx cy ... A rx ry 0 1 0 ...
+                        const rx = cw / 2;
+                        const ry = ch / 2;
+                        const centX = cx + rx;
+                        const centY = cy + ry;
+                        // Path for circle/ellipse: M (cx-rx) cy A rx ry 0 1 0 (cx+rx) cy A rx ry 0 1 0 (cx-rx) cy
+                        inner = `M ${centX - rx} ${centY} A ${rx} ${ry} 0 1 0 ${centX + rx} ${centY} A ${rx} ${ry} 0 1 0 ${centX - rx} ${centY}`;
+                    } else {
+                        // Rectangle Hole
+                        inner = `M ${cx} ${cy} L ${cx + cw} ${cy} L ${cx + cw} ${cy + ch} L ${cx} ${cy + ch} Z`;
+                    }
+
+                    return `${outer} ${inner}`;
+                })()}
+            />
 
             {/* 3. The Active Crop Area */}
             <Group x={0} y={0}>
                 {/* Border */}
-                <Rect
-                    width={object.width}
-                    height={object.height}
-                    stroke={color}
-                    strokeWidth={2 / stageScale}
-                    dash={[4, 4]}
-                />
+                {/* Visual Border */}
+                {object.cropShape === 'circle' ? (
+                    <Rect
+                        x={0} y={0}
+                        width={object.width}
+                        height={object.height}
+                        stroke={color}
+                        strokeWidth={2 / stageScale}
+                        dash={[4, 4]}
+                        cornerRadius={Math.min(object.width!, object.height!) / 2}
+                    />
+                ) : (
+                    <Rect
+                        width={object.width}
+                        height={object.height}
+                        stroke={color}
+                        strokeWidth={2 / stageScale}
+                        dash={[4, 4]}
+                    />
+                )}
 
                 {/* Corner Handles */}
                 {renderHandle(0, 0, 'nw-resize', (dx, dy) => {
@@ -189,30 +232,60 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({ objectId }) => {
                     });
                 })}
 
-                {/* Done Button Shadow / Indicator */}
+                {/* Controls */}
                 {!isDragging && (
                     <Group x={object.width! / 2} y={object.height! + 20 / stageScale}>
-                        <Rect
-                            width={80 / stageScale}
-                            height={25 / stageScale}
-                            fill="#3b82f6"
-                            cornerRadius={4 / stageScale}
-                            offsetX={40 / stageScale}
-                            onClick={() => setCropping(false)}
-                            onTap={() => setCropping(false)}
-                        />
-                        <Text
-                            text="Confirm Crop"
-                            fontSize={10 / stageScale}
-                            fill="white"
-                            align="center"
-                            verticalAlign="middle"
-                            width={80 / stageScale}
-                            height={25 / stageScale}
-                            offsetX={40 / stageScale}
-                            pointerEvents="none"
-                            fontStyle="bold"
-                        />
+                        {/* Shape Toggles */}
+                        <Group x={-60 / stageScale} y={0}>
+                            <Rect
+                                width={24 / stageScale} height={24 / stageScale}
+                                fill={object.cropShape !== 'circle' ? '#3b82f6' : 'white'}
+                                cornerRadius={4 / stageScale}
+                                shadowColor="black" shadowBlur={5} shadowOpacity={0.2}
+                                onClick={() => updateObject(objectId, { cropShape: 'rect' })}
+                            />
+                            {/* Cannot render Lucide icon directly in Konva. Using simple shapes or previously loaded image.
+                                 For simplicity, rendering simpler shapes to represent icons.
+                             */}
+                            <Rect x={6 / stageScale} y={6 / stageScale} width={12 / stageScale} height={12 / stageScale}
+                                stroke={object.cropShape !== 'circle' ? 'white' : '#71717a'} strokeWidth={2 / stageScale} />
+                        </Group>
+
+                        <Group x={-30 / stageScale} y={0}>
+                            <Rect
+                                width={24 / stageScale} height={24 / stageScale}
+                                fill={object.cropShape === 'circle' ? '#3b82f6' : 'white'}
+                                cornerRadius={4 / stageScale}
+                                shadowColor="black" shadowBlur={5} shadowOpacity={0.2}
+                                onClick={() => updateObject(objectId, { cropShape: 'circle' })}
+                            />
+                            <Rect x={6 / stageScale} y={6 / stageScale} width={12 / stageScale} height={12 / stageScale}
+                                stroke={object.cropShape === 'circle' ? 'white' : '#71717a'} strokeWidth={2 / stageScale} cornerRadius={100} />
+                        </Group>
+
+
+                        {/* Confirm Button */}
+                        <Group x={10 / stageScale} onClick={() => setCropping(false)} onTap={() => setCropping(false)}>
+                            <Rect
+                                width={80 / stageScale}
+                                height={24 / stageScale}
+                                fill="#22c55e"
+                                cornerRadius={4 / stageScale}
+                                shadowColor="black" shadowBlur={5} shadowOpacity={0.2}
+                            />
+                            <Text
+                                text="Done"
+                                fontSize={11 / stageScale}
+                                fill="white"
+                                align="center"
+                                verticalAlign="middle"
+                                width={80 / stageScale}
+                                height={24 / stageScale}
+                                pointerEvents="none"
+                                fontStyle="bold"
+                                y={6 / stageScale} // Centering hack
+                            />
+                        </Group>
                     </Group>
                 )}
             </Group>

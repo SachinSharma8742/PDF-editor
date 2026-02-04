@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { usePDFStore } from '../../store/pdfStore';
-import { FileText, Plus, Upload, CheckSquare, Trash2, Copy, Layers, RotateCw, RotateCcw } from 'lucide-react';
+import {
+    FileText, Plus, Upload, CheckSquare, Trash2,
+    Layers, RotateCw, Download, Settings,
+    ChevronRight, X, Lock, Image as ImageIcon
+} from 'lucide-react';
 import { AddPageModal } from '../../components/features/page-operations/AddPageModal';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
@@ -9,27 +13,31 @@ import { SortablePageItem } from './SortablePageItem';
 import { PDFDocument } from 'pdf-lib';
 import { extractPagesAsPDF, loadPDF } from '../../utils/pdfOps';
 import clsx from 'clsx';
+import { saveDocument, saveDocumentFlattened, exportPageAsImage } from '../../utils/exportUtils';
+
+type SidebarTab = 'pages' | 'export';
 
 export const Sidebar: React.FC = () => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    // Removed local isSelectionMode
 
     const {
         pages,
         currentPage,
         selectedPageIds,
-        isSelectionMode, // From store
-        setIsSelectionMode, // From store
+        isSelectionMode,
+        setIsSelectionMode,
         setCurrentPage,
         togglePageSelection,
         selectAllPages,
         deselectAllPages,
         selectPages,
         deleteSelectedPages,
-        duplicateSelectedPages,
         reorderPages,
         appendPDF,
-        fileName
+        fileName,
+        pdfDocument,
+        sidebarTab,
+        setSidebarTab
     } = usePDFStore();
 
     const sensors = useSensors(
@@ -48,44 +56,15 @@ export const Sidebar: React.FC = () => {
         }
     };
 
-    const handleSelectionToggle = (e: React.MouseEvent, pageId: string) => {
-        e.stopPropagation();
-        togglePageSelection(pageId);
-    };
-
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
-
         if (over && active.id !== over.id) {
             const oldIndex = pages.findIndex(p => p.id === active.id);
             const newIndex = pages.findIndex(p => p.id === over.id);
-
             if (oldIndex !== -1 && newIndex !== -1) {
                 reorderPages(oldIndex, newIndex);
             }
         }
-    };
-
-    const handleMergePDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        try {
-            const arrayBuffer = await file.arrayBuffer();
-            const bufferForDoc = arrayBuffer.slice(0);
-            const pdfDoc = await PDFDocument.load(bufferForDoc);
-            appendPDF(pdfDoc, arrayBuffer, pdfDoc.getPageCount());
-            e.target.value = '';
-        } catch (error) {
-            console.error('Merge failed', error);
-            alert('Failed to merge PDF.');
-        }
-    };
-
-    const handleExportSelected = () => {
-        const { originalPdfBytes } = usePDFStore.getState();
-        if (!originalPdfBytes) return;
-        extractPagesAsPDF(originalPdfBytes, pages, selectedPageIds);
     };
 
     const handleUploadPDF = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,12 +76,10 @@ export const Sidebar: React.FC = () => {
                 if (!arrayBuffer) return;
                 try {
                     usePDFStore.getState().setIsLoading(true);
-                    const bufferForPDFjs = arrayBuffer.slice(0);
-                    const doc = await loadPDF(bufferForPDFjs);
+                    const doc = await loadPDF(arrayBuffer.slice(0));
                     usePDFStore.getState().setPdfDocument(doc, arrayBuffer, file.name);
                 } catch (error) {
                     console.error("Failed to load PDF:", error);
-                    alert("Error loading PDF");
                 } finally {
                     usePDFStore.getState().setIsLoading(false);
                 }
@@ -111,63 +88,31 @@ export const Sidebar: React.FC = () => {
         }
     };
 
-    const handleDeleteSelected = () => {
-        if (selectedPageIds.length === 0) return;
-        if (confirm(`Delete ${selectedPageIds.length} page(s)?`)) {
-            deleteSelectedPages();
-            if (pages.length === selectedPageIds.length) {
-                setIsSelectionMode(false);
-            }
-        }
-    };
-
-    const handleDuplicateSelected = () => {
-        duplicateSelectedPages();
-    };
-
-    const toggleSelectionMode = () => {
-        if (isSelectionMode) {
-            deselectAllPages();
-        }
-        setIsSelectionMode(!isSelectionMode);
-    };
-
-    // Export State
-    const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-    const [exportFormat, setExportFormat] = useState<'pdf' | 'png' | 'jpg'>('pdf');
-    const [exportQuality, setExportQuality] = useState(0.9);
+    // Export Logic
+    const [exportFormat, setExportFormat] = useState<'standard' | 'flattened' | 'png'>('standard');
+    const [exportQuality, setExportQuality] = useState(0.8);
+    const [customFileName, setCustomFileName] = useState('');
     const [isExporting, setIsExporting] = useState(false);
 
-    const handleAdvancedExport = async () => {
+    const handleExport = async () => {
+        if (!pdfDocument && pages.length === 0) return;
         setIsExporting(true);
         try {
-            // Dynamic import
-            const { exportPageAsImage, saveDocumentFlattened } = await import('../../utils/exportUtils');
-            const { pdfDocument, pages } = usePDFStore.getState();
-            if (!pdfDocument) return;
+            const name = customFileName || fileName?.replace('.pdf', '') || 'document';
+            const pagesToExport = isSelectionMode && selectedPageIds.length > 0
+                ? pages.filter(p => selectedPageIds.includes(p.id))
+                : pages;
 
-            // Filter pages to only selected ones
-            const selectedPages = pages.filter(p => selectedPageIds.includes(p.id));
-
-            if (exportFormat === 'pdf') {
-                // Export flattened PDF
-                // We create a temporary logical document of just the selected pages?
-                // saveDocumentFlattened usually takes (pages, pdfDoc). Behavior might default to all.
-                // We need to support selected-only.
-                // If the util doesn't support filtering, we might need to modify it or pass filtered list.
-                // Assuming saveDocumentFlattened handles the list passed to it:
-                await saveDocumentFlattened(selectedPages, pdfDocument, exportQuality);
-            } else {
-                // Export Images
-                // If multiple, probably zip? Or individual downloads?
-                // For simplicity, download individually loop for now.
-                for (const page of selectedPages) {
-                    await exportPageAsImage(page, exportFormat, exportQuality, pdfDocument);
+            if (exportFormat === 'standard') {
+                const originalBytes = await pdfDocument?.getData();
+                await saveDocument(pagesToExport, originalBytes?.buffer || null);
+            } else if (exportFormat === 'flattened') {
+                await saveDocumentFlattened(pagesToExport, pdfDocument, exportQuality);
+            } else if (exportFormat === 'png') {
+                for (const page of pagesToExport) {
+                    await exportPageAsImage(page, 'png', exportQuality, pdfDocument);
                 }
             }
-            setIsExportMenuOpen(false);
-            setIsSelectionMode(false);
-            deselectAllPages();
         } catch (e) {
             console.error(e);
             alert('Export failed');
@@ -176,306 +121,9 @@ export const Sidebar: React.FC = () => {
         }
     };
 
-    const renderExportMenu = () => {
-        if (!isExportMenuOpen) return null;
-        return (
-            <div className="mt-3 p-4 bg-[#1e1e20] border border-white/5 rounded-2xl shadow-2xl animate-in zoom-in-95 duration-200">
-                <div className="space-y-5">
-                    {/* Header */}
-                    <div className="flex justify-between items-center">
-                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">Export Settings</span>
-                        <button
-                            onClick={() => setIsExportMenuOpen(false)}
-                            className="text-zinc-500 hover:text-white transition-colors"
-                        >
-                            <Plus size={14} className="rotate-45" />
-                        </button>
-                    </div>
-
-                    {/* Format Selection */}
-                    <div className="space-y-2">
-                        <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">Format</label>
-                        <div className="grid grid-cols-3 gap-1 p-1 bg-black/20 rounded-xl border border-white/5">
-                            {(['pdf', 'png', 'jpg'] as const).map(f => (
-                                <button
-                                    key={f}
-                                    onClick={() => setExportFormat(f)}
-                                    className={clsx(
-                                        "py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all duration-300",
-                                        exportFormat === f
-                                            ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20"
-                                            : "text-zinc-600 hover:text-zinc-300 hover:bg-white/5"
-                                    )}
-                                >
-                                    {f}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Quality Slider */}
-                    <div className="space-y-3">
-                        <div className="flex justify-between items-center text-[9px] font-bold text-zinc-400">
-                            <span className="uppercase tracking-wider">Quality</span>
-                            <span className="text-blue-400">{Math.round(exportQuality * 100)}%</span>
-                        </div>
-                        <div className="relative h-2 w-full rounded-full bg-black/20 border border-white/5">
-                            <div
-                                className="absolute top-0 left-0 h-full rounded-full bg-blue-600/50"
-                                style={{ width: `${exportQuality * 100}%` }}
-                            />
-                            <input
-                                type="range"
-                                min="0.1"
-                                max="1"
-                                step="0.1"
-                                value={exportQuality}
-                                onChange={(e) => setExportQuality(parseFloat(e.target.value))}
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            />
-                            {/* Pro Slider Thumb Visual */}
-                            <div
-                                className="absolute top-1/2 -translate-y-1/2 h-4 w-4 bg-blue-500 rounded-full border-2 border-[#1e1e20] shadow-lg pointer-events-none transition-all"
-                                style={{ left: `calc(${exportQuality * 100}% - 8px)` }}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Action Button */}
-                    <button
-                        onClick={handleAdvancedExport}
-                        disabled={isExporting}
-                        className="w-full py-3 bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 mt-2"
-                    >
-                        {isExporting ? (
-                            <>
-                                <RotateCw className="animate-spin" size={12} />
-                                Exporting...
-                            </>
-                        ) : (
-                            <>
-                                <Upload size={12} />
-                                Download {selectedPageIds.length} Page{selectedPageIds.length > 1 ? 's' : ''}
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        );
-    };
-
-    const renderHeader = () => {
-        return (
-            <div className={clsx(
-                "sticky top-0 z-40 transition-all duration-500 border-b border-gray-200/50 dark:border-white/5",
-                isSelectionMode ? "bg-white/95 dark:bg-zinc-900/95 backdrop-blur-2xl shadow-sm" : "bg-white/80 dark:bg-[#09090b]/80 backdrop-blur-xl"
-            )}>
-                <div className="p-4 flex flex-col gap-4">
-                    {isSelectionMode ? (
-                        <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                            <div className="flex justify-between items-center px-0.5">
-                                <div className="flex items-center gap-2.5">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.4)] animate-pulse" />
-                                    <span className="text-[10px] font-black text-gray-400 dark:text-zinc-500 uppercase tracking-[0.2em] leading-none">
-                                        Selection Mode
-                                    </span>
-                                </div>
-
-                                <button
-                                    onClick={toggleSelectionMode}
-                                    className="px-4 py-2 rounded-xl bg-zinc-900 dark:bg-blue-600 text-white text-[10px] font-black uppercase tracking-[0.1em] hover:bg-black dark:hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-500/10"
-                                >
-                                    Done
-                                </button>
-                            </div>
-
-                            <div className="relative rounded-2xl border border-blue-100 dark:border-blue-900/30 bg-gradient-to-br from-blue-50/50 to-white dark:from-blue-900/10 dark:to-zinc-900 p-3.5 shadow-sm">
-                                <div className="relative z-10 flex flex-col gap-3.5">
-                                    <div className="flex flex-col gap-2">
-                                        <div className="flex items-center justify-between">
-                                            {selectedPageIds.length > 0 ? (
-                                                <div className="text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest tabular-nums overflow-hidden text-ellipsis whitespace-nowrap max-w-[120px]" title={(() => {
-                                                    // Tooltip logic
-                                                    const nums = pages
-                                                        .filter(p => selectedPageIds.includes(p.id))
-                                                        .map(p => p.pageNumber)
-                                                        .sort((a, b) => a - b);
-                                                    return `Pages: ${nums.join(', ')}`;
-                                                })()}>
-                                                    {(() => {
-                                                        // Smart Summary Logic (e.g. "1-3, 5")
-                                                        const nums = pages
-                                                            .filter(p => selectedPageIds.includes(p.id))
-                                                            .map(p => p.pageNumber)
-                                                            .sort((a, b) => a - b);
-
-                                                        let ranges = [];
-                                                        for (let i = 0; i < nums.length; i++) {
-                                                            let start = nums[i];
-                                                            while (i + 1 < nums.length && nums[i + 1] === nums[i] + 1) {
-                                                                i++;
-                                                            }
-                                                            let end = nums[i];
-                                                            ranges.push(start === end ? start : `${start}-${end}`);
-                                                        }
-                                                        return ranges.length > 0 ? `PAGES ${ranges.join(', ')}` : "NO PAGES SELECTED";
-                                                    })()}
-                                                </div>
-                                            ) : (
-                                                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Select Pages</span>
-                                            )}
-
-                                            <div className="flex items-center gap-1 bg-white/80 dark:bg-zinc-800/80 p-0.5 rounded-lg border border-blue-100/50 dark:border-blue-900/30 shadow-sm">
-                                                <button
-                                                    onClick={selectAllPages}
-                                                    className="text-[9px] px-2.5 py-1 rounded-md text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all font-black uppercase tracking-tight active:scale-95"
-                                                >
-                                                    All
-                                                </button>
-                                                <div className="w-px h-2.5 bg-blue-100/50 dark:bg-blue-800/30 mx-0.5" />
-                                                <button
-                                                    onClick={deselectAllPages}
-                                                    className="text-[9px] px-2.5 py-1 rounded-md text-gray-400 dark:text-zinc-500 hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all font-black uppercase tracking-tight active:scale-95"
-                                                >
-                                                    None
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Smart Input */}
-                                        <div className="relative group">
-                                            <input
-                                                type="text"
-                                                placeholder="e.g. 1-5, 8, 10-12"
-                                                className="w-full bg-white dark:bg-zinc-800/50 border border-blue-100 dark:border-blue-900/30 rounded-lg py-1.5 px-2 text-[10px] font-bold text-zinc-700 dark:text-zinc-300 placeholder:text-zinc-500/50 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all uppercase tracking-wide"
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        const val = e.currentTarget.value.trim();
-                                                        if (!val) return;
-
-                                                        const newSelectedIds = new Set<string>();
-                                                        const parts = val.split(',');
-
-                                                        parts.forEach(part => {
-                                                            part = part.trim();
-                                                            if (part.includes('-')) {
-                                                                const [start, end] = part.split('-').map(n => parseInt(n.trim()));
-                                                                if (!isNaN(start) && !isNaN(end)) {
-                                                                    for (let i = start; i <= end; i++) {
-                                                                        const page = pages.find(p => p.pageNumber === i);
-                                                                        if (page) newSelectedIds.add(page.id);
-                                                                    }
-                                                                }
-                                                            } else {
-                                                                const num = parseInt(part);
-                                                                if (!isNaN(num)) {
-                                                                    const page = pages.find(p => p.pageNumber === num);
-                                                                    if (page) newSelectedIds.add(page.id);
-                                                                }
-                                                            }
-                                                        });
-
-                                                        if (newSelectedIds.size > 0) {
-                                                            selectPages(Array.from(newSelectedIds));
-                                                        }
-                                                        e.currentTarget.value = '';
-                                                    }
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 relative">
-                                        <button
-                                            onClick={handleDeleteSelected}
-                                            disabled={selectedPageIds.length === 0}
-                                            className={clsx(
-                                                "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 border shadow-sm active:scale-95",
-                                                selectedPageIds.length > 0
-                                                    ? "bg-white dark:bg-zinc-800 border-red-100 dark:border-red-900/30 text-red-500 hover:bg-red-500 hover:text-white hover:border-red-500"
-                                                    : "bg-gray-50 dark:bg-zinc-800/50 border-transparent text-gray-300 dark:text-zinc-700 opacity-60 cursor-not-allowed shadow-none"
-                                            )}
-                                        >
-                                            <Trash2 size={13} />
-                                            <span>Delete</span>
-                                        </button>
-
-                                        <div className="relative flex-1">
-                                            <button
-                                                onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
-                                                disabled={selectedPageIds.length === 0}
-                                                className={clsx(
-                                                    "w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 border shadow-sm active:scale-95",
-                                                    selectedPageIds.length > 0
-                                                        ? "bg-blue-600 border-blue-600 text-white hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-500/20"
-                                                        : "bg-gray-50 dark:bg-zinc-800/50 border-transparent text-gray-300 dark:text-zinc-700 opacity-60 cursor-not-allowed shadow-none"
-                                                )}
-                                            >
-                                                <FileText size={13} />
-                                                <span>Export</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            {renderExportMenu()}
-                        </div>
-
-                    ) : (
-                        <div className="flex justify-between items-center px-0.5 animate-in fade-in zoom-in-95 duration-300 overflow-hidden">
-                            <div className="flex items-center gap-3 min-w-0">
-                                <div className="bg-gradient-to-br from-blue-500/10 to-indigo-500/10 p-2 rounded-xl border border-blue-500/20 flex-shrink-0">
-                                    <Layers size={18} className="text-blue-600 dark:text-blue-400" />
-                                </div>
-                                <div className="flex flex-col min-w-0">
-                                    <h2
-                                        className="font-black text-gray-900 dark:text-zinc-100 text-[11px] uppercase tracking-[0.15em] leading-none truncate max-w-[130px]"
-                                        title={fileName || "Documents"}
-                                    >
-                                        {fileName || "Documents"}
-                                    </h2>
-                                    <span className="text-[10px] font-bold text-gray-400 dark:text-zinc-500 mt-1.5 flex items-center gap-1.5">
-                                        <span className="w-1 h-1 rounded-full bg-blue-400" />
-                                        {pages.length} {pages.length === 1 ? 'Page' : 'Pages'}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                                {pages.length > 0 && (
-                                    <button
-                                        onClick={toggleSelectionMode}
-                                        className="p-2.5 rounded-xl transition-all duration-300 flex items-center gap-2 border border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-zinc-400 hover:border-blue-200 dark:hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400 active:scale-95"
-                                        title="Enter Selection Mode"
-                                    >
-                                        <CheckSquare size={16} />
-                                    </button>
-                                )}
-
-                                {pages.length > 0 && (
-                                    <button
-                                        onClick={() => setIsAddModalOpen(true)}
-                                        className="p-2.5 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/5 rounded-xl text-gray-500 dark:text-zinc-400 hover:border-blue-200 dark:hover:border-blue-500/50 hover:text-blue-600 dark:hover:text-blue-400 transition-all active:scale-95"
-                                        title="Add Blank Page"
-                                    >
-                                        <Plus size={18} />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div >
-        );
-    };
-
-    return (
-        <div className="w-64 bg-gray-50 dark:bg-[#09090b] border-r border-gray-200 dark:border-white/5 flex flex-col h-full z-30 relative select-none transition-colors duration-500">
-            {renderHeader()}
-
-            <AddPageModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
-
-            <div className="flex-1 overflow-y-auto p-4 scrollbar-thin pb-24">
+    const renderPagesContent = () => (
+        <>
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar pb-24">
                 <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
@@ -494,56 +142,176 @@ export const Sidebar: React.FC = () => {
                                 isCurrent={currentPage === page.pageNumber}
                                 isSelectionMode={isSelectionMode}
                                 onClick={() => handlePageClick(page.id, page.pageNumber)}
-                                onToggleSelection={(e: any) => handleSelectionToggle(e, page.id)}
+                                onToggleSelection={(e: any) => {
+                                    e.stopPropagation();
+                                    togglePageSelection(page.id);
+                                }}
                             />
                         ))}
                     </SortableContext>
                 </DndContext>
 
-                {!isSelectionMode && (
-                    <div className="mt-4 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                        {pages.length === 0 && (
-                            <label className="w-full py-6 border-2 border-dashed border-blue-100 dark:border-blue-900/40 bg-blue-50/30 dark:bg-blue-950/20 rounded-2xl flex flex-col items-center justify-center text-blue-600 dark:text-blue-400 hover:border-blue-400 dark:hover:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer transition-all group shadow-sm">
-                                <Upload size={24} className="mb-2 group-hover:-translate-y-1 transition-transform" />
-                                <span className="text-xs font-black uppercase tracking-wider">Upload PDF</span>
-                                <span className="text-[10px] text-blue-400/70 mt-1 uppercase tracking-tighter">Start a fresh project</span>
-                                <input
-                                    type="file"
-                                    accept="application/pdf"
-                                    className="hidden"
-                                    onChange={handleUploadPDF}
-                                />
-                            </label>
-                        )}
-
-                        {pages.length > 0 && (
-                            <label className="w-full py-3.5 border border-gray-200 dark:border-white/5 bg-white dark:bg-white/5 rounded-xl flex items-center justify-center gap-2 text-gray-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-400 dark:hover:border-blue-600 cursor-pointer transition-all active:scale-95 shadow-sm">
-                                <FileText size={16} />
-                                <span className="text-[10px] font-black uppercase tracking-[0.1em]">Append File</span>
-                                <input
-                                    type="file"
-                                    accept=".pdf"
-                                    className="hidden"
-                                    onChange={handleMergePDF}
-                                />
-                            </label>
-                        )}
-
-                        <button
-                            onClick={() => setIsAddModalOpen(true)}
-                            className={clsx(
-                                "w-full py-3.5 border rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 group",
-                                pages.length === 0
-                                    ? "bg-white dark:bg-white/5 border-gray-200 dark:border-white/5 text-gray-500 dark:text-zinc-400 hover:bg-gray-50"
-                                    : "border-dashed border-gray-200 dark:border-white/10 text-gray-400 dark:text-zinc-500 hover:text-blue-600 hover:border-blue-400"
-                            )}
-                        >
-                            <Plus size={16} className="group-hover:scale-110 transition-transform" />
-                            <span className="text-[10px] font-black uppercase tracking-[0.1em]">Add Blank Page</span>
-                        </button>
-                    </div>
+                {pages.length === 0 && !isSelectionMode && (
+                    <label className="w-full py-12 border-2 border-dashed border-zinc-800 bg-zinc-900/50 rounded-2xl flex flex-col items-center justify-center text-zinc-500 hover:border-blue-500/50 hover:bg-blue-500/5 cursor-pointer transition-all group">
+                        <Upload size={32} className="mb-3 group-hover:-translate-y-1 transition-transform" />
+                        <span className="text-xs font-bold uppercase tracking-widest">Upload PDF</span>
+                        <input type="file" accept="application/pdf" className="hidden" onChange={handleUploadPDF} />
+                    </label>
                 )}
             </div>
+
+            {/* Float Add Button */}
+            {!isSelectionMode && pages.length > 0 && (
+                <div className="absolute bottom-6 left-4 right-4">
+                    <button
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl shadow-xl shadow-blue-900/20 flex items-center justify-center gap-2 font-black uppercase tracking-widest text-[10px] transition-all active:scale-95"
+                    >
+                        <Plus size={16} />
+                        Add Blank Page
+                    </button>
+                </div>
+            )}
+        </>
+    );
+
+    const renderExportContent = () => (
+        <div className="flex-1 overflow-y-auto p-5 space-y-8 animate-in slide-in-from-right-2 duration-300">
+            <div className="space-y-2">
+                <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Document Name</label>
+                <input
+                    type="text"
+                    placeholder={fileName || "document"}
+                    value={customFileName}
+                    onChange={(e) => setCustomFileName(e.target.value)}
+                    className="w-full bg-black/20 border border-white/5 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-blue-500/50 transition-all font-mono"
+                />
+            </div>
+
+            <div className="space-y-4">
+                <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Export Engine</label>
+                <div className="grid grid-cols-1 gap-2">
+                    {[
+                        { id: 'standard', icon: Layers, label: 'Standard PDF', desc: 'Vector layers & editable text' },
+                        { id: 'flattened', icon: Lock, label: 'Flattened PDF', desc: 'Single image layer, fixed' },
+                        { id: 'png', icon: ImageIcon, label: 'Raster Images', desc: 'High-res PNG per page' }
+                    ].map(f => (
+                        <button
+                            key={f.id}
+                            onClick={() => setExportFormat(f.id as any)}
+                            className={clsx(
+                                "flex items-center gap-4 p-4 rounded-2xl border transition-all text-left group",
+                                exportFormat === f.id
+                                    ? "bg-blue-600/10 border-blue-500/50 text-blue-400"
+                                    : "bg-white/[0.02] border-white/5 text-zinc-500 hover:bg-white/[0.05]"
+                            )}
+                        >
+                            <div className={clsx(
+                                "p-2.5 rounded-xl border transition-colors",
+                                exportFormat === f.id ? "bg-blue-600 border-blue-400 text-white" : "bg-black/20 border-white/5 text-zinc-600 group-hover:text-zinc-400"
+                            )}>
+                                <f.icon size={18} />
+                            </div>
+                            <div>
+                                <div className="text-[11px] font-black uppercase tracking-wide leading-none mb-1">{f.label}</div>
+                                <div className="text-[9px] opacity-60 font-medium">{f.desc}</div>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {exportFormat !== 'standard' && (
+                <div className="space-y-4 p-4 bg-black/20 rounded-2xl border border-white/5">
+                    <div className="flex justify-between items-center text-[9px] font-black text-zinc-500 uppercase tracking-widest">
+                        <span>Quality / DPI</span>
+                        <span className="text-blue-400 tabular-nums">{Math.round(exportQuality * 100)}%</span>
+                    </div>
+                    <input
+                        type="range"
+                        min="0.1" max="1" step="0.05"
+                        value={exportQuality}
+                        onChange={(e) => setExportQuality(parseFloat(e.target.value))}
+                        className="w-full accent-blue-500"
+                    />
+                </div>
+            )}
+
+            <div className="pt-4">
+                <button
+                    onClick={handleExport}
+                    disabled={isExporting || (pages.length === 0)}
+                    className="w-full py-5 bg-white text-black hover:bg-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-xl"
+                >
+                    {isExporting ? <RotateCw className="animate-spin" size={16} /> : <Download size={16} />}
+                    {isExporting ? "Processing..." : isSelectionMode ? `Download ${selectedPageIds.length} Selection` : "Download Final PDF"}
+                </button>
+                <p className="text-[8px] text-zinc-600 text-center mt-4 uppercase tracking-tighter leading-relaxed">
+                    Powered by high-performance edge rendering engine v4
+                </p>
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="w-72 bg-[#18181b] border-r border-white/5 flex flex-col h-full z-30 relative select-none transition-all duration-500 font-sans shadow-2xl">
+            {/* Header / Tabs */}
+            <div className="pt-6 px-4 space-y-6">
+                <div className="flex items-center justify-between px-2">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.25em]">Workflow</span>
+                    </div>
+                    <button className="text-zinc-600 hover:text-white transition-colors">
+                        <Settings size={14} />
+                    </button>
+                </div>
+
+                <div className="flex bg-black/40 p-1 rounded-2xl border border-white/5">
+                    <button
+                        onClick={() => setSidebarTab('pages')}
+                        className={clsx(
+                            "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                            sidebarTab === 'pages' ? "bg-zinc-800 text-white shadow-lg border border-white/10" : "text-zinc-500 hover:text-zinc-300"
+                        )}
+                    >
+                        <FileText size={14} />
+                        Pages
+                    </button>
+                    <button
+                        onClick={() => setSidebarTab('export')}
+                        className={clsx(
+                            "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                            sidebarTab === 'export' ? "bg-zinc-800 text-white shadow-lg border border-white/10" : "text-zinc-500 hover:text-zinc-300"
+                        )}
+                    >
+                        <Download size={14} />
+                        Export
+                    </button>
+                </div>
+            </div>
+
+            {/* Selection Mode Indicator */}
+            {sidebarTab === 'pages' && isSelectionMode && (
+                <div className="mx-4 mt-6 p-4 bg-blue-600/10 border border-blue-500/30 rounded-2xl animate-in zoom-in-95 duration-200">
+                    <div className="flex justify-between items-center mb-4">
+                        <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest tabular-nums">
+                            {selectedPageIds.length} Selected
+                        </span>
+                        <button onClick={() => { setIsSelectionMode(false); deselectAllPages(); }} className="text-zinc-400 hover:text-white"><X size={14} /></button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button onClick={selectAllPages} className="py-2 bg-white/5 hover:bg-white/10 text-white text-[9px] font-bold uppercase rounded-lg border border-white/5">Select All</button>
+                        <button onClick={deleteSelectedPages} className="py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-[9px] font-bold uppercase rounded-lg border border-red-500/20">Delete</button>
+                    </div>
+                </div>
+            )}
+
+            <div className="flex-1 flex flex-col overflow-hidden">
+                {sidebarTab === 'pages' ? renderPagesContent() : renderExportContent()}
+            </div>
+
+            <AddPageModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
         </div>
     );
 };

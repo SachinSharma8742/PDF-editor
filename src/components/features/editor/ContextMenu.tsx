@@ -25,6 +25,7 @@ export const ContextMenu: React.FC = () => {
         initEditor,
         currentPage,
         addObject,
+        updateObject,
         deleteObjects: editorDeleteObjects,
         duplicateObject: editorDuplicateObject,
         reorderObject: editorReorderObject
@@ -94,6 +95,42 @@ export const ContextMenu: React.FC = () => {
             <button key="dup" onClick={() => handleObjectAction(() => editorDuplicateObject(data?.objectIds || []))} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 flex items-center gap-3 text-sm transition-colors">
                 <Copy size={15} /> Duplicate
             </button>
+            <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+
+            {data?.objectIds?.length > 1 && (
+                <button
+                    onClick={() => handleObjectAction(() => useEditorStore.getState().groupObjects(data.objectIds))}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 flex items-center gap-3 text-sm transition-colors"
+                >
+                    <Split size={15} /> Group Objects
+                </button>
+            )}
+
+            {data?.objectIds?.some((id: string) => currentPage?.objects.find(o => o.id === id)?.groupId) && (
+                <button
+                    onClick={() => handleObjectAction(() => useEditorStore.getState().ungroupObjects(data.objectIds))}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 flex items-center gap-3 text-sm transition-colors"
+                >
+                    <RefreshCw size={15} /> Ungroup
+                </button>
+            )}
+
+            <button
+                onClick={() => handleObjectAction(() => {
+                    data?.objectIds?.forEach((id: string) => {
+                        const obj = currentPage?.objects.find(o => o.id === id);
+                        if (obj) updateObject(id, { isLocked: !obj.isLocked });
+                    });
+                })}
+                className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 flex items-center gap-3 text-sm transition-colors"
+            >
+                {currentPage?.objects.find(o => o.id === data?.objectIds?.[0])?.isLocked ? (
+                    <><ArrowUp size={15} className="rotate-180" /> Unlock</>
+                ) : (
+                    <><ArrowUp size={15} /> Lock</>
+                )}
+            </button>
+
             <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
             <button key="front" onClick={() => handleObjectAction(() => editorReorderObject(data?.objectIds[0], 'front'))} disabled={data?.objectIds?.length !== 1} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 disabled:opacity-50 flex items-center gap-3 text-sm transition-colors">
                 <ArrowUp size={15} /> Bring to Front

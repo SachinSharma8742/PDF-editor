@@ -7,7 +7,7 @@ import {
     Bold, Italic, AlignLeft, AlignCenter, AlignRight,
     Palette, ChevronRight, Pipette, Hash, PlusCircle, Shapes, Ruler,
     Triangle, Star, Pentagon, Signature, ShieldAlert, FileText, Type, CheckSquare, Smile, ScanText, MoveUpRight, Minus,
-    Download
+    Download, StickyNote, MessageSquare, Search
 } from 'lucide-react';
 import clsx from 'clsx';
 import { Tooltip } from '../../ui/Tooltip';
@@ -59,6 +59,8 @@ const TOOL_GROUPS: Record<ToolGroupKey, { groupLabel: string; groupIcon?: React.
         groupIcon: PlusCircle,
         tools: [
             { id: 'text', icon: TypeOutline, label: 'Text', shortcut: 'T' },
+            { id: 'callout', icon: MessageSquare, label: 'Callout' },
+            { id: 'sticky-note', icon: StickyNote, label: 'Sticky Note' },
             { id: 'image', icon: ImagePlus, label: 'Image', shortcut: 'I' },
             { id: 'signature', icon: Signature, label: 'Signature', shortcut: 'S' },
             { id: 'stamp', icon: Smile, label: 'Stamps', shortcut: 'X' },
@@ -245,6 +247,19 @@ export const EditorToolbar: React.FC = () => {
                         )}
                     >
                         <ScanText size={20} className={clsx("transition-transform", activeTool === 'ocr' && "scale-110")} />
+                    </button>
+
+                    <button
+                        onClick={() => handleToolSelect('search')}
+                        title="Search & Replace"
+                        className={clsx(
+                            "w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 group relative mx-auto",
+                            activeTool === 'search'
+                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
+                                : 'text-zinc-300 hover:bg-white/10 hover:text-white'
+                        )}
+                    >
+                        <Search size={20} className={clsx("transition-transform", activeTool === 'search' && "scale-110")} />
                     </button>
 
                     <div className="w-8 h-px bg-white/5 mx-auto rounded-full" />

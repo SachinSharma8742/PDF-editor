@@ -7,10 +7,37 @@ import { ContextMenu } from './components/features/editor/ContextMenu';
 import { useEditorStore } from './store/editorStore';
 
 import { usePDFStore } from './store/pdfStore';
+import { useEffect } from 'react';
+import { loadPDFFromStorage } from './utils/storage';
+import { loadPDF } from './utils/pdfOps';
 
 export default function App() {
-  const { theme } = usePDFStore();
+  const { theme, pdfDocument, setIsLoading } = usePDFStore();
   const { isActive } = useEditorStore();
+
+  useEffect(() => {
+    const restoreSession = async () => {
+      // Small delay to ensure store hydration?
+      // Actually zustand persist is synchronous from localStorage.
+      const saved = await loadPDFFromStorage();
+      if (saved && !usePDFStore.getState().pdfDocument) {
+        try {
+          setIsLoading(true);
+          const doc = await loadPDF(saved.bytes.slice(0)); // clone buffer for safety
+          usePDFStore.setState({
+            pdfDocument: doc,
+            originalPdfBytes: saved.bytes,
+            fileName: saved.metadata.fileName
+          });
+        } catch (e) {
+          console.error('Failed to restore PDF session:', e);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+    restoreSession();
+  }, [setIsLoading]);
 
   return (
     <div className={`flex flex-col h-screen w-screen overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}>

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useEditorStore } from '../../../store/editorStore';
 import { usePDFStore } from '../../../store/pdfStore';
 import { Undo, Redo, ZoomIn, ZoomOut, Check, X, Moon, Sun } from 'lucide-react';

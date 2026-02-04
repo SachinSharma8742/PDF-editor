@@ -7,7 +7,11 @@ import { CropOverlay } from './CropOverlay';
 import { Loader2 } from 'lucide-react';
 import type { PDFObject } from '../../../store/pdfStore';
 
+import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
+import { detectShape } from '../../../utils/shapeDetection';
+
 export const EditorCanvas: React.FC = () => {
+    useKeyboardShortcuts();
     // Editor State
     const {
         currentPage,
@@ -21,11 +25,13 @@ export const EditorCanvas: React.FC = () => {
         deleteObjects,
         addPath,
         addObject,
-        setActiveTool
+        setActiveTool,
+        snapToGrid,
+        gridSize,
     } = useEditorStore();
 
     // PDF Global State (Source)
-    const { pdfDocument } = usePDFStore();
+    const { pdfDocument, eraserMode } = usePDFStore();
 
     // Refs
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -197,6 +203,12 @@ export const EditorCanvas: React.FC = () => {
 
     if (!currentPage || !dimensions) return <div className="flex-1 flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
+    const snapPoint = (val: number) => {
+        if (!snapToGrid) return val;
+        const g = gridSize || 20;
+        return Math.round(val / g) * g;
+    };
+
     const handleMouseDown = (e: any) => {
         const stage = e.target.getStage();
         const pos = stage.getPointerPosition();
@@ -204,8 +216,9 @@ export const EditorCanvas: React.FC = () => {
 
         const scaledX = pos.x / scale;
         const scaledY = pos.y / scale;
+        const snappedX = snapPoint(scaledX);
+        const snappedY = snapPoint(scaledY);
 
-        // 1. Clicked on Empty Stage / Deselect
         if (e.target === stage) {
             if (activeTool === 'select') {
                 setSelectionStart({ x: scaledX, y: scaledY });
@@ -216,21 +229,21 @@ export const EditorCanvas: React.FC = () => {
             selectObjects([]);
         }
 
-        // 2. Drawing Tools
         const drawingTools = ['pen', 'highlighter', 'eraser'];
         if (drawingTools.includes(activeTool)) {
+            if (activeTool === 'eraser' && eraserMode === 'element') {
+                return;
+            }
             setIsDrawing(true);
             setCurrentPath([scaledX, scaledY]);
             return;
         }
 
-        // 3. Shape Tools (Expanded)
-        // We treat 'ocr' and 'measure' like shapes (region selection / line)
-        const shapeTools = ['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse', 'line', 'arrow', 'text', 'ocr', 'measure'];
+        const shapeTools = ['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse', 'line', 'arrow', 'text', 'ocr', 'measure', 'sticky-note', 'callout'];
         if (shapeTools.includes(activeTool)) {
             setIsDrawing(true);
-            setShapeStartPos({ x: scaledX, y: scaledY });
-            setCurrentShape({ x: scaledX, y: scaledY, width: 0, height: 0 });
+            setShapeStartPos({ x: snappedX, y: snappedY });
+            setCurrentShape({ x: snappedX, y: snappedY, width: 0, height: 0 });
         }
     };
 
@@ -247,8 +260,8 @@ export const EditorCanvas: React.FC = () => {
             const width = scaledX - selectionStart.x;
             const height = scaledY - selectionStart.y;
             setSelectionRect({
-                x: width < 0 ? selectionStart.x + width : selectionStart.x,
-                y: height < 0 ? selectionStart.y + height : selectionStart.y,
+                x: Math.min(selectionStart.x, scaledX),
+                y: Math.min(selectionStart.y, scaledY),
                 width: Math.abs(width),
                 height: Math.abs(height)
             });
@@ -264,15 +277,14 @@ export const EditorCanvas: React.FC = () => {
         }
 
         // Shape Preview
-        const shapeTools = ['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse', 'line', 'arrow', 'text', 'ocr', 'measure'];
-        if (shapeTools.includes(activeTool) && shapeStartPos) {
-            const width = scaledX - shapeStartPos.x;
-            const height = scaledY - shapeStartPos.y;
+        if (shapeStartPos) {
+            const currentX = snapPoint(scaledX);
+            const currentY = snapPoint(scaledY);
             setCurrentShape({
                 x: shapeStartPos.x,
                 y: shapeStartPos.y,
-                width: width,
-                height: height
+                width: currentX - shapeStartPos.x,
+                height: currentY - shapeStartPos.y
             });
         }
     };
@@ -317,9 +329,61 @@ export const EditorCanvas: React.FC = () => {
 
         // Finalize Freehand
         if (['pen', 'highlighter', 'eraser'].includes(activeTool) && currentPath.length > 0) {
+            // Simplify Path (Radial Distance Algorithm)
+            const simplifyPoints = (points: number[], tolerance: number): number[] => {
+                if (points.length <= 4) return points;
+
+                const sqTolerance = tolerance * tolerance;
+
+                // Basic Radial Distance check
+                const newPoints = [points[0], points[1]];
+                let lastX = points[0];
+                let lastY = points[1];
+                for (let i = 2; i < points.length; i += 2) {
+                    const x = points[i];
+                    const y = points[i + 1];
+                    const distSq = (x - lastX) ** 2 + (y - lastY) ** 2;
+                    if (distSq > sqTolerance) {
+                        newPoints.push(x, y);
+                        lastX = x;
+                        lastY = y;
+                    }
+                }
+                // Always include the last point
+                if (newPoints.length < points.length) {
+                    newPoints.push(points[points.length - 2], points[points.length - 1]);
+                }
+                return newPoints;
+            };
+
+            const simplifiedPath = simplifyPoints(currentPath, 2); // 2px tolerance
+
+            // Smart Drawing Detection
+            if (activeTool === 'pen' && toolSettings.smartShapeMode) {
+                const detected = detectShape(simplifiedPath);
+                if (detected.type !== 'none') {
+                    addObject({
+                        id: crypto.randomUUID(),
+                        type: detected.type as any,
+                        x: detected.x,
+                        y: detected.y,
+                        width: detected.width,
+                        height: detected.height,
+                        stroke: toolSettings.color,
+                        strokeWidth: toolSettings.size,
+                        fill: 'transparent',
+                        points: detected.points,
+                        rotation: 0
+                    });
+                    setIsDrawing(false);
+                    setCurrentPath([]);
+                    return;
+                }
+            }
+
             // Normalize Path: Calculate bounds to set X/Y and make points relative
-            const xs = currentPath.filter((_, i) => i % 2 === 0);
-            const ys = currentPath.filter((_, i) => i % 2 === 1);
+            const xs = simplifiedPath.filter((_, i) => i % 2 === 0);
+            const ys = simplifiedPath.filter((_, i) => i % 2 === 1);
             const minX = Math.min(...xs);
             const maxX = Math.max(...xs);
             const minY = Math.min(...ys);
@@ -329,7 +393,7 @@ export const EditorCanvas: React.FC = () => {
             const height = maxY - minY;
 
             // Normalize points relative to minX, minY
-            const normalizedPoints = currentPath.map((val, i) => {
+            const normalizedPoints = simplifiedPath.map((val, i) => {
                 return i % 2 === 0 ? val - minX : val - minY;
             });
 
@@ -349,7 +413,7 @@ export const EditorCanvas: React.FC = () => {
         }
 
         // Finalize Shape / Tool Action
-        const shapeTools = ['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse', 'line', 'arrow', 'text', 'ocr', 'measure'];
+        const shapeTools = ['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse', 'line', 'arrow', 'text', 'ocr', 'measure', 'sticky-note', 'callout'];
         if (shapeTools.includes(activeTool) && shapeStartPos) {
             const width = currentShape ? currentShape.width : 0;
             const height = currentShape ? currentShape.height : 0;
@@ -452,9 +516,9 @@ export const EditorCanvas: React.FC = () => {
 
         // Snap logic: Snap the DRAGGED object's top-left corner
         if (snapToGrid) {
-            // Adjust for offset if needed, but usually we drag by node position
-            newX = snapValue(newX, gridSize);
-            newY = snapValue(newY, gridSize);
+            const g = gridSize || 20;
+            newX = Math.round(newX / g) * g;
+            newY = Math.round(newY / g) * g;
 
             // Constrain the dragged node visually to the snap grid
             e.target.x(newX);
@@ -681,6 +745,44 @@ export const EditorCanvas: React.FC = () => {
         ? (currentPage.backgroundColor || '#ffffff')
         : '#ffffff';
 
+    // --- Page Filter Helper ---
+    const getPageFilter = () => {
+        if (!currentPage.filter || currentPage.filter === 'none') return 'none';
+        const intensity = currentPage.filterIntensity ?? 0.5;
+
+        switch (currentPage.filter) {
+            case 'grayscale': return `grayscale(${intensity})`;
+            case 'sepia': return `sepia(${intensity})`;
+            case 'vintage': return `sepia(${intensity * 0.8}) contrast(${1 + intensity * 0.2}) brightness(${1 - intensity * 0.1})`;
+            case 'cool': return `hue-rotate(180deg) sepia(${intensity * 0.3}) saturate(${1 - intensity * 0.2})`;
+            case 'warm': return `sepia(${intensity * 0.4}) saturate(${1 + intensity * 0.2})`;
+            default: return 'none';
+        }
+    };
+
+    const getTextureStyle = () => {
+        if (!currentPage.texture || currentPage.texture === 'none') return {};
+        const op = currentPage.textureOpacity ?? 0.3;
+
+        switch (currentPage.texture) {
+            case 'paper':
+                return {
+                    backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent 95%, rgba(0,0,0,${op}) 0, rgba(0,0,0,${op}) 100%), repeating-linear-gradient(90deg, transparent, transparent 95%, rgba(0,0,0,${op}) 0, rgba(0,0,0,${op}) 100%)`,
+                    backgroundSize: '20px 20px'
+                };
+            case 'grain':
+                return {
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='${op}'/%3E%3C/svg%3E")`,
+                };
+            case 'canvas':
+                return {
+                    backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,${op * 0.5}) 10px, rgba(0,0,0,${op * 0.5}) 11px), repeating-linear-gradient(135deg, transparent, transparent 10px, rgba(0,0,0,${op * 0.5}) 10px, rgba(0,0,0,${op * 0.5}) 11px)`,
+                    backgroundSize: '15px 15px'
+                };
+            default: return {};
+        }
+    };
+
     return (
         <div
             id="editor-workspace"
@@ -689,40 +791,120 @@ export const EditorCanvas: React.FC = () => {
                 width: dimensions.width,
                 height: dimensions.height,
                 cursor: getCursorStyle(),
-                backgroundColor: pageBackgroundColor
+                backgroundColor: pageBackgroundColor,
+                // Apply global page filter to the whole container? 
+                // No, only to the PDF logic. If we apply to container, it affects annotations too!
+                // We want strict layering: PDF -> Filter -> Overlay -> Objects
+                // If we want "Vintage" effect on EVERYTHING, apply here.
+                // But usually edits should be clear on top.
+                // However, "Page Filter" usually implies altering the base document.
             }}
         >
             {/* Background Layer: PDF Render */}
             {currentPage.source === 'pdf' && (
                 <canvas
                     ref={canvasRef}
-                    className="absolute inset-0 z-0 pointer-events-none"
+                    className="absolute inset-0 z-0 pointer-events-none transition-all duration-300"
                     style={{
                         width: dimensions.width,
                         height: dimensions.height,
-                        filter: currentPage.pageFilters ?
-                            `brightness(${currentPage.pageFilters.brightness}) 
-                             contrast(${currentPage.pageFilters.contrast}) 
-                             grayscale(${currentPage.pageFilters.grayscale}) 
-                             sepia(${currentPage.pageFilters.sepia}) 
-                             invert(${currentPage.pageFilters.invert})
-                             blur(${currentPage.pageFilters.blur}px)`
-                            : 'none',
-                        transform: `scale(${currentPage.flipX ? -1 : 1}, ${currentPage.flipY ? -1 : 1})`
+                        filter: getPageFilter()
                     }}
                 />
             )}
 
-            {/* Page Background Overlay */}
-            {currentPage.pageBackground && (
+            {/* Texture / Color Overlay Layer (Z=5, between PDF and Objects) */}
+            <div
+                className="absolute inset-0 z-[5] pointer-events-none transition-all duration-300 mix-blend-multiply"
+                style={{
+                    backgroundColor: currentPage.overlayColor || 'transparent',
+                    opacity: currentPage.overlayOpacity ?? 1,
+                    ...getTextureStyle()
+                }}
+            />
+
+            {/* Watermark Layer (Z=6, on top of texture, below objects) */}
+            {currentPage.watermark && currentPage.watermark.text && (
                 <div
-                    className="absolute inset-0 z-0 pointer-events-none mix-blend-multiply transition-colors duration-300"
-                    style={{
-                        backgroundColor: currentPage.pageBackground.color,
-                        opacity: currentPage.pageBackground.opacity
-                    }}
-                />
+                    className="absolute inset-0 pointer-events-none overflow-hidden flex items-center justify-center z-[6]"
+                    style={{ opacity: currentPage.watermark.opacity ?? 0.2 }}
+                >
+                    {currentPage.watermark.isRepeating ? (
+                        <div className="flex flex-wrap content-center justify-center gap-16 -rotate-12 scale-150 w-[200%] h-[200%]">
+                            {Array.from({ length: 40 }).map((_, i) => (
+                                <span
+                                    key={i}
+                                    style={{
+                                        fontSize: (currentPage.watermark?.fontSize || 40) * scale,
+                                        color: currentPage.watermark?.color || '#000000',
+                                        fontWeight: 'bold',
+                                        userSelect: 'none',
+                                        fontFamily: 'sans-serif'
+                                    }}
+                                >
+                                    {currentPage.watermark?.text}
+                                </span>
+                            ))}
+                        </div>
+                    ) : (
+                        <span
+                            style={{
+                                fontSize: (currentPage.watermark.fontSize || 80) * scale,
+                                color: currentPage.watermark.color || '#000000',
+                                transform: `rotate(${currentPage.watermark.rotate || -45}deg)`,
+                                fontWeight: 'bold',
+                                whiteSpace: 'nowrap',
+                                userSelect: 'none',
+                                fontFamily: 'sans-serif'
+                            }}
+                        >
+                            {currentPage.watermark.text}
+                        </span>
+                    )}
+                </div>
             )}
+
+            {/* Structure Layer (Header/Footer) (Z=7) */}
+            {(currentPage.structure?.header || currentPage.structure?.footer) && (
+                <div className="absolute inset-0 pointer-events-none z-[7] flex flex-col justify-between p-8">
+                    {/* Header */}
+                    {currentPage.structure?.header?.text ? (
+                        <div style={{
+                            textAlign: currentPage.structure.header.align,
+                            color: currentPage.structure.header.color,
+                            fontSize: currentPage.structure.header.fontSize * scale,
+                            opacity: currentPage.structure.header.opacity ?? 1,
+                            fontFamily: 'sans-serif',
+                            whiteSpace: 'pre-wrap'
+                        }}>
+                            {currentPage.structure.header.text
+                                .replace('{{page}}', `${currentPage.pageNumber}`)
+                                .replace('{{total}}', `${usePDFStore.getState().pages.length}`)
+                                .replace('{{date}}', new Date().toLocaleDateString())}
+                        </div>
+                    ) : <div />}
+
+                    {/* Footer */}
+                    {currentPage.structure?.footer?.text ? (
+                        <div style={{
+                            textAlign: currentPage.structure.footer.align,
+                            color: currentPage.structure.footer.color,
+                            fontSize: currentPage.structure.footer.fontSize * scale,
+                            opacity: currentPage.structure.footer.opacity ?? 1,
+                            fontFamily: 'sans-serif',
+                            whiteSpace: 'pre-wrap'
+                        }}>
+                            {currentPage.structure.footer.text
+                                .replace('{{page}}', `${currentPage.pageNumber}`)
+                                .replace('{{total}}', `${usePDFStore.getState().pages.length}`)
+                                .replace('{{date}}', new Date().toLocaleDateString())}
+                        </div>
+                    ) : <div />}
+                </div>
+            )}
+
+            {/* Konva Stage for Objects (Z=10) */}
+
 
             {/* Editing Layer: Konva Stage */}
             <div className="absolute inset-0 z-10">
@@ -743,24 +925,26 @@ export const EditorCanvas: React.FC = () => {
                 >
                     <Layer>
                         {/* 0. Grid Layer */}
-                        {useEditorStore.getState().snapToGrid && dimensions && (
-                            <Group>
+                        {snapToGrid && dimensions && (
+                            <Group listening={false}>
                                 {/* Vertical Lines */}
-                                {Array.from({ length: Math.ceil(dimensions.width / useEditorStore.getState().gridSize) }).map((_, i) => (
+                                {Array.from({ length: Math.ceil(dimensions.width / (gridSize || 20)) + 1 }).map((_, i) => (
                                     <Line
                                         key={`v-${i}`}
-                                        points={[i * useEditorStore.getState().gridSize, 0, i * useEditorStore.getState().gridSize, dimensions.height]}
-                                        stroke="rgba(255, 255, 255, 0.1)"
+                                        points={[i * (gridSize || 20), 0, i * (gridSize || 20), dimensions.height]}
+                                        stroke="rgba(59, 130, 246, 0.15)"
                                         strokeWidth={1}
+                                        dash={[5, 5]}
                                     />
                                 ))}
                                 {/* Horizontal Lines */}
-                                {Array.from({ length: Math.ceil(dimensions.height / useEditorStore.getState().gridSize) }).map((_, i) => (
+                                {Array.from({ length: Math.ceil(dimensions.height / (gridSize || 20)) + 1 }).map((_, i) => (
                                     <Line
                                         key={`h-${i}`}
-                                        points={[0, i * useEditorStore.getState().gridSize, dimensions.width, i * useEditorStore.getState().gridSize]}
-                                        stroke="rgba(255, 255, 255, 0.1)"
+                                        points={[0, i * (gridSize || 20), dimensions.width, i * (gridSize || 20)]}
+                                        stroke="rgba(59, 130, 246, 0.15)"
                                         strokeWidth={1}
+                                        dash={[5, 5]}
                                     />
                                 ))}
                             </Group>
@@ -849,7 +1033,7 @@ export const EditorCanvas: React.FC = () => {
                                 }}
                                 isSelected={selectedObjectIds.includes(obj.id)}
                                 onSelect={(e: any) => {
-                                    if (activeTool === 'eraser' && toolSettings.eraserMode === 'object') {
+                                    if (activeTool === 'eraser' && eraserMode === 'element') {
                                         deleteObjects([obj.id]);
                                     } else if (activeTool === 'select') {
                                         // Handle Shift+Click for multi-select
@@ -859,7 +1043,7 @@ export const EditorCanvas: React.FC = () => {
                                 }}
                                 onChange={(updates) => updateObject(obj.id, updates)}
                                 isLocked={obj.isLocked}
-                                isSelectionEnabled={activeTool === 'select' || (activeTool === 'eraser' && toolSettings.eraserMode === 'object')}
+                                isSelectionEnabled={activeTool === 'select' || (activeTool === 'eraser' && eraserMode === 'element')}
                             />
                         ))}
 
@@ -907,7 +1091,7 @@ export const EditorCanvas: React.FC = () => {
                                 rotateEnabled={true}
                                 rotateAnchorOffset={30}
                                 rotateAnchorCursor="grab"
-                                keepRatio={false}
+                                keepRatio={selectedObjectIds.length === 1 ? (currentPage.objects.find(o => o.id === selectedObjectIds[0])?.lockAspectRatio ?? (currentPage.objects.find(o => o.id === selectedObjectIds[0])?.type === 'image')) : true}
                                 ignoreStroke={true}
                                 centeredScaling={false}
                                 rotationSnaps={[0, 45, 90, 135, 180, 225, 270, 315]}

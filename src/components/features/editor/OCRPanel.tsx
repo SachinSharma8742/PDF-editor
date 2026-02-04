@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createWorker } from 'tesseract.js';
 import { useEditorStore } from '../../../store/editorStore';
 import { usePDFStore } from '../../../store/pdfStore';
-import { Loader2, ScanText, Copy, Check, FileText, EyeOff, Type } from 'lucide-react';
+import { Loader2, ScanText, Copy, Check, FileText, EyeOff, Type, Ruler, Library } from 'lucide-react';
 import { Button } from '../../ui/Button';
 
 export const OCRPanel: React.FC = () => {
@@ -148,6 +148,130 @@ export const OCRPanel: React.FC = () => {
         setTimeout(() => setCopied(false), 2000);
     };
 
+    const handleBatchOCR = async () => {
+        if (!pdfDocument) return;
+
+        setLoading(true);
+        setStatus('Initializing Batch OCR...');
+        setProgress(0);
+        setResultData(null); // Clear single page result
+
+        try {
+            const { pages, updatePage } = usePDFStore.getState();
+            const worker = await createWorker('eng', 1, {
+                logger: (m: any) => {
+                    if (m.status === 'recognizing text') {
+                        // This is per-page progress, harder to track global percentage accurately without math
+                        // Just show status
+                    }
+                }
+            });
+
+            let processedCount = 0;
+            const totalPages = pages.filter(p => p.source === 'pdf').length;
+
+            for (const page of pages) {
+                if (page.source !== 'pdf' || !page.originalPageIndex) continue;
+
+                setStatus(`Processing Page ${page.pageNumber} / ${pages.length}...`);
+
+                // 1. Render Page
+                const OC_SCALE = 1.5; // Slightly lower scale for batch to save memory/time
+                const pdfPage = await pdfDocument.getPage(page.originalPageIndex);
+                const viewport = pdfPage.getViewport({ scale: OC_SCALE });
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+
+                await pdfPage.render({ canvasContext: context!, viewport }).promise;
+                const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+                // 2. Recognize
+                const { data } = await worker.recognize(imageData);
+
+                // 3. Auto-insert Invisible Layer (Batch Mode always does this?)
+                // Let's create the objects directly
+                const scale = 1 / OC_SCALE;
+                const newObjects: any[] = [];
+
+                (data as any).words.forEach((word: any) => {
+                    if (!word.text || word.text.trim().length === 0) return;
+                    const { bbox } = word;
+                    newObjects.push({
+                        id: crypto.randomUUID(),
+                        type: 'text',
+                        x: bbox.x0 * scale,
+                        y: bbox.y0 * scale,
+                        width: (bbox.x1 - bbox.x0) * scale,
+                        height: (bbox.y1 - bbox.y0) * scale,
+                        text: word.text,
+                        fontSize: (bbox.y1 - bbox.y0) * scale * 0.75,
+                        opacity: 0,
+                        rotation: 0,
+                        fill: '#000000',
+                        isLocked: false
+                    });
+                });
+
+                // Update the page with new objects
+                // We must be careful not to overwrite existing objects, just append
+                // But PDFStore updatePage merges updates. We need to get current objects?
+                // pdfStore.pages has the current state.
+                const currentObjects = page.objects || [];
+                updatePage(page.id, { objects: [...currentObjects, ...newObjects] });
+
+                processedCount++;
+                setProgress(Math.round((processedCount / totalPages) * 100));
+            }
+
+            await worker.terminate();
+            setStatus('Batch Processing Complete!');
+            setTimeout(() => setStatus(''), 3000);
+
+        } catch (err) {
+            console.error('Batch OCR Error:', err);
+            setStatus('Error during Batch Processing');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSmartDetect = () => {
+        if (!resultData || !currentPage) return;
+        const scale = 1 / resultData.scaleFactor;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        // Find content bounds
+        resultData.lines.forEach((line: any) => {
+            const { bbox } = line;
+            if (bbox.x0 < minX) minX = bbox.x0;
+            if (bbox.y0 < minY) minY = bbox.y0;
+            if (bbox.x1 > maxX) maxX = bbox.x1;
+            if (bbox.y1 > maxY) maxY = bbox.y1;
+        });
+
+        if (minX !== Infinity) {
+            // Add a visual rectangle to show detected area
+            const rect = {
+                id: crypto.randomUUID(),
+                type: 'rectangle',
+                x: minX * scale,
+                y: minY * scale,
+                width: (maxX - minX) * scale,
+                height: (maxY - minY) * scale,
+                stroke: '#ef4444',
+                strokeWidth: 2,
+                fill: 'rgba(239, 68, 68, 0.1)',
+                rotation: 0
+            };
+            // @ts-ignore
+            addObject(rect);
+            setStatus('Content area detected');
+        }
+    };
+
     return (
         <div className="p-4 space-y-4">
             <div className="flex items-center gap-2 mb-2">
@@ -159,25 +283,36 @@ export const OCRPanel: React.FC = () => {
                 Extract text from scanned PDF pages to make them searchable or editable.
             </p>
 
-            <Button
-                onClick={handleOCR}
-                disabled={loading}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1"
-            >
-                {loading ? (
-                    <>
-                        <Loader2 className="animate-spin" size={18} />
-                        <span>{status || `Scanning... ${progress}%`}</span>
-                    </>
-                ) : (
-                    <>
-                        <ScanText size={18} />
-                        <span>Scan Page for Text</span>
-                    </>
-                )}
-            </Button>
+            <div className="flex gap-2">
+                <Button
+                    onClick={handleOCR}
+                    disabled={loading}
+                    className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2"
+                >
+                    {loading && status.includes('Scanning...') ? <Loader2 className="animate-spin" size={16} /> : <ScanText size={16} />}
+                    <span className="text-xs">This Page</span>
+                </Button>
 
-            {resultData && (
+                <Button
+                    onClick={handleBatchOCR}
+                    disabled={loading}
+                    className="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+                >
+                    {loading && status.includes('Batch') ? <Loader2 className="animate-spin" size={16} /> : <Library size={16} />}
+                    <span className="text-xs">All Pages</span>
+                </Button>
+            </div>
+
+            {loading && (
+                <div className="bg-zinc-800/50 rounded-lg p-3 text-center">
+                    <p className="text-xs text-zinc-300 mb-1">{status}</p>
+                    <div className="w-full bg-zinc-700 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-blue-500 h-full transition-all duration-300" style={{ width: `${progress}%` }} />
+                    </div>
+                </div>
+            )}
+
+            {resultData && !loading && (
                 <div className="mt-6 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
@@ -204,6 +339,18 @@ export const OCRPanel: React.FC = () => {
                             <div className="text-left">
                                 <div className="font-semibold text-zinc-200">Invisible Text Layer</div>
                                 <div className="text-[10px] text-zinc-500">Make scanned text selectable</div>
+                            </div>
+                        </Button>
+
+                        <Button
+                            onClick={handleSmartDetect}
+                            variant="secondary"
+                            className="w-full justify-start text-xs h-auto py-2"
+                        >
+                            <Ruler size={14} className="mr-2 text-zinc-400" />
+                            <div className="text-left">
+                                <div className="font-semibold text-zinc-200">Detect Content Bounds</div>
+                                <div className="text-[10px] text-zinc-500">Highlight content area</div>
                             </div>
                         </Button>
 

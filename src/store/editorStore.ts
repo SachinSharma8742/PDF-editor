@@ -62,7 +62,10 @@ const DEFAULT_TOOL_PREFERENCES: Record<ToolType, ToolSettings> = {
     redaction: { ...DEFAULT_SETTINGS, color: '#000000', size: 0 },
     'form-text': { ...DEFAULT_SETTINGS },
     'form-checkbox': { ...DEFAULT_SETTINGS },
-    'ocr': { ...DEFAULT_SETTINGS }
+    'ocr': { ...DEFAULT_SETTINGS },
+    'search': { ...DEFAULT_SETTINGS },
+    'sticky-note': { ...DEFAULT_SETTINGS, color: '#fef08a' },
+    'callout': { ...DEFAULT_SETTINGS, color: '#000000', size: 14 }
 };
 
 interface EditorStore {
@@ -136,6 +139,14 @@ interface EditorStore {
     // UI Panel State
     activePanelTab: 'properties' | 'layers' | 'export';
     setActivePanelTab: (tab: 'properties' | 'layers' | 'export') => void;
+
+
+    // Clipboard
+    clipboard: any[]; // Array of PDFObject
+    copySelection: () => void;
+    pasteClipboard: () => void;
+
+    updateCurrentPage: (updates: Partial<PageState>) => void;
 }
 
 const deepClone = <T>(obj: T): T => {
@@ -156,6 +167,8 @@ export const useEditorStore = create<EditorStore>()(
             toolPreferences: DEFAULT_TOOL_PREFERENCES,
             selectedObjectIds: [],
             recentColors: ['#000000', '#df4b26', '#10B981', '#3B82F6', '#6366F1', '#ffffff', '#ef4444', '#f59e0b', '#8B5CF6'], // Initial palette (9 colors)
+            clipboard: [],
+
             history: { past: [], future: [] },
 
             addColorToHistory: (color) => set(state => {
@@ -333,6 +346,19 @@ export const useEditorStore = create<EditorStore>()(
                             // but let's just not add to it to avoid duplication.
                             objects: [...state.currentPage.objects, newObject],
                             isEdited: true
+                        }
+                    };
+                });
+            },
+
+            updateCurrentPage: (updates) => {
+                get().saveToHistory();
+                set(state => {
+                    if (!state.currentPage) return state;
+                    return {
+                        currentPage: {
+                            ...state.currentPage,
+                            ...updates
                         }
                     };
                 });
@@ -588,6 +614,41 @@ export const useEditorStore = create<EditorStore>()(
                         }
                     };
                 });
+            },
+
+            copySelection: () => {
+                const { currentPage, selectedObjectIds } = get();
+                if (!currentPage || selectedObjectIds.length === 0) return;
+
+                const selected = currentPage.objects.filter(o => selectedObjectIds.includes(o.id));
+                // Deep clone for clipboard to detach references
+                set({ clipboard: deepClone(selected) });
+            },
+
+            pasteClipboard: () => {
+                const { clipboard, currentPage } = get();
+                if (!currentPage || clipboard.length === 0) return;
+
+                get().saveToHistory();
+
+                const newObjects = clipboard.map(obj => {
+                    const newId = crypto.randomUUID();
+                    return {
+                        ...deepClone(obj),
+                        id: newId,
+                        x: obj.x + 20,
+                        y: obj.y + 20,
+                        isNew: true // Optional flag for animations
+                    };
+                });
+
+                set(state => ({
+                    currentPage: {
+                        ...state.currentPage!,
+                        objects: [...state.currentPage!.objects, ...newObjects]
+                    },
+                    selectedObjectIds: newObjects.map(o => o.id)
+                }));
             }
         })
     )

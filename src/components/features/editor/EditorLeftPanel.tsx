@@ -12,7 +12,9 @@ import { LeftColorPanel } from './LeftColorPanel';
 import { PageEffectsPanel } from './PageEffectsPanel';
 import { ImageEditorPanel } from './ImageEditorPanel';
 
-type TabId = 'stamps' | 'ocr' | 'scale' | 'properties' | 'image-editor' | 'page-effects';
+import { SearchReplacePanel } from './SearchReplacePanel';
+
+type TabId = 'stamps' | 'ocr' | 'scale' | 'properties' | 'image-editor' | 'page-effects' | 'advanced';
 
 export const EditorLeftPanel: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabId>('properties');
@@ -26,7 +28,7 @@ export const EditorLeftPanel: React.FC = () => {
     const selectedObj = currentPage?.objects.find(o => o.id === selectedObjectIds[0]);
 
     // Derived flags for specialized modes
-    const isLibraryTool = ['stamp', 'ocr', 'measure'].includes(activeTool);
+    const isLibraryTool = ['stamp', 'ocr', 'measure', 'search'].includes(activeTool);
 
     // Track if user has manually selected a tab to prevent auto-switching overriding user intent
     const [userHasSelectedTab, setUserHasSelectedTab] = useState(false);
@@ -42,6 +44,9 @@ export const EditorLeftPanel: React.FC = () => {
             setIsCollapsed(false);
         } else if (activeTool === 'measure') {
             setActiveTab('scale');
+            setIsCollapsed(false);
+        } else if (activeTool === 'search') {
+            setActiveTab('advanced');
             setIsCollapsed(false);
         } else if (hasSelection) {
             if (activeTab === 'page-effects') {
@@ -105,7 +110,8 @@ export const EditorLeftPanel: React.FC = () => {
                             activeTab === 'ocr' ? 'AI OCR Engine' :
                                 activeTab === 'scale' ? 'Measurement' :
                                     activeTab === 'image-editor' ? 'Image Studio' :
-                                        activeTab === 'page-effects' ? 'Page Effects' : 'Properties'}
+                                        activeTab === 'page-effects' ? 'Page Effects' :
+                                            activeTab === 'advanced' ? 'Advanced Tools' : 'Properties'}
                     </h2>
                 </div>
                 <button
@@ -138,12 +144,15 @@ export const EditorLeftPanel: React.FC = () => {
                     <div className="px-4 py-4">
                         <div className="flex items-center justify-between mb-4 px-1">
                             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                                {activeTab === 'stamps' ? 'Decorations' : activeTab === 'ocr' ? 'Analysis' : 'Calibration'}
+                                {activeTab === 'stamps' ? 'Decorations' :
+                                    activeTab === 'ocr' ? 'Analysis' :
+                                        activeTab === 'scale' ? 'Calibration' : 'Smart Tools'}
                             </span>
                         </div>
                         {activeTab === 'stamps' && <StampsPanel />}
                         {activeTab === 'ocr' && <OCRPanel />}
                         {activeTab === 'scale' && <CalibrationPanel />}
+                        {activeTab === 'advanced' && <SearchReplacePanel />}
                     </div>
                 )}
             </div>

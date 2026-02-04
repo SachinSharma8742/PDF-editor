@@ -1,7 +1,8 @@
 import React from 'react';
-import { Palette } from 'lucide-react';
+import { Palette, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
 import type { ToolType } from '../../../store/pdfStore';
+import { useEditorStore } from '../../../store/editorStore';
 
 interface LeftColorPanelProps {
     activeTool: ToolType;
@@ -237,6 +238,81 @@ export const LeftColorPanel: React.FC<LeftColorPanelProps> = ({
                             </div>
                         </div>
 
+                        {/* Corner Radius (Shapes & Images) */}
+                        {((['rectangle'].includes(activeTool)) || (hasSelection && selectedObj && ['rectangle', 'image'].includes(selectedObj.type))) && (
+                            <div className="space-y-3 pt-4">
+                                <SectionLabel label="Corner Radius" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="4" /></svg>} />
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        step="1"
+                                        value={hasSelection && selectedObj ? (selectedObj.cornerRadius || 0) : 0}
+                                        onChange={(e) => {
+                                            const val = Number(e.target.value);
+                                            if (hasSelection && selectedObj) updateObject(selectedObj.id, { cornerRadius: val });
+                                        }}
+                                        className="flex-1 accent-blue-500"
+                                    />
+                                    <span className="text-xs font-mono text-zinc-300 w-4">
+                                        {hasSelection && selectedObj ? (selectedObj.cornerRadius || 0) : 0}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Shadows Section */}
+                        {(hasSelection && selectedObj) && (
+                            <div className="space-y-4 pt-4 border-t border-white/5">
+                                <div className="flex items-center justify-between">
+                                    <SectionLabel label="Effects: Shadow" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M2 12h20M5 5l14 14M19 5L5 14" opacity="0.1" /><circle cx="12" cy="12" r="8" /></svg>} />
+                                    <button
+                                        onClick={() => updateObject(selectedObj.id, {
+                                            shadowColor: selectedObj.shadowColor ? undefined : 'rgba(0,0,0,0.5)',
+                                            shadowBlur: 10,
+                                            shadowOffsetX: 5,
+                                            shadowOffsetY: 5,
+                                            shadowOpacity: 0.5
+                                        })}
+                                        className={clsx(
+                                            "relative inline-flex h-4 w-7 items-center rounded-full transition-colors",
+                                            selectedObj.shadowColor ? 'bg-blue-600' : 'bg-zinc-700'
+                                        )}
+                                    >
+                                        <span className={clsx("inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform", selectedObj.shadowColor ? 'translate-x-3.5' : 'translate-x-1')} />
+                                    </button>
+                                </div>
+
+                                {selectedObj.shadowColor && (
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[9px] text-zinc-500 w-8">BLUR</span>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="40"
+                                                value={selectedObj.shadowBlur || 0}
+                                                onChange={(e) => updateObject(selectedObj.id, { shadowBlur: Number(e.target.value) })}
+                                                className="flex-1 accent-zinc-500"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[9px] text-zinc-500 w-8">OFFSET</span>
+                                            <input
+                                                type="range"
+                                                min="-20"
+                                                max="20"
+                                                value={selectedObj.shadowOffsetX || 0}
+                                                onChange={(e) => updateObject(selectedObj.id, { shadowOffsetX: Number(e.target.value), shadowOffsetY: Number(e.target.value) })}
+                                                className="flex-1 accent-zinc-500"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* Opacity Slider */}
                         <div className="space-y-3 pt-4">
                             <SectionLabel label="Opacity" icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" opacity="0.3" /><circle cx="12" cy="12" r="6" /></svg>} />
@@ -454,6 +530,74 @@ export const LeftColorPanel: React.FC<LeftColorPanelProps> = ({
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="21" y1="10" x2="7" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="7" y2="18"></line></svg>
                                         </button>
                                     </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Constraints & Grouping Section (Only when selection exists) */}
+                        {hasSelection && (
+                            <div className="space-y-4 pt-4 border-t border-white/5">
+                                <SectionLabel label="Actions & Constraints" icon={<ShieldAlert size={12} />} />
+
+                                <div className="space-y-3">
+                                    {/* Grouping Buttons */}
+                                    {selectedObjectIds.length > 1 ? (
+                                        <button
+                                            onClick={() => useEditorStore.getState().groupObjects(selectedObjectIds)}
+                                            className="w-full flex items-center justify-center gap-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-lg py-2 text-[10px] font-bold transition-all"
+                                        >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
+                                            GROUP OBJECTS
+                                        </button>
+                                    ) : selectedObj?.groupId ? (
+                                        <button
+                                            onClick={() => useEditorStore.getState().ungroupObjects([selectedObj.id])}
+                                            className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-white/5 rounded-lg py-2 text-[10px] font-bold transition-all"
+                                        >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" /></svg>
+                                            UNGROUP ALL
+                                        </button>
+                                    ) : null}
+
+                                    {selectedObj && (
+                                        <>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Lock Aspect Ratio</span>
+                                                <button
+                                                    onClick={() => updateObject(selectedObj.id, { lockAspectRatio: !selectedObj.lockAspectRatio })}
+                                                    className={clsx(
+                                                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
+                                                        selectedObj.lockAspectRatio ? 'bg-blue-600' : 'bg-zinc-700'
+                                                    )}
+                                                >
+                                                    <span
+                                                        className={clsx(
+                                                            "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform",
+                                                            selectedObj.lockAspectRatio ? 'translate-x-4.5' : 'translate-x-1'
+                                                        )}
+                                                    />
+                                                </button>
+                                            </div>
+
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Lock Position</span>
+                                                <button
+                                                    onClick={() => updateObject(selectedObj.id, { isLocked: !selectedObj.isLocked })}
+                                                    className={clsx(
+                                                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
+                                                        selectedObj.isLocked ? 'bg-red-600' : 'bg-zinc-700'
+                                                    )}
+                                                >
+                                                    <span
+                                                        className={clsx(
+                                                            "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform",
+                                                            selectedObj.isLocked ? 'translate-x-4.5' : 'translate-x-1'
+                                                        )}
+                                                    />
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         )}
