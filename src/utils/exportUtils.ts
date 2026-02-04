@@ -439,6 +439,7 @@ const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality:
                         img.src = (obj as any).src;
                     });
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                 } else if (obj.type === 'text') {
                     const fontSize = obj.fontSize || 16;
@@ -490,6 +491,8 @@ const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality:
                     ctx.stroke();
                     ctx.globalAlpha = 1; // Reset
 >>>>>>> 6c11700ac2d90d3c5c9ad649357e67c63562aa47
+=======
+>>>>>>> 420336153f6c5e7ff99ffd66b27c3fd22b84c997
                 }
             }
 
