@@ -1,48 +1,26 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { usePDFStore } from '../../store/pdfStore';
 import {
-    Download,
     MousePointer2,
-    PenLine,
+    Hand,
     Minus,
     Plus,
-    Eraser,
-    Image as ImageIcon,
-    Type,
-    Square,
-    Circle as CircleIcon,
     Undo2,
     Redo2,
-    Highlighter,
-    Trash2,
-    Bold,
-    Italic,
-    Underline,
-    AlignLeft,
-    AlignCenter,
-    AlignRight,
-    Group,
-    Ungroup,
-    Copy,
-    BringToFront,
-    SendToBack,
-    Spline,
-    BoxSelect,
-    ChevronDown,
-    FileText,
     Pencil,
     Sun,
     Moon,
-    Palette,
-    Layers,
     RotateCw,
     FlipHorizontal,
     FlipVertical,
-    Type as TypeIcon,
-    Hash
+    Download,
+    Layers,
+    Lock,
+    Image as ImageIcon,
+    ChevronDown
 } from 'lucide-react';
 import { loadPDF } from '../../utils/pdfOps';
-import { saveDocument, exportPageAsImage } from '../../utils/exportUtils';
+import { saveDocument, saveDocumentFlattened, exportPageAsImage } from '../../utils/exportUtils';
 import { useEditorStore } from '../../store/editorStore';
 import clsx from 'clsx';
 import { Tooltip } from '../ui/Tooltip';
@@ -50,17 +28,16 @@ import { Tooltip } from '../ui/Tooltip';
 export const Toolbar: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
-    const [isExportOpen, setIsExportOpen] = React.useState(false);
+    const [isExportOpen, setIsExportOpen] = useState(false);
+    const [exportFormat, setExportFormat] = useState<'standard' | 'flattened' | 'png'>('standard');
+    const [exportQuality, setExportQuality] = useState(0.8);
+    const [isExporting, setIsExporting] = useState(false);
 
     const {
         scale,
         setScale,
         activeTool,
         setActiveTool,
-        toolPreferences,
-        updateToolSettings,
-        eraserMode,
-        setEraserMode,
         undo,
         redo,
         canUndo,
@@ -70,48 +47,45 @@ export const Toolbar: React.FC = () => {
         currentPage,
         addObject,
         pages,
-        originalPdfBytes,
-        selectedPageIds,
-        selectedObjectIds,
-        updateObject,
-        deleteObjects,
-        groupObjects,
-        ungroupObjects,
-        duplicateObject,
-        reorderObject,
         rotatePage,
         flipPage,
         theme,
-        toggleTheme
+        toggleTheme,
+        pdfDocument,
+        fileName,
+        isSelectionMode,
+        selectedPageIds
     } = usePDFStore();
-
-    const currentSettings = toolPreferences[activeTool];
-
-    // --- Context Helpers ---
-    const isSelectionMode = activeTool === 'select' && selectedObjectIds.length > 0;
-    const isMulti = selectedObjectIds.length > 1;
-    const firstSelectedId = selectedObjectIds[0];
-    const findContext = () => {
-        if (!firstSelectedId) return null;
-        for (const page of pages) {
-            const obj = page.objects.find(o => o.id === firstSelectedId);
-            if (obj) return { obj, page };
-        }
-        return null;
-    };
-    const ctx = findContext();
-    const selectedObj = ctx?.obj;
-    const selectedPage = ctx?.page;
-    const isGrouped = selectedObj?.groupId;
 
     // Check if there are any pages
     const hasPages = pages.length > 0;
 
-    const handleObjectChange = (key: string, value: any) => {
-        if (!selectedPage) return;
-        selectedObjectIds.forEach(id => {
-            updateObject(selectedPage.id, id, { [key]: value });
-        });
+    // Export handler
+    const handleExport = async () => {
+        if (!pdfDocument && pages.length === 0) return;
+        setIsExporting(true);
+        try {
+            const pagesToExport = isSelectionMode && selectedPageIds.length > 0
+                ? pages.filter(p => selectedPageIds.includes(p.id))
+                : pages;
+
+            if (exportFormat === 'standard') {
+                const originalBytes = await pdfDocument?.getData();
+                await saveDocument(pagesToExport, originalBytes?.buffer || null);
+            } else if (exportFormat === 'flattened') {
+                await saveDocumentFlattened(pagesToExport, pdfDocument, exportQuality);
+            } else if (exportFormat === 'png') {
+                for (const page of pagesToExport) {
+                    await exportPageAsImage(page, 'png', exportQuality, pdfDocument);
+                }
+            }
+            setIsExportOpen(false);
+        } catch (e) {
+            console.error(e);
+            alert('Export failed');
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,22 +139,6 @@ export const Toolbar: React.FC = () => {
         e.target.value = '';
     };
 
-    // Tool Groups
-    const drawingTools = [
-        { id: 'pen', icon: PenLine, label: 'Pen' },
-        { id: 'highlighter', icon: Highlighter, label: 'Highlight' },
-        { id: 'eraser', icon: Eraser, label: 'Eraser' },
-    ];
-
-    const shapeTools = [
-        { id: 'text', icon: Type, label: 'Text' },
-        { id: 'rectangle', icon: Square, label: 'Rectangle' },
-        { id: 'circle', icon: CircleIcon, label: 'Circle' },
-    ];
-
-    const colors = ['#000000', '#df4b26', '#10B981', '#3B82F6', '#6366F1'];
-    const fontFamilies = ['Arial', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana', 'Inter'];
-
     return (
         <div className="flex flex-col items-center gap-3 w-full cursor-default select-none pointer-events-none">
             {/* MAIN COMMAND CENTER */}
@@ -207,6 +165,11 @@ export const Toolbar: React.FC = () => {
                             <MousePointer2 size={18} strokeWidth={activeTool === 'select' ? 2.5 : 2} />
                         </button>
                     </Tooltip>
+                    <Tooltip content="Pan Tool (H)">
+                        <button onClick={() => setActiveTool('pan')} className={clsx("p-2 rounded-xl transition-all duration-200 relative group", activeTool === 'pan' ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5")}>
+                            <Hand size={18} strokeWidth={activeTool === 'pan' ? 2.5 : 2} />
+                        </button>
+                    </Tooltip>
                 </div>
 
                 <div className={clsx("flex items-center gap-1 pr-2 mr-2 border-r border-gray-200 dark:border-white/10", !hasPages && "opacity-40 pointer-events-none")}>
@@ -231,7 +194,10 @@ export const Toolbar: React.FC = () => {
                 <div className="flex items-center gap-2 pl-1">
                     {hasPages && (
                         <Tooltip content="Advanced Editor">
-                            <button onClick={() => { const page = pages.find(p => p.pageNumber === currentPage); if (page) useEditorStore.getState().initEditor(page); }} className="p-2 mr-1 rounded-xl text-indigo-500 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all active:scale-95">
+                            <button
+                                onClick={() => { const page = pages.find(p => p.pageNumber === currentPage); if (page) useEditorStore.getState().initEditor(page); }}
+                                className="p-2.5 mr-1 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-105 transition-all active:scale-95 border border-indigo-400/30"
+                            >
                                 <Pencil size={18} strokeWidth={2.5} />
                             </button>
                         </Tooltip>
@@ -243,23 +209,100 @@ export const Toolbar: React.FC = () => {
                         <button onClick={() => setScale(Math.min(5, scale + 0.1))} className="p-1 hover:bg-white dark:hover:bg-zinc-700 rounded-md text-gray-500 dark:text-zinc-400 transition-all"><Plus size={12} /></button>
                     </div>
 
-                    <button onClick={toggleTheme} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-100 transition-all active:rotate-45 duration-300">
-                        {theme === 'dark' ? <Sun size={18} strokeWidth={2} /> : <Moon size={18} strokeWidth={2} />}
-                    </button>
-
-                    <div className="relative ml-2">
-                        <button
-                            onClick={() => {
-                                usePDFStore.getState().setSidebarTab('export');
-                                usePDFStore.getState().setIsSelectionMode(true);
-                                usePDFStore.getState().selectAllPages();
-                            }}
-                            className="h-9 px-4 bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-gray-100 text-white dark:text-zinc-900 rounded-lg transition-all shadow-lg active:scale-95 flex items-center gap-2 group"
-                        >
-                            <span className="text-xs font-bold tracking-wide">Export</span>
-                            <ChevronDown size={12} className="transition-transform duration-300 opacity-60 -rotate-90 group-hover:translate-x-1" />
+                    <Tooltip content="Toggle Theme">
+                        <button onClick={toggleTheme} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-100 transition-all duration-300 [&:active>svg]:rotate-45">
+                            <span className="block transition-transform duration-300">
+                                {theme === 'dark' ? <Sun size={18} strokeWidth={2} /> : <Moon size={18} strokeWidth={2} />}
+                            </span>
                         </button>
-                    </div>
+                    </Tooltip>
+
+                    {/* Export Button with Hover Dropdown */}
+                    {hasPages && (
+                        <div
+                            className="relative ml-2 group/export"
+                            onMouseEnter={() => setIsExportOpen(true)}
+                            onMouseLeave={() => setIsExportOpen(false)}
+                        >
+                            <button
+                                className="h-9 px-4 bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-gray-100 text-white dark:text-zinc-900 rounded-xl transition-all shadow-lg active:scale-95 flex items-center gap-2 group"
+                            >
+                                <Download size={14} strokeWidth={2.5} />
+                                <span className="text-xs font-bold tracking-wide">Export</span>
+                                <ChevronDown size={12} className={clsx("transition-transform duration-300 opacity-60", isExportOpen && "rotate-180")} />
+                            </button>
+
+                            {/* Invisible bridge to prevent hover loss */}
+                            {isExportOpen && (
+                                <div className="absolute top-full left-0 right-0 h-2" />
+                            )}
+
+                            {/* Export Dropdown Menu */}
+                            {isExportOpen && (
+                                <div className="absolute top-full right-0 mt-2 w-72 bg-zinc-900 dark:bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl shadow-black/50 p-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+                                    <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest px-1">Export Format</div>
+
+                                    <div className="space-y-2">
+                                        {[
+                                            { id: 'standard', icon: Layers, label: 'Standard PDF', desc: 'Vector layers & editable' },
+                                            { id: 'flattened', icon: Lock, label: 'Flattened PDF', desc: 'Single image layer' },
+                                            { id: 'png', icon: ImageIcon, label: 'PNG Images', desc: 'High-res per page' }
+                                        ].map(f => (
+                                            <button
+                                                key={f.id}
+                                                onClick={() => setExportFormat(f.id as any)}
+                                                className={clsx(
+                                                    "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left group",
+                                                    exportFormat === f.id
+                                                        ? "bg-blue-600/20 border-blue-500/50 text-blue-400"
+                                                        : "bg-white/[0.02] border-white/5 text-zinc-400 hover:bg-white/[0.05] hover:text-white"
+                                                )}
+                                            >
+                                                <div className={clsx(
+                                                    "p-2 rounded-lg border transition-colors",
+                                                    exportFormat === f.id ? "bg-blue-600 border-blue-400 text-white" : "bg-black/20 border-white/5 text-zinc-500"
+                                                )}>
+                                                    <f.icon size={14} />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] font-black uppercase tracking-wide leading-none mb-0.5">{f.label}</div>
+                                                    <div className="text-[9px] opacity-60">{f.desc}</div>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {exportFormat !== 'standard' && (
+                                        <div className="space-y-2 p-3 bg-black/30 rounded-xl border border-white/5">
+                                            <div className="flex justify-between items-center text-[9px] font-bold text-zinc-500 uppercase tracking-widest">
+                                                <span>Quality</span>
+                                                <span className="text-blue-400 tabular-nums">{Math.round(exportQuality * 100)}%</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0.1" max="1" step="0.05"
+                                                value={exportQuality}
+                                                onChange={(e) => setExportQuality(parseFloat(e.target.value))}
+                                                className="w-full accent-blue-500"
+                                            />
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={handleExport}
+                                        disabled={isExporting}
+                                        className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
+                                    >
+                                        {isExporting ? (
+                                            <><RotateCw className="animate-spin" size={14} /> Processing...</>
+                                        ) : (
+                                            <><Download size={14} /> Download {isSelectionMode && selectedPageIds.length > 0 ? `${selectedPageIds.length} Pages` : 'All'}</>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings2, Layers, Download } from 'lucide-react';
+import { Settings2, Layers } from 'lucide-react';
 import { EditorProperties } from './EditorProperties';
 import { LayerPanel } from './LayerPanel';
 

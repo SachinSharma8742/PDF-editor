@@ -4,17 +4,16 @@ import {
     ArrowLeftToLine, ArrowRightToLine, AlignHorizontalJustifyCenter,
     ArrowUpToLine, ArrowDownToLine, AlignVerticalJustifyCenter,
     Trash2, Layers, Copy, Group, Ungroup,
-    Type, Image as ImageIcon, Box, PenTool,
-    Settings2, LayoutGrid
+    Type, Image as ImageIcon, Box, PenTool
 } from 'lucide-react';
 import type { PDFObject } from '../../../store/pdfStore';
 import { PropertyLabel, ActionButton, SimpleInput, Slider, ColorGrid } from './properties/PropertyComponents';
 import { TextPropertyPanel } from './properties/TextPropertyPanel';
-import { ImagePropertyPanel } from './properties/ImagePropertyPanel';
+
 import { PagePropertyPanel } from './properties/PagePropertyPanel';
 
 // Helper for mixed values
-const getCommonValue = (objects: PDFObject[], key: keyof PDFObject, fallback: any): any => {
+const getCommonValue = <K extends keyof PDFObject>(objects: PDFObject[], key: K, fallback: PDFObject[K]): PDFObject[K] | 'mixed' | undefined => {
     if (objects.length === 0) return fallback;
     const val = objects[0][key];
     for (let i = 1; i < objects.length; i++) {
@@ -32,8 +31,6 @@ export const EditorProperties: React.FC = () => {
         duplicateObject,
         groupObjects,
         ungroupObjects,
-        activeTool,
-        toolPreferences,
         recentColors,
         addColorToHistory
     } = useEditorStore();
@@ -59,8 +56,8 @@ export const EditorProperties: React.FC = () => {
     const isMulti = selectedObjects.length > 1;
     const canUngroup = selectedObjects.some(o => !!o.groupId);
 
-    const rotation = getCommonValue(selectedObjects, 'rotation', 0);
-    const opacity = getCommonValue(selectedObjects, 'opacity', 1);
+    const rotation = getCommonValue(selectedObjects, 'rotation', 0) as number | 'mixed';
+    const opacity = getCommonValue(selectedObjects, 'opacity', 1) as number;
 
     // Helper to get actual object dimensions (handles paths/lines with points)
     const getObjectDimensions = (obj: PDFObject) => {
@@ -217,7 +214,7 @@ export const EditorProperties: React.FC = () => {
                             <div>
                                 <span className="text-[9px] text-zinc-500 mb-2 block">Fill Color</span>
                                 <ColorGrid
-                                    current={getCommonValue(selectedObjects, 'fill', 'transparent')}
+                                    current={getCommonValue(selectedObjects, 'fill', 'transparent') as string}
                                     recentColors={recentColors}
                                     onSelect={(c) => {
                                         addColorToHistory(c);
@@ -228,7 +225,7 @@ export const EditorProperties: React.FC = () => {
                             <div>
                                 <span className="text-[9px] text-zinc-500 mb-2 block">Stroke Color</span>
                                 <ColorGrid
-                                    current={getCommonValue(selectedObjects, 'stroke', '#000000')}
+                                    current={getCommonValue(selectedObjects, 'stroke', '#000000') as string}
                                     recentColors={recentColors}
                                     onSelect={(c) => {
                                         addColorToHistory(c);
@@ -238,7 +235,7 @@ export const EditorProperties: React.FC = () => {
                             </div>
                             <SimpleInput
                                 label="Thickness"
-                                value={getCommonValue(selectedObjects, 'strokeWidth', 2)}
+                                value={getCommonValue(selectedObjects, 'strokeWidth', 2) as number}
                                 onChange={(v) => selectedObjects.forEach(o => updateObject(o.id, { strokeWidth: v }))}
                             />
                         </div>
@@ -282,7 +279,7 @@ export const EditorProperties: React.FC = () => {
                         <SimpleInput label="Y" value={Math.round(firstObj.y)} disabled={isMulti} onChange={(v: number) => updateObject(firstObj.id, { y: v })} />
                         <SimpleInput label="W" value={Math.round(firstObj.width || 0)} disabled={isMulti} onChange={(v: number) => updateObject(firstObj.id, { width: v })} />
                         <SimpleInput label="H" value={Math.round(firstObj.height || 0)} disabled={isMulti} onChange={(v: number) => updateObject(firstObj.id, { height: v })} />
-                        <SimpleInput label="R" value={rotation === 'mixed' ? 0 : Math.round(rotation)} className="col-span-2" suffix="°" onChange={(v: number) => selectedObjects.forEach(o => updateObject(o.id, { rotation: v }))} />
+                        <SimpleInput label="R" value={rotation === 'mixed' ? 0 : Math.round(rotation as number)} className="col-span-2" suffix="°" onChange={(v: number) => selectedObjects.forEach(o => updateObject(o.id, { rotation: v }))} />
                     </div>
                 </div>
 

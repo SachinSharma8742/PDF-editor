@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, CheckCircle2, Circle } from 'lucide-react';
 import clsx from 'clsx';
-import { PageContextMenu } from '../features/page-operations/PageContextMenu';
+
 import { PDFThumbnail } from "../features/pdf-viewer/PDFThumbnail";
 
 interface SortablePageItemProps {
@@ -25,12 +25,6 @@ export const SortablePageItem: React.FC<SortablePageItemProps> = ({
     onClick,
     onToggleSelection
 }) => {
-    const [contextMenu, setContextMenu] = React.useState<{ x: number, y: number } | null>(null);
-
-    const handleContextMenu = (e: React.MouseEvent) => {
-        e.preventDefault();
-        setContextMenu({ x: e.clientX, y: e.clientY });
-    };
 
     const {
         attributes,
@@ -64,16 +58,7 @@ export const SortablePageItem: React.FC<SortablePageItemProps> = ({
                     )
             )}
             onClick={onClick}
-            onContextMenu={handleContextMenu}
         >
-            {contextMenu && (
-                <PageContextMenu
-                    x={contextMenu.x}
-                    y={contextMenu.y}
-                    pageId={id}
-                    onClose={() => setContextMenu(null)}
-                />
-            )}
 
             {/* Selection Checkbox - Smarter Overlay */}
             {(isSelectionMode || isSelected) && (

@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { useEditorStore } from '../../../store/editorStore';
-import { usePDFStore } from '../../../store/pdfStore';
 import { Eye, EyeOff, Lock, Unlock, Text, Image as ImageIcon, Edit3, Square, MoreVertical, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Trash2, Copy, GripVertical } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
@@ -169,7 +168,7 @@ export const LayerPanel: React.FC = () => {
     // so we need to reverse the list for display.
     const displayLayers = useMemo(() => {
         return currentPage?.objects ? [...currentPage.objects].reverse() : [];
-    }, [currentPage?.objects]);
+    }, [currentPage]);
 
     if (!currentPage) return null;
 
@@ -177,8 +176,7 @@ export const LayerPanel: React.FC = () => {
         const { active, over } = event;
         if (!over || active.id === over.id) return;
 
-        // Current Render Order (Back to Front)
-        const oldObjects = currentPage.objects;
+
 
         // Find indices in the Render Order array
         // But wait, DndKit is operating on the "displayLayers" which is reversed.

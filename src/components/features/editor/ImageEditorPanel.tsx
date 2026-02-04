@@ -1,6 +1,5 @@
 import React from 'react';
 import { useEditorStore } from '../../../store/editorStore';
-import { usePDFStore } from '../../../store/pdfStore';
 import {
     Sun, Contrast, Droplet, MoveHorizontal, MoveVertical,
     Ghost, Layers, Scissors, RotateCw, Wand2, Image as ImageIcon,
@@ -266,7 +265,15 @@ const SectionLabel = ({ label, icon }: { label: string, icon: React.ReactNode })
     </div>
 );
 
-const FilterSlider = ({ label, icon, value, min, max, step, onChange }: any) => (
+const FilterSlider = ({ label, icon, value, min, max, step, onChange }: {
+    label: string;
+    icon: React.ReactNode;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    onChange: (val: number) => void;
+}) => (
     <div className="space-y-2">
         <div className="flex items-center justify-between text-zinc-400">
             <div className="flex items-center gap-2 text-[10px] font-medium uppercase">

@@ -827,7 +827,7 @@ export const usePDFStore = create<PDFStore>()(
                         if (multi) {
                             const currentSet = new Set(state.selectedObjectIds);
                             const allSelected = idsToSelect.every(id => currentSet.has(id));
-                            let newSet = new Set(currentSet);
+                            const newSet = new Set(currentSet);
                             if (allSelected) idsToSelect.forEach(id => newSet.delete(id));
                             else idsToSelect.forEach(id => newSet.add(id));
                             return {

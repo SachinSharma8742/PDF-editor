@@ -3,14 +3,12 @@ import { useEditorStore } from '../../../store/editorStore';
 import type { ToolType } from '../../../store/pdfStore';
 import {
     MousePointerClick, Move, RectangleHorizontal, CircleDot, TypeOutline, ImagePlus,
-    PenTool, Brush, EraserIcon, Trash2, Copy, BringToFront, SendToBack,
-    Bold, Italic, AlignLeft, AlignCenter, AlignRight,
-    Palette, ChevronRight, Pipette, Hash, PlusCircle, Shapes, Ruler,
-    Triangle, Star, Pentagon, Signature, ShieldAlert, FileText, Type, CheckSquare, Smile, ScanText, MoveUpRight, Minus,
-    Download, StickyNote, MessageSquare, Search
+    PenTool, Brush, EraserIcon,
+    Pipette, PlusCircle, Shapes, Ruler,
+    Triangle, Star, Pentagon, Signature, Smile, ScanText, MoveUpRight, Minus,
+    StickyNote, MessageSquare, Search
 } from 'lucide-react';
 import clsx from 'clsx';
-import { Tooltip } from '../../ui/Tooltip';
 import { SignatureModal } from './SignatureModal';
 
 // --- Configuration ---
@@ -89,8 +87,7 @@ const getToolIcon = (tool: ToolType): React.ElementType => {
 export const EditorToolbar: React.FC = () => {
     const {
         activeTool, setActiveTool, addObject, toolPreferences, updateToolSettings,
-        selectedObjectIds, deleteObjects, currentPage, updateObject,
-        recentColors, addColorToHistory, setActivePanelTab
+        addColorToHistory
     } = useEditorStore();
 
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -109,10 +106,13 @@ export const EditorToolbar: React.FC = () => {
     // Update group default when active tool changes
     useEffect(() => {
         const group = getGroupForTool(activeTool);
-        if (group) {
+        if (group && groupDefaults[group] !== activeTool) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setGroupDefaults(prev => ({ ...prev, [group]: activeTool }));
         }
-    }, [activeTool]);
+    }, [activeTool, groupDefaults]);
+
+    const ActiveIcon = eyedropperActive ? Pipette : getToolIcon(activeTool);
 
     const handleToolSelect = (toolId: ToolType) => {
         if (toolId === 'image') {
@@ -167,7 +167,7 @@ export const EditorToolbar: React.FC = () => {
     const handleEyedropper = async () => {
         if (isEyedropperSupported) {
             try {
-                // @ts-ignore
+                // @ts-expect-error EyeDropper API is not yet in standard types
                 const eyeDropper = new window.EyeDropper();
                 setEyedropperActive(true);
                 const result = await eyeDropper.open();
@@ -175,7 +175,7 @@ export const EditorToolbar: React.FC = () => {
                 addColorToHistory(result.sRGBHex);
                 setEyedropperActive(false);
                 return;
-            } catch (e: any) {
+            } catch (e) {
                 console.warn(e);
                 setEyedropperActive(false);
             }
@@ -184,8 +184,7 @@ export const EditorToolbar: React.FC = () => {
     };
 
     const currentSettings = toolPreferences[activeTool];
-    const hasSelection = selectedObjectIds.length > 0;
-    const selectedObj = currentPage?.objects.find(o => o.id === selectedObjectIds[0]);
+
 
 
     return (
@@ -193,15 +192,10 @@ export const EditorToolbar: React.FC = () => {
             {/* --- MAIN VERTICAL TOOLBAR --- */}
             <div className="w-18 bg-[#09090b] border-r border-white/5 flex flex-col items-center py-4 gap-4 shadow-2xl z-50 flex-shrink-0">
                 {/* Active Tool Indicator */}
-                {(() => {
-                    // Get the icon for the current active tool
-                    const ActiveIcon = eyedropperActive ? Pipette : getToolIcon(activeTool);
-                    return (
-                        <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center mb-2 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all duration-200">
-                            <ActiveIcon size={20} />
-                        </div>
-                    );
-                })()}
+                {/* Active Tool Indicator */}
+                <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center mb-2 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all duration-200">
+                    {React.createElement(ActiveIcon, { size: 20 })}
+                </div>
 
                 {/* Groups */}
                 <div className="flex flex-col gap-3 w-full px-2">
@@ -324,7 +318,6 @@ const ToolGroup: React.FC<{
 
     // Use groupIcon if provided, otherwise use the mainTool's icon
     const MainIcon = groupIcon || mainTool.icon;
-    const tooltipLabel = groupIcon ? groupLabel : mainTool.label;
 
     return (
         <div className="relative group/main">

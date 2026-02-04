@@ -16,7 +16,24 @@ export const OCRPanel: React.FC = () => {
     const { pdfDocument } = usePDFStore();
 
     const handleOCR = async () => {
-        if (!pdfDocument || !currentPage) return;
+        if (!pdfDocument || !currentPage) {
+            setStatus('No PDF document or page available');
+            return;
+        }
+
+        // Get the page index - use originalPageIndex if available, fallback to pageNumber
+        const pageIndex = currentPage.originalPageIndex ?? currentPage.pageNumber;
+
+        if (!pageIndex || pageIndex < 1) {
+            setStatus('Cannot perform OCR on this page type');
+            return;
+        }
+
+        // Check if page index is valid for the PDF
+        if (pageIndex > pdfDocument.numPages) {
+            setStatus(`Page ${pageIndex} is out of range (PDF has ${pdfDocument.numPages} pages)`);
+            return;
+        }
 
         setLoading(true);
         setProgress(0);
@@ -27,7 +44,7 @@ export const OCRPanel: React.FC = () => {
             // 1. Get current page as image
             // We use a higher scale for better OCR accuracy
             const OC_SCALE = 2.0;
-            const page = await pdfDocument.getPage(currentPage.originalPageIndex);
+            const page = await pdfDocument.getPage(pageIndex);
             const viewport = page.getViewport({ scale: OC_SCALE });
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
@@ -61,17 +78,18 @@ export const OCRPanel: React.FC = () => {
             setResultData({ ...data, scaleFactor: OC_SCALE });
 
             await worker.terminate();
+            setStatus('OCR Complete!');
 
         } catch (err) {
             console.error('OCR Error:', err);
-            setStatus('Error occurred during OCR');
+            setStatus(`Error: ${err instanceof Error ? err.message : 'Unknown error occurred'}`);
         } finally {
             setLoading(false);
         }
     };
 
     const handleInsertInvisibleLayer = () => {
-        if (!resultData || !currentPage) return;
+        if (!resultData || !resultData.words || !currentPage) return;
 
         // Iterate words and place them exact
         // Tesseract coords are { x0, y0, x1, y1 } relative to the IMAGE provided.
@@ -107,7 +125,7 @@ export const OCRPanel: React.FC = () => {
     };
 
     const handleInsertEditableText = () => {
-        if (!resultData || !currentPage) return;
+        if (!resultData || !resultData.lines || !currentPage) return;
 
         const scale = 1 / resultData.scaleFactor;
 
@@ -171,13 +189,18 @@ export const OCRPanel: React.FC = () => {
             const totalPages = pages.filter(p => p.source === 'pdf').length;
 
             for (const page of pages) {
-                if (page.source !== 'pdf' || !page.originalPageIndex) continue;
+                // Skip non-PDF pages (blank, image-based)
+                if (page.source !== 'pdf') continue;
+
+                // Get valid page index - use originalPageIndex if available, fallback to pageNumber
+                const pageIndex = page.originalPageIndex ?? page.pageNumber;
+                if (!pageIndex || pageIndex < 1 || pageIndex > pdfDocument.numPages) continue;
 
                 setStatus(`Processing Page ${page.pageNumber} / ${pages.length}...`);
 
                 // 1. Render Page
                 const OC_SCALE = 1.5; // Slightly lower scale for batch to save memory/time
-                const pdfPage = await pdfDocument.getPage(page.originalPageIndex);
+                const pdfPage = await pdfDocument.getPage(pageIndex);
                 const viewport = pdfPage.getViewport({ scale: OC_SCALE });
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
@@ -238,7 +261,7 @@ export const OCRPanel: React.FC = () => {
     };
 
     const handleSmartDetect = () => {
-        if (!resultData || !currentPage) return;
+        if (!resultData || !resultData.lines || !currentPage) return;
         const scale = 1 / resultData.scaleFactor;
 
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -316,7 +339,7 @@ export const OCRPanel: React.FC = () => {
                 <div className="mt-6 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                            Found {resultData.words.length} words
+                            Found {resultData.words?.length ?? 0} words
                         </span>
                         <div className="flex gap-2">
                             <button

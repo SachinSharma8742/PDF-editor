@@ -1,11 +1,11 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Group, Circle, Rect, Line, Arc, Path } from 'react-konva';
+import { Group, Circle, Rect, Line, Path } from 'react-konva';
 import Konva from 'konva';
 
 interface AntiGravityTransformerProps {
     node: Konva.Node | null;
     isSelected: boolean;
-    onChange: (attrs: any) => void;
+    onChange: (attrs: { x: number; y: number; width: number; height: number; rotation: number }) => void;
 }
 
 /**
@@ -76,7 +76,7 @@ export const AntiGravityTransformer: React.FC<AntiGravityTransformerProps> = ({
     ];
 
     // Resize handle functions
-    const handleDragStart = (handleId: string, e: Konva.KonvaEventObject<DragEvent>) => {
+    const handleDragStart = () => {
         setIsDragging(true);
         setIsTransforming(true);
     };
@@ -122,7 +122,7 @@ export const AntiGravityTransformer: React.FC<AntiGravityTransformerProps> = ({
         }
     };
 
-    const handleDragEnd = (handleId: string) => {
+    const handleDragEnd = () => {
         setIsDragging(false);
         setIsTransforming(false);
 
@@ -303,9 +303,9 @@ export const AntiGravityTransformer: React.FC<AntiGravityTransformerProps> = ({
                                 e.target.getStage()!.container().style.cursor = 'default';
                             }}
                             draggable
-                            onDragStart={(e) => handleDragStart(handle.id, e)}
+                            onDragStart={() => handleDragStart()}
                             onDragMove={(e) => handleDrag(handle.id, e)}
-                            onDragEnd={() => handleDragEnd(handle.id)}
+                            onDragEnd={() => handleDragEnd()}
                         />
 
                         {/* Visible 6px Circular Pip with Shadow */}

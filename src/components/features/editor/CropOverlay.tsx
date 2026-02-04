@@ -1,8 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Group, Rect, Line, Image as KonvaImage, Text, Path } from 'react-konva';
+import React, { useEffect, useState } from 'react';
+import { Group, Rect, Image as KonvaImage, Text, Path } from 'react-konva';
 import { useEditorStore } from '../../../store/editorStore';
-import Konva from 'konva';
-import { Square, Circle, Check } from 'lucide-react'; // For UI controls
+
 
 interface CropOverlayProps {
     objectId: string;
@@ -39,10 +38,7 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({ objectId }) => {
     const fullStageWidth = naturalWidth * displayScaleX;
     const fullStageHeight = naturalHeight * displayScaleY;
 
-    // The object's x/y is the top-left of the CROPPED area.
-    // We need to find the top-left of the FULL image.
-    const fullStageX = object.x - (crop.x * displayScaleX);
-    const fullStageY = object.y - (crop.y * displayScaleY);
+
 
     const updateCrop = (newCrop: typeof crop) => {
         // Constrain to source image bounds

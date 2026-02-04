@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Line, Transformer, Rect, Group } from 'react-konva';
+import Konva from 'konva';
 import { useEditorStore } from '../../../store/editorStore';
-import { usePDFStore } from '../../../store/pdfStore'; // Need this for the PDF Document source
+import { usePDFStore, type PDFObject } from '../../../store/pdfStore'; // Need this for the PDF Document source
 import { PDFObjectRenderer } from './PDFObjectRenderer';
 import { CropOverlay } from './CropOverlay';
 import { Loader2 } from 'lucide-react';
-import type { PDFObject } from '../../../store/pdfStore';
+
 
 import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
 import { detectShape } from '../../../utils/shapeDetection';
@@ -35,8 +36,8 @@ export const EditorCanvas: React.FC = () => {
 
     // Refs
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const stageRef = useRef<any>(null);
-    const transformerRef = useRef<any>(null);
+    const stageRef = useRef<Konva.Stage>(null);
+    const transformerRef = useRef<Konva.Transformer>(null);
     // Track Drag State for Multi-move
     const isDraggingRef = useRef(false);
     const dragStartPosRef = useRef<{ x: number, y: number } | null>(null);
@@ -96,14 +97,14 @@ export const EditorCanvas: React.FC = () => {
         if (minX === Infinity) return null;
 
         return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-    }, [selectedObjectIds, currentPage?.objects]);
+    }, [selectedObjectIds, currentPage]);
 
 
     // --- PDF Rendering ---
     useEffect(() => {
         if (!currentPage || currentPage.source !== 'pdf') return;
 
-        let renderTask: any = null;
+        let renderTask: { promise: Promise<void>; cancel: () => void } | null = null;
         let isCancelled = false;
 
         const renderPage = async () => {
@@ -153,9 +154,9 @@ export const EditorCanvas: React.FC = () => {
                 };
 
                 renderTask = page.render(renderContext);
-                await renderTask.promise;
-            } catch (error: any) {
-                if (error.name !== 'RenderingCancelledException') {
+                await renderTask!.promise;
+            } catch (error: unknown) {
+                if (error instanceof Error && error.name !== 'RenderingCancelledException') {
                     console.error('Error rendering page:', error);
                 }
             } finally {
@@ -167,8 +168,9 @@ export const EditorCanvas: React.FC = () => {
 
         return () => {
             isCancelled = true;
-            if (renderTask) renderTask.cancel();
+            renderTask?.cancel();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pdfDocument, currentPage?.originalPageIndex, scale, dimensions?.width, dimensions?.height, currentPage?.rotation]);
 
     // Dimensions for Non-PDF sources (e.g. Blank page)
@@ -188,15 +190,15 @@ export const EditorCanvas: React.FC = () => {
 
         // Find nodes for all selected IDs
         const nodes = selectedObjectIds
-            .map(id => stageRef.current.findOne('#' + id))
+            .map(id => stageRef.current?.findOne('#' + id))
             .filter(node => node !== undefined);
 
-        if (nodes.length > 0) {
-            transformerRef.current.nodes(nodes);
-            transformerRef.current.getLayer().batchDraw();
-        } else {
+        if (nodes.length > 0 && transformerRef.current) {
+            transformerRef.current.nodes(nodes as Konva.Node[]);
+            transformerRef.current.getLayer()?.batchDraw();
+        } else if (transformerRef.current) {
             transformerRef.current.nodes([]);
-            transformerRef.current.getLayer().batchDraw();
+            transformerRef.current.getLayer()?.batchDraw();
         }
     }, [selectedObjectIds]);
 
@@ -209,8 +211,9 @@ export const EditorCanvas: React.FC = () => {
         return Math.round(val / g) * g;
     };
 
-    const handleMouseDown = (e: any) => {
+    const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
         const stage = e.target.getStage();
+        if (!stage) return;
         const pos = stage.getPointerPosition();
         if (!pos) return;
 
@@ -247,8 +250,9 @@ export const EditorCanvas: React.FC = () => {
         }
     };
 
-    const handleMouseMove = (e: any) => {
+    const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
         const stage = e.target.getStage();
+        if (!stage) return;
         const point = stage.getPointerPosition();
         if (!point) return;
 
@@ -364,7 +368,7 @@ export const EditorCanvas: React.FC = () => {
                 if (detected.type !== 'none') {
                     addObject({
                         id: crypto.randomUUID(),
-                        type: detected.type as any,
+                        type: detected.type as PDFObject['type'],
                         x: detected.x,
                         y: detected.y,
                         width: detected.width,
@@ -406,7 +410,7 @@ export const EditorCanvas: React.FC = () => {
                 points: normalizedPoints,
                 stroke: activeTool === 'eraser' ? '#ffffff' : toolSettings.color,
                 strokeWidth: toolSettings.size,
-                tool: activeTool as any,
+                tool: activeTool as 'pen' | 'highlighter' | 'eraser',
                 opacity: activeTool === 'highlighter' ? (toolSettings.opacity || 0.5) : 1,
                 rotation: 0
             });
@@ -454,7 +458,7 @@ export const EditorCanvas: React.FC = () => {
 
                 addObject({
                     id: crypto.randomUUID(),
-                    type: activeTool as any,
+                    type: activeTool as PDFObject['type'],
                     x: finalX,
                     y: finalY,
                     width: finalW,
@@ -483,7 +487,7 @@ export const EditorCanvas: React.FC = () => {
     // --- TRANSFORM & DRAG LOGIC ---
 
     // Drag Start: Capture initial positions for delta calculation
-    const handleDragStartGlobal = (e: any) => {
+    const handleDragStartGlobal = (e: Konva.KonvaEventObject<DragEvent>) => {
         const id = e.target.id();
         if (selectedObjectIds.includes(id)) {
             isDraggingRef.current = true;
@@ -497,11 +501,9 @@ export const EditorCanvas: React.FC = () => {
     // Force batch draw to smooth animation
 
 
-    const snapValue = (val: number, gridSize: number) => {
-        return Math.round(val / gridSize) * gridSize;
-    };
 
-    const handleDragMoveGlobal = (e: any) => {
+
+    const handleDragMoveGlobal = (e: Konva.KonvaEventObject<DragEvent>) => {
         if (!isDraggingRef.current || !dragStartPosRef.current) return;
 
         const id = e.target.id();
@@ -535,7 +537,7 @@ export const EditorCanvas: React.FC = () => {
         // Move all OTHER selected objects
         selectedObjectIds.forEach(objId => {
             if (objId !== id) {
-                const node = stageRef.current.findOne('#' + objId);
+                const node = stageRef.current?.findOne('#' + objId);
                 if (node) {
                     node.x(node.x() + dx);
                     node.y(node.y() + dy);
@@ -544,10 +546,10 @@ export const EditorCanvas: React.FC = () => {
         });
 
         // Force batch draw to smooth animation
-        stageRef.current.batchDraw();
+        stageRef.current?.batchDraw();
     };
 
-    const handleDragEndGlobal = (e: any) => {
+    const handleDragEndGlobal = (e: Konva.KonvaEventObject<DragEvent>) => {
         isDraggingRef.current = false;
         dragStartPosRef.current = null;
 
@@ -556,7 +558,7 @@ export const EditorCanvas: React.FC = () => {
         if (selectedObjectIds.includes(id)) {
             // Iterate all selected IDs and update their positions from the Konva nodes
             selectedObjectIds.forEach(objId => {
-                const node = stageRef.current.findOne('#' + objId);
+                const node = stageRef.current?.findOne('#' + objId);
                 if (node) {
                     // Node position is center-based (due to offset), convert back to top-left
                     const offsetX = node.offsetX() || 0;
@@ -574,7 +576,7 @@ export const EditorCanvas: React.FC = () => {
         if (!stageRef.current) return;
 
         selectedObjectIds.forEach(id => {
-            const node = stageRef.current.findOne('#' + id);
+            const node = stageRef.current?.findOne('#' + id);
             if (node) {
                 const scaleX = node.scaleX();
                 const scaleY = node.scaleY();
@@ -612,7 +614,7 @@ export const EditorCanvas: React.FC = () => {
                 node.scaleX(1);
                 node.scaleY(1);
 
-                const updates: any = {
+                const updates: Partial<PDFObject> = {
                     x: newX,
                     y: newY,
                     width: newWidth,
@@ -639,12 +641,12 @@ export const EditorCanvas: React.FC = () => {
 
     // --- Multi-Selection Overlay Logic ---
 
-    const handleOverlayDragStart = (e: any) => {
+    const handleOverlayDragStart = (e: Konva.KonvaEventObject<DragEvent>) => {
         isDraggingRef.current = true;
         dragStartPosRef.current = { x: e.target.x(), y: e.target.y() };
     };
 
-    const handleOverlayDragMove = (e: any) => {
+    const handleOverlayDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
         if (!isDraggingRef.current || !dragStartPosRef.current) return;
 
         const newPos = { x: e.target.x(), y: e.target.y() };
@@ -655,23 +657,23 @@ export const EditorCanvas: React.FC = () => {
 
         // Move ALL selected objects
         selectedObjectIds.forEach(objId => {
-            const node = stageRef.current.findOne('#' + objId);
+            const node = stageRef.current?.findOne('#' + objId);
             if (node) {
                 node.x(node.x() + dx);
                 node.y(node.y() + dy);
             }
         });
 
-        stageRef.current.batchDraw();
+        stageRef.current?.batchDraw();
     };
 
-    const handleOverlayDragEnd = (e: any) => {
+    const handleOverlayDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
         isDraggingRef.current = false;
         dragStartPosRef.current = null;
 
         // Sync all to store
         selectedObjectIds.forEach(objId => {
-            const node = stageRef.current.findOne('#' + objId);
+            const node = stageRef.current?.findOne('#' + objId);
             if (node) {
                 // Convert from center-based position to top-left for storage
                 const offsetX = node.offsetX() || 0;
@@ -982,7 +984,7 @@ export const EditorCanvas: React.FC = () => {
                                     <PDFObjectRenderer
                                         object={{
                                             id: 'preview',
-                                            type: activeTool as any,
+                                            type: activeTool as PDFObject['type'],
                                             x: finalX,
                                             y: finalY,
                                             width: finalW,
@@ -1030,9 +1032,9 @@ export const EditorCanvas: React.FC = () => {
                                 object={{
                                     ...obj,
                                     visible: obj.visible !== false && !(useEditorStore.getState().isCropping && selectedObjectIds.includes(obj.id))
-                                }}
+                                } as PDFObject}
                                 isSelected={selectedObjectIds.includes(obj.id)}
-                                onSelect={(e: any) => {
+                                onSelect={(e: Konva.KonvaEventObject<MouseEvent>) => {
                                     if (activeTool === 'eraser' && eraserMode === 'element') {
                                         deleteObjects([obj.id]);
                                     } else if (activeTool === 'select') {

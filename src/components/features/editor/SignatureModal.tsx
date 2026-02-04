@@ -24,7 +24,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose,
         if (!isDrawing.current) return;
         const stage = e.target.getStage();
         const point = stage.getPointerPosition();
-        let lastLine = lines[lines.length - 1];
+        const lastLine = lines[lines.length - 1];
         lastLine.points = lastLine.points.concat([point.x, point.y]);
         lines.splice(lines.length - 1, 1, lastLine);
         setLines(lines.concat());

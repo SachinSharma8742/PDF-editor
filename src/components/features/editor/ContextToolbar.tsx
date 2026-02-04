@@ -10,7 +10,6 @@ export const ContextToolbar: React.FC = () => {
         deleteObjects,
         groupObjects,
         ungroupObjects,
-        scale,
         activeTool,
         toolPreferences, // Updated to toolPreferences
         updateToolSettings
@@ -119,7 +118,7 @@ export const ContextToolbar: React.FC = () => {
 
     const { obj, page } = ctx;
 
-    const handleChange = (key: string, value: any) => {
+    const handleChange = (key: string, value: string | number) => {
         // Apply to ALL selected objects if multi
         selectedObjectIds.forEach(id => {
             updateObject(page.id, id, { [key]: value });

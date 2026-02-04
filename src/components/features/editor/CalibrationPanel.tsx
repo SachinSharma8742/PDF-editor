@@ -1,6 +1,6 @@
 import React from 'react';
 import { usePDFStore } from '../../../store/pdfStore';
-import { Ruler, Scale, Maximize2, Check, Grid as GridIcon } from 'lucide-react';
+import { Ruler, Scale, Maximize2, Grid as GridIcon } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { useEditorStore } from '../../../store/editorStore';
 
@@ -10,7 +10,7 @@ export const CalibrationPanel: React.FC = () => {
 
     const units = ['px', 'in', 'cm', 'mm', 'ft', 'm'];
 
-    const handleUpdate = (updates: any) => {
+    const handleUpdate = (updates: { scale?: number; unit?: string }) => {
         const newScale = updates.scale !== undefined ? updates.scale : calibration.scale;
         const newUnit = updates.unit !== undefined ? updates.unit : calibration.unit;
         setCalibration(newScale, newUnit);

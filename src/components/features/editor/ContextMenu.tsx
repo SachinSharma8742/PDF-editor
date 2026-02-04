@@ -1,23 +1,12 @@
 import React, { useRef, useEffect } from 'react';
 import { usePDFStore } from '../../../store/pdfStore';
 import { useEditorStore } from '../../../store/editorStore';
-import { Copy, Trash2, ArrowUp, ArrowDown, Edit3, Upload, ClipboardPaste, Sun, Moon, Split, StickyNote, RefreshCw, Ruler } from 'lucide-react';
+import { Copy, Trash2, ArrowUp, ArrowDown, Edit3, ClipboardPaste, Split, StickyNote, RefreshCw, Ruler } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { loadPDF } from '../../../utils/pdfOps';
+
 
 export const ContextMenu: React.FC = () => {
-    const {
-        deleteObjects,
-        duplicateObject,
-        reorderObject,
-        pages,
-        toggleTheme,
-        theme,
-        setPdfDocument,
-        setIsLoading,
-        undo,
-        redo
-    } = usePDFStore();
+    const { pages } = usePDFStore();
 
     const {
         contextMenu,
@@ -32,7 +21,6 @@ export const ContextMenu: React.FC = () => {
     } = useEditorStore();
 
     const menuRef = useRef<HTMLDivElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Close on click outside or escape
     useEffect(() => {

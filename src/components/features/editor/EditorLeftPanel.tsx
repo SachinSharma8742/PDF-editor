@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-    Smile, ScanText, Ruler, ChevronLeft, ChevronRight,
+    ChevronLeft, ChevronRight,
     Library, Sparkles
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -31,10 +31,9 @@ export const EditorLeftPanel: React.FC = () => {
     const isLibraryTool = ['stamp', 'ocr', 'measure', 'search'].includes(activeTool);
 
     // Track if user has manually selected a tab to prevent auto-switching overriding user intent
-    const [userHasSelectedTab, setUserHasSelectedTab] = useState(false);
+    // const [userHasSelectedTab, setUserHasSelectedTab] = useState(false);
 
     React.useEffect(() => {
-        if (userHasSelectedTab) return;
 
         if (activeTool === 'stamp') {
             setActiveTab('stamps');
@@ -67,13 +66,9 @@ export const EditorLeftPanel: React.FC = () => {
             setActiveTab('properties');
             setIsCollapsed(false);
         }
-    }, [activeTool, hasSelection, userHasSelectedTab, selectedObj?.type]);
+    }, [activeTool, hasSelection, selectedObj?.type, activeTab]);
 
-    const handleTabChange = (tab: TabId) => {
-        setActiveTab(tab);
-        setUserHasSelectedTab(true);
-        setIsCollapsed(false);
-    };
+
 
     if (isCollapsed) {
         return (

@@ -4,6 +4,7 @@ import { PDFViewer } from './components/features/pdf-viewer/PDFViewer';
 import './utils/pdfWorker'; // Import worker config
 import { EditorMode } from './components/features/editor/EditorMode';
 import { ContextMenu } from './components/features/editor/ContextMenu';
+import { ContextToolbar } from './components/features/editor/ContextToolbar';
 import { useEditorStore } from './store/editorStore';
 
 import { usePDFStore } from './store/pdfStore';
@@ -12,7 +13,7 @@ import { loadPDFFromStorage } from './utils/storage';
 import { loadPDF } from './utils/pdfOps';
 
 export default function App() {
-  const { theme, pdfDocument, setIsLoading } = usePDFStore();
+  const { theme, setIsLoading } = usePDFStore();
   const { isActive } = useEditorStore();
 
   useEffect(() => {
@@ -55,6 +56,10 @@ export default function App() {
           <div className="absolute top-0 left-0 right-0 z-50 flex justify-center pt-6 pointer-events-none">
             <div className="pointer-events-auto">
               <Toolbar />
+            </div>
+            {/* Multi-Select / Context Toolbar */}
+            <div className="absolute top-20 pointer-events-auto z-[60]">
+              <ContextToolbar />
             </div>
           </div>
 

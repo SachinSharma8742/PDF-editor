@@ -5,13 +5,11 @@ import { EditorToolbar } from './EditorToolbar';
 import { EditorLeftPanel } from './EditorLeftPanel';
 import { EditorRightPanel } from './EditorRightPanel';
 import { EditorCanvas } from './EditorCanvas';
-import { usePDFStore } from '../../../store/pdfStore';
+import { usePDFStore, type ToolType } from '../../../store/pdfStore';
 import { loadPDF } from '../../../utils/pdfOps';
 
 export const EditorMode: React.FC = () => {
     const {
-        isActive,
-        activeTool,
         selectedObjectIds
     } = useEditorStore();
 
@@ -38,7 +36,7 @@ export const EditorMode: React.FC = () => {
                 return;
             }
 
-            const toolMap: Record<string, any> = {
+            const toolMap: Record<string, string> = {
                 'v': 'select',
                 'h': 'pan',
                 'p': 'pen',
@@ -51,9 +49,8 @@ export const EditorMode: React.FC = () => {
                 'x': 'stamp',
             };
 
-            // Tool switching (only if no modifier keys are pressed)
             if (!isMeta && !e.altKey && toolMap[key]) {
-                useEditorStore.getState().setActiveTool(toolMap[key]);
+                useEditorStore.getState().setActiveTool(toolMap[key] as ToolType);
                 return;
             }
 

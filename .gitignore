@@ -37,3 +37,15 @@ verification_screenshots
 
 # OS
 Thumbs.db
+
+# Lint reports and verification outputs
+lint_*.txt
+lint_*.json
+*_lint.json
+final_lint.json
+verify_*.txt
+verify_*.json
+
+# Build outputs and logs
+build_errors.txt
+build_log.txt

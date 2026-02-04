@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Stage, Layer, Line } from 'react-konva';
-import { usePDFStore } from '../../../store/pdfStore';
+import Konva from 'konva';
+import { usePDFStore, type PDFObject } from '../../../store/pdfStore';
 import { PDFObjectRenderer } from './PDFObjectRenderer';
 
 interface CanvasLayerProps {
@@ -11,7 +12,7 @@ interface CanvasLayerProps {
     scale: number;
 }
 
-export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, width, height, scale }) => {
+export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, width, height, scale }) => {
     const {
         pages,
         activeTool,
@@ -128,8 +129,9 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
     }
 
     // --- EVENT HANDLERS ---
-    const handleMouseDown = (e: any) => {
+    const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
         const stage = e.target.getStage();
+        if (!stage) return;
         const pos = stage.getPointerPosition();
         if (!pos) return;
 
@@ -177,8 +179,9 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
         }
     };
 
-    const handleMouseMove = (e: any) => {
+    const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
         const stage = e.target.getStage();
+        if (!stage) return;
         const point = stage.getPointerPosition();
         if (!point) return;
 
@@ -188,7 +191,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
         // Element Eraser Drag
         if (isElementErasing) {
             const shapes = stage.getAllIntersections(point);
-            shapes.forEach((shape: any) => {
+            shapes.forEach((shape: Konva.Node) => {
                 const id = shape.id();
                 if (id && !deletedIdsRef.current.has(id)) {
                     deletedIdsRef.current.add(id);
@@ -265,7 +268,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
                 points: currentPath,
                 stroke: activeTool === 'eraser' ? '#ffffff' : toolSettings.color,
                 strokeWidth: toolSettings.size,
-                tool: activeTool as any,
+                tool: activeTool as 'pen' | 'highlighter' | 'eraser',
                 opacity: activeTool === 'highlighter' ? 0.5 : 1
             });
         }
@@ -296,7 +299,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
             } else {
                 addObject(pageId, {
                     id: crypto.randomUUID(),
-                    type: activeTool as any,
+                    type: activeTool as PDFObject['type'],
                     x: targetX, y: targetY,
                     width: targetW, height: targetH,
                     stroke: toolSettings.color,
@@ -349,7 +352,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
                         <PDFObjectRenderer
                             object={{
                                 id: 'preview',
-                                type: activeTool as any,
+                                type: activeTool as PDFObject['type'],
                                 x: shapeStartPos!.x + (currentShape.width < 0 ? currentShape.width : 0),
                                 y: shapeStartPos!.y + (currentShape.height < 0 ? currentShape.height : 0),
                                 width: Math.abs(currentShape.width),
@@ -357,7 +360,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, pageNumber, wi
                                 stroke: toolSettings.color,
                                 strokeWidth: 2,
                                 fill: 'rgba(59, 130, 246, 0.1)'
-                            } as any}
+                            } as PDFObject}
                             isSelected={false}
                             onSelect={() => { }}
                             onChange={() => { }}

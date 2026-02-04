@@ -1,19 +1,19 @@
 import React from 'react';
 import { Palette, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
-import type { ToolType } from '../../../store/pdfStore';
-import { useEditorStore } from '../../../store/editorStore';
+import type { ToolType, PDFObject } from '../../../store/pdfStore';
+import { useEditorStore, type ToolSettings } from '../../../store/editorStore';
 
 interface LeftColorPanelProps {
     activeTool: ToolType;
-    toolPreferences: any;
-    updateToolSettings: (settings: any) => void;
+    toolPreferences: Record<ToolType, ToolSettings>;
+    updateToolSettings: (settings: Partial<ToolSettings>) => void;
     hasSelection: boolean;
-    selectedObj: any;
+    selectedObj: PDFObject | undefined;
     recentColors: string[];
     onColorPick: (color: string) => void;
     selectedObjectIds: string[];
-    updateObject: (id: string, updates: any) => void;
+    updateObject: (id: string, updates: Partial<PDFObject>) => void;
 }
 
 export const LeftColorPanel: React.FC<LeftColorPanelProps> = ({
@@ -428,11 +428,11 @@ export const LeftColorPanel: React.FC<LeftColorPanelProps> = ({
                                             min="0.1"
                                             max="1"
                                             step="0.05"
-                                            value={hasSelection && selectedObj ? ((selectedObj.innerRadius / (selectedObj.width / 2)) || 0.5) : (currentSettings.innerRadiusRatio || 0.5)}
+                                            value={hasSelection && selectedObj ? (((selectedObj.innerRadius ?? 0) / ((selectedObj.width || 1) / 2)) || 0.5) : (currentSettings.innerRadiusRatio || 0.5)}
                                             onChange={(e) => {
                                                 const ratio = parseFloat(e.target.value);
                                                 if (hasSelection && selectedObj) {
-                                                    const radius = (selectedObj.width / 2) * ratio;
+                                                    const radius = ((selectedObj.width || 0) / 2) * ratio;
                                                     updateObject(selectedObj.id, { innerRadius: radius });
                                                 } else {
                                                     updateToolSettings({ innerRadiusRatio: ratio });
@@ -493,11 +493,11 @@ export const LeftColorPanel: React.FC<LeftColorPanelProps> = ({
                                         <button
                                             onClick={() => {
                                                 if (hasSelection && selectedObj) updateObject(selectedObj.id, { align: 'left' });
-                                                else updateToolSettings({ align: 'left' }); // Need to add align to toolSettings defaults if not present
+                                                else updateToolSettings({ textAlign: 'left' }); // Need to add align to toolSettings defaults if not present
                                             }}
                                             className={clsx(
                                                 "flex items-center justify-center p-1 rounded hover:bg-white/10 transition-all",
-                                                (hasSelection && selectedObj ? selectedObj.align === 'left' : currentSettings.align === 'left') && "bg-white/20 text-white"
+                                                (hasSelection && selectedObj ? selectedObj.align === 'left' : currentSettings.textAlign === 'left') && "bg-white/20 text-white"
                                             )}
                                             title="Align Left"
                                         >
@@ -506,11 +506,11 @@ export const LeftColorPanel: React.FC<LeftColorPanelProps> = ({
                                         <button
                                             onClick={() => {
                                                 if (hasSelection && selectedObj) updateObject(selectedObj.id, { align: 'center' });
-                                                else updateToolSettings({ align: 'center' });
+                                                else updateToolSettings({ textAlign: 'center' });
                                             }}
                                             className={clsx(
                                                 "flex items-center justify-center p-1 rounded hover:bg-white/10 transition-all",
-                                                (hasSelection && selectedObj ? selectedObj.align === 'center' : currentSettings.align === 'center') && "bg-white/20 text-white"
+                                                (hasSelection && selectedObj ? selectedObj.align === 'center' : currentSettings.textAlign === 'center') && "bg-white/20 text-white"
                                             )}
                                             title="Align Center"
                                         >
@@ -519,11 +519,11 @@ export const LeftColorPanel: React.FC<LeftColorPanelProps> = ({
                                         <button
                                             onClick={() => {
                                                 if (hasSelection && selectedObj) updateObject(selectedObj.id, { align: 'right' });
-                                                else updateToolSettings({ align: 'right' });
+                                                else updateToolSettings({ textAlign: 'right' });
                                             }}
                                             className={clsx(
                                                 "flex items-center justify-center p-1 rounded hover:bg-white/10 transition-all",
-                                                (hasSelection && selectedObj ? selectedObj.align === 'right' : currentSettings.align === 'right') && "bg-white/20 text-white"
+                                                (hasSelection && selectedObj ? selectedObj.align === 'right' : currentSettings.textAlign === 'right') && "bg-white/20 text-white"
                                             )}
                                             title="Align Right"
                                         >

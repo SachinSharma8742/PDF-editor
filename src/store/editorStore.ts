@@ -11,7 +11,7 @@ interface EditorHistory {
     future: PageState[];
 }
 
-interface ToolSettings {
+export interface ToolSettings {
     color: string;
     size: number;
     opacity: number;
@@ -142,7 +142,7 @@ interface EditorStore {
 
 
     // Clipboard
-    clipboard: any[]; // Array of PDFObject
+    clipboard: PDFObject[]; // Array of PDFObject
     copySelection: () => void;
     pasteClipboard: () => void;
 
