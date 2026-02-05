@@ -180,7 +180,17 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
         if (object.type === 'text') {
             setIsEditing(true);
         } else if (object.type === 'image') {
-            useEditorStore.getState().setCropping(true);
+            // Re-open Image Studio
+            if (object.originalSrc) {
+                useEditorStore.getState().openImageStudio(
+                    object.originalSrc,
+                    object.id,
+                    object.editParams
+                );
+            } else {
+                // Legacy: just crop
+                useEditorStore.getState().setCropping(true);
+            }
         }
     };
 

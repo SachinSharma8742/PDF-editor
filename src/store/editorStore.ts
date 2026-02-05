@@ -147,6 +147,17 @@ interface EditorStore {
     pasteClipboard: () => void;
 
     updateCurrentPage: (updates: Partial<PageState>) => void;
+
+    // --- Image Studio State ---
+    imageStudio: {
+        isOpen: boolean;
+        mode: 'create' | 'edit';
+        initialImageSrc: string | null; // The raw source
+        targetObjectId: string | null; // If editing existing
+        initialEditParams: any | null;
+    };
+    openImageStudio: (src: string, objectId?: string, currentParams?: any) => void;
+    closeImageStudio: () => void;
 }
 
 const deepClone = <T>(obj: T): T => {
@@ -196,6 +207,32 @@ export const useEditorStore = create<EditorStore>()(
 
             activePanelTab: 'properties',
             setActivePanelTab: (tab) => set({ activePanelTab: tab }),
+
+            // Image Studio Implementation
+            imageStudio: {
+                isOpen: false,
+                mode: 'create',
+                initialImageSrc: null,
+                targetObjectId: null,
+                initialEditParams: null
+            },
+            openImageStudio: (src, objectId, currentParams) => set({
+                imageStudio: {
+                    isOpen: true,
+                    mode: objectId ? 'edit' : 'create',
+                    initialImageSrc: src,
+                    targetObjectId: objectId || null,
+                    initialEditParams: currentParams || null
+                }
+            }),
+            closeImageStudio: () => set(state => ({
+                imageStudio: {
+                    ...state.imageStudio,
+                    isOpen: false,
+                    initialImageSrc: null,
+                    targetObjectId: null
+                }
+            })),
 
             initEditor: (page) => {
                 // Deep clone the page to ensure isolation

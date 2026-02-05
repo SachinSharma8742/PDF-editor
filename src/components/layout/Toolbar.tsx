@@ -146,61 +146,61 @@ export const Toolbar: React.FC = () => {
 
                 {/* 1. History */}
                 <div className="flex items-center gap-0.5 pr-2 mr-2 border-r border-gray-200 dark:border-white/10">
-                    <Tooltip content="Undo (Ctrl+Z)">
+                   
                         <button onClick={undo} disabled={!canUndo()} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-200 disabled:opacity-30 transition-all active:scale-95">
                             <Undo2 size={18} strokeWidth={2.5} />
                         </button>
-                    </Tooltip>
-                    <Tooltip content="Redo (Ctrl+Y)">
+                    
+                   
                         <button onClick={redo} disabled={!canRedo()} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-200 disabled:opacity-30 transition-all active:scale-95">
                             <Redo2 size={18} strokeWidth={2.5} />
                         </button>
-                    </Tooltip>
+                    
                 </div>
 
                 {/* 2. Tools */}
                 <div className="flex items-center gap-1 pr-2 mr-2 border-r border-gray-200 dark:border-white/10">
-                    <Tooltip content="Select Tool (V)">
+                    
                         <button onClick={() => setActiveTool('select')} className={clsx("p-2 rounded-xl transition-all duration-200 relative group", activeTool === 'select' ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5")}>
                             <MousePointer2 size={18} strokeWidth={activeTool === 'select' ? 2.5 : 2} />
                         </button>
-                    </Tooltip>
-                    <Tooltip content="Pan Tool (H)">
+                    
+                    
                         <button onClick={() => setActiveTool('pan')} className={clsx("p-2 rounded-xl transition-all duration-200 relative group", activeTool === 'pan' ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5")}>
                             <Hand size={18} strokeWidth={activeTool === 'pan' ? 2.5 : 2} />
                         </button>
-                    </Tooltip>
+                    
                 </div>
 
                 <div className={clsx("flex items-center gap-1 pr-2 mr-2 border-r border-gray-200 dark:border-white/10", !hasPages && "opacity-40 pointer-events-none")}>
-                    <Tooltip content="Rotate Page">
+                    
                         <button onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) rotatePage(p.id, 'cw'); }} disabled={!hasPages} className={clsx("p-2 rounded-xl transition-all duration-200 relative group text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5", !hasPages && "cursor-not-allowed")}>
                             <RotateCw size={18} strokeWidth={2} />
                         </button>
-                    </Tooltip>
-                    <Tooltip content="Flip Horizontal">
+                    
+                    
                         <button onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) flipPage(p.id, 'horizontal'); }} disabled={!hasPages} className={clsx("p-2 rounded-xl transition-all duration-200 relative group text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5", !hasPages && "cursor-not-allowed")}>
                             <FlipHorizontal size={18} strokeWidth={2} />
                         </button>
-                    </Tooltip>
-                    <Tooltip content="Flip Vertical">
+                    
+                   
                         <button onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) flipPage(p.id, 'vertical'); }} disabled={!hasPages} className={clsx("p-2 rounded-xl transition-all duration-200 relative group text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5", !hasPages && "cursor-not-allowed")}>
                             <FlipVertical size={18} strokeWidth={2} />
                         </button>
-                    </Tooltip>
+                    
                 </div>
 
                 {/* 5. System Controls */}
                 <div className="flex items-center gap-2 pl-1">
                     {hasPages && (
-                        <Tooltip content="Advanced Editor">
+                        
                             <button
                                 onClick={() => { const page = pages.find(p => p.pageNumber === currentPage); if (page) useEditorStore.getState().initEditor(page); }}
                                 className="p-2.5 mr-1 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-105 transition-all active:scale-95 border border-indigo-400/30"
                             >
                                 <Pencil size={18} strokeWidth={2.5} />
                             </button>
-                        </Tooltip>
+                        
                     )}
 
                     <div className="flex items-center bg-gray-100 dark:bg-zinc-800 rounded-lg p-0.5 border border-transparent dark:border-white/5">
@@ -209,13 +209,13 @@ export const Toolbar: React.FC = () => {
                         <button onClick={() => setScale(Math.min(5, scale + 0.1))} className="p-1 hover:bg-white dark:hover:bg-zinc-700 rounded-md text-gray-500 dark:text-zinc-400 transition-all"><Plus size={12} /></button>
                     </div>
 
-                    <Tooltip content="Toggle Theme">
+                    
                         <button onClick={toggleTheme} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-100 transition-all duration-300 [&:active>svg]:rotate-45">
                             <span className="block transition-transform duration-300">
                                 {theme === 'dark' ? <Sun size={18} strokeWidth={2} /> : <Moon size={18} strokeWidth={2} />}
                             </span>
                         </button>
-                    </Tooltip>
+                    
 
                     {/* Export Button with Hover Dropdown */}
                     {hasPages && (

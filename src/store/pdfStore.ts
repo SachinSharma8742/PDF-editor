@@ -110,6 +110,28 @@ export interface PDFObject {
     lockAspectRatio?: boolean;
     visible?: boolean; // New visibility flag
     groupId?: string; // For grouping objects
+    // Image Studio specific
+    originalSrc?: string; // The original raw image data for re-editing
+    editParams?: {
+        brightness?: number;
+        contrast?: number;
+        saturation?: number;
+        exposure?: number;
+        temperature?: number;
+        tint?: number;
+        blur?: number;
+        sharpen?: number;
+        vignette?: number;
+        noise?: number;
+        grayscale?: number; // 0 or 1
+        invert?: number; // 0 or 1
+        sepia?: number; // 0 or 1
+        crop?: { x: number; y: number; width: number; height: number };
+        rotation?: number; // 0, 90, 180, 270
+        flipX?: boolean;
+        flipY?: boolean;
+    };
+
     isNew?: boolean; // Temporary flag for auto-focusing new objects
 }
 

@@ -339,7 +339,7 @@ export const Sidebar: React.FC = () => {
                 </div>
 
                 {/* Float Add Button */}
-                {!isSelectionMode && pages.length > 0 && (
+                {!isSelectionMode && pages.length >= 0 && (
                     <div className="absolute bottom-6 left-4 right-4">
                         <button
                             onClick={() => setIsAddModalOpen(true)}

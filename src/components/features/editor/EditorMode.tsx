@@ -7,6 +7,7 @@ import { EditorRightPanel } from './EditorRightPanel';
 import { EditorCanvas } from './EditorCanvas';
 import { usePDFStore, type ToolType } from '../../../store/pdfStore';
 import { loadPDF } from '../../../utils/pdfOps';
+import { ImageStudio } from './ImageStudio/ImageStudio';
 
 export const EditorMode: React.FC = () => {
     const {
@@ -96,15 +97,7 @@ export const EditorMode: React.FC = () => {
             reader.onload = (event) => {
                 const src = event.target?.result as string;
                 if (src) {
-                    useEditorStore.getState().addObject({
-                        id: crypto.randomUUID(),
-                        type: 'image',
-                        x: 100, // Default position
-                        y: 100,
-                        width: 200,
-                        height: 200,
-                        src: src
-                    });
+                    useEditorStore.getState().openImageStudio(src);
                 }
             };
             reader.readAsDataURL(file);
@@ -138,6 +131,9 @@ export const EditorMode: React.FC = () => {
                 <EditorRightPanel />
 
             </div>
+
+            {/* Image Studio Overlay */}
+            <ImageStudio />
         </div>
     );
 };

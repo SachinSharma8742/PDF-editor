@@ -145,21 +145,15 @@ export const EditorToolbar: React.FC = () => {
         const reader = new FileReader();
         reader.onload = (ev) => {
             const dataUrl = ev.target?.result as string;
-            const img = new Image();
-            img.onload = () => {
-                const targetWidth = 200;
-                const targetHeight = (img.height / img.width) * targetWidth;
-                addObject({
-                    id: crypto.randomUUID(), type: 'image', x: 100, y: 100,
-                    width: targetWidth, height: targetHeight, src: dataUrl,
-                    rotation: 0, opacity: 1
-                });
-                setActiveTool('select');
-            };
-            img.src = dataUrl;
+            // Open Image Studio instead of direct insert
+            useEditorStore.getState().openImageStudio(dataUrl);
+
+            // Clear input so same file can be selected again
+            if (imageInputRef.current) {
+                imageInputRef.current.value = '';
+            }
         };
         reader.readAsDataURL(file);
-        e.target.value = '';
     };
 
     // Color Helpers
