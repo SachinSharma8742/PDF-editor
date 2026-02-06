@@ -91,6 +91,9 @@ export interface PDFObject {
     tintColor?: string;
     noise?: number;
     pixelate?: number;
+    grayscale?: number;  // 0 or 1
+    sepia?: number;      // 0 or 1
+    invert?: number;     // 0 or 1
 
     // Transform
     skewX?: number;
@@ -583,7 +586,6 @@ export const usePDFStore = create<PDFStore>()(
                 },
 
                 addPage: (source, content, width = 595, height = 842, backgroundColor) => {
-                    get().saveToHistory();
                     set(state => {
                         const newPage: PageState = {
                             id: generateId(),
@@ -604,17 +606,17 @@ export const usePDFStore = create<PDFStore>()(
                             currentPage: newPage.pageNumber
                         };
                     });
+                    get().saveToHistory();
                 },
 
                 updatePage: (pageId, updates) => {
-                    get().saveToHistory();
                     set(state => ({
                         pages: state.pages.map(p => p.id === pageId ? { ...p, ...updates, isEdited: true } : p)
                     }));
+                    get().saveToHistory();
                 },
 
                 reorderPages: (fromIndex, toIndex) => {
-                    get().saveToHistory();
                     set(state => {
                         const newPages = [...state.pages];
                         const [moved] = newPages.splice(fromIndex, 1);
@@ -623,10 +625,10 @@ export const usePDFStore = create<PDFStore>()(
                             pages: newPages.map((p, i) => ({ ...p, pageNumber: i + 1 }))
                         };
                     });
+                    get().saveToHistory();
                 },
 
                 removeBlankPages: () => {
-                    get().saveToHistory();
                     set(state => {
                         const newPages = state.pages.filter(p => {
                             // Keep if source is NOT blank OR if it has objects/paths/content
@@ -640,19 +642,19 @@ export const usePDFStore = create<PDFStore>()(
                             currentPage: Math.min(state.currentPage, newPages.length) || 1
                         };
                     });
+                    get().saveToHistory();
                 },
 
                 deletePage: (pageId) => {
-                    get().saveToHistory();
                     set(state => ({
                         pages: state.pages
                             .filter(p => p.id !== pageId)
                             .map((p, i) => ({ ...p, pageNumber: i + 1 }))
                     }));
+                    get().saveToHistory();
                 },
 
                 deleteSelectedPages: () => {
-                    get().saveToHistory();
                     set(state => {
                         const ids = new Set(state.selectedPageIds);
                         if (ids.size === 0) return state;
@@ -665,6 +667,7 @@ export const usePDFStore = create<PDFStore>()(
                             currentPage: Math.min(state.currentPage, newPages.length) || 1
                         };
                     });
+                    get().saveToHistory();
                 },
 
                 togglePageSelection: (pageId) => set(state => {
@@ -687,7 +690,6 @@ export const usePDFStore = create<PDFStore>()(
                 duplicateSelectedPages: () => {
                     const { selectedPageIds, pages, saveToHistory } = get();
                     if (selectedPageIds.length === 0) return;
-                    saveToHistory();
 
                     const selectedPages = pages.filter(p => selectedPageIds.includes(p.id));
                     const newPages = selectedPages.map((p, i) => ({
@@ -704,14 +706,13 @@ export const usePDFStore = create<PDFStore>()(
                         pages: [...state.pages, ...newPages].map((p, i) => ({ ...p, pageNumber: i + 1 })),
                         selectedPageIds: newPages.map(p => p.id)
                     }));
+                    saveToHistory();
                 },
 
                 duplicatePage: (pageId: string) => {
                     const { pages, saveToHistory } = get();
                     const page = pages.find(p => p.id === pageId);
                     if (!page) return;
-
-                    saveToHistory();
 
                     const newPage = {
                         ...page,
@@ -757,7 +758,6 @@ export const usePDFStore = create<PDFStore>()(
                 }),
 
                 addPath: (pageId, path) => {
-                    get().saveToHistory();
 
                     // Convert DrawingPath to PDFObject
                     // 1. Calculate bounding box
@@ -796,16 +796,17 @@ export const usePDFStore = create<PDFStore>()(
                         )
                     }));
                     // Optionally select it immediately if desired, but for drawing usually we don't.
+                    get().saveToHistory();
                 },
 
                 addObject: (pageId, object) => {
-                    get().saveToHistory();
                     set(state => ({
                         pages: state.pages.map(p =>
                             p.id === pageId ? { ...p, objects: [...p.objects, object], isEdited: true } : p
                         )
                     }));
                     get().selectObject(object.id);
+                    get().saveToHistory();
                 },
 
                 updateObject: (pageId, objectId, updates) => {
@@ -820,10 +821,10 @@ export const usePDFStore = create<PDFStore>()(
                             } : p
                         )
                     }));
+                    get().saveToHistory();
                 },
 
                 deleteObjects: (objectIds) => {
-                    get().saveToHistory();
                     const ids = new Set(objectIds);
                     set(state => ({
                         pages: state.pages.map(p => ({
@@ -832,6 +833,7 @@ export const usePDFStore = create<PDFStore>()(
                         })),
                         selectedObjectIds: []
                     }));
+                    get().saveToHistory();
                 },
 
                 selectObject: (objectId, multi = false) => {
@@ -910,7 +912,8 @@ export const usePDFStore = create<PDFStore>()(
                         'cloud': { ...DEFAULT_SETTINGS, color: '#3b82f6', size: 2 },
                         'lightning': { ...DEFAULT_SETTINGS, color: '#eab308', size: 2 },
                         'drop': { ...DEFAULT_SETTINGS, color: '#3b82f6', size: 2 },
-                        'callout-bubble': { ...DEFAULT_SETTINGS, color: '#000000', size: 2 }
+                        'callout-bubble': { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+                        'native-text-selection': { ...DEFAULT_SETTINGS }
                     }
                 }),
 

@@ -5,8 +5,8 @@ import {
     MousePointerClick, Move, TypeOutline, ImagePlus,
     PenTool, Brush, EraserIcon,
     Pipette, PlusCircle, Ruler,
-    Signature, Smile, ScanText,
-    StickyNote, MessageSquare, Search, Shapes
+    Signature, Smile,
+    Shapes
 } from 'lucide-react';
 import clsx from 'clsx';
 import { SignatureModal } from './SignatureModal';
@@ -107,6 +107,7 @@ export const EditorToolbar: React.FC = () => {
             setIsSignatureModalOpen(true);
             setGroupDefaults(prev => ({ ...prev, insert: 'signature' }));
         } else if (toolId === ('shapes' as ToolType)) {
+            openShapeEditor('add');
             setGroupDefaults(prev => ({ ...prev, insert: 'shapes' as ToolType }));
         } else if (toolId === 'text') {
             // Open Text Studio in CREATE mode (don't add object yet)
@@ -260,32 +261,7 @@ export const EditorToolbar: React.FC = () => {
                         onSelect={handleToolSelect}
                     />
 
-                    {/* AI OCR Tool - Standalone */}
-                    <button
-                        onClick={() => handleToolSelect('ocr')}
-                        title="AI OCR"
-                        className={clsx(
-                            "w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 group relative mx-auto",
-                            activeTool === 'ocr'
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                                : 'text-zinc-300 hover:bg-white/10 hover:text-white'
-                        )}
-                    >
-                        <ScanText size={20} className={clsx("transition-transform", activeTool === 'ocr' && "scale-110")} />
-                    </button>
 
-                    <button
-                        onClick={() => handleToolSelect('search')}
-                        title="Search & Replace"
-                        className={clsx(
-                            "w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 group relative mx-auto",
-                            activeTool === 'search'
-                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
-                                : 'text-zinc-300 hover:bg-white/10 hover:text-white'
-                        )}
-                    >
-                        <Search size={20} className={clsx("transition-transform", activeTool === 'search' && "scale-110")} />
-                    </button>
 
                     <div className="w-8 h-px bg-white/5 mx-auto rounded-full" />
                     <ToolGroup

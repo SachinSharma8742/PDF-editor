@@ -4,6 +4,7 @@ import { usePDFStore } from '../../../store/pdfStore';
 import { Image as ImageIcon, FilePlus, X, Settings2, FileText, Palette } from 'lucide-react';
 import { PDFDocument } from 'pdf-lib';
 import clsx from 'clsx';
+import { loadPDF } from '../../../utils/pdfOps';
 
 interface AddPageModalProps {
     isOpen: boolean;
@@ -13,7 +14,7 @@ interface AddPageModalProps {
 type PageMode = 'image' | 'blank' | 'append';
 
 export const AddPageModal: React.FC<AddPageModalProps> = ({ isOpen, onClose }) => {
-    const { addPage, appendPDF, theme } = usePDFStore();
+    const { addPage, appendPDF, theme, originalPdfBytes, setIsLoading } = usePDFStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pdfInputRef = useRef<HTMLInputElement>(null);
 
@@ -81,20 +82,49 @@ export const AddPageModal: React.FC<AddPageModalProps> = ({ isOpen, onClose }) =
             const finalW = useImageDimensions ? selectedImage.width : width;
             const finalH = useImageDimensions ? selectedImage.height : height;
             addPage('image', selectedImage.url, finalW, finalH);
+            onClose();
         } else if (mode === 'append') {
             if (!pdfFile) return;
+
             try {
-                const arrayBuffer = await pdfFile.arrayBuffer();
-                const pdfDoc = await PDFDocument.load(arrayBuffer);
-                appendPDF(pdfDoc, arrayBuffer, pdfDoc.getPageCount());
+                setIsLoading(true);
+                const newPdfBytes = await pdfFile.arrayBuffer();
+                const newPdfDoc = await PDFDocument.load(newPdfBytes);
+                const newPageCount = newPdfDoc.getPageCount();
+
+                let finalDoc: PDFDocument;
+                let finalBytes: Uint8Array;
+
+                if (originalPdfBytes) {
+                    // Merge into existing PDF
+                    finalDoc = await PDFDocument.load(originalPdfBytes);
+                    const copiedPages = await finalDoc.copyPages(newPdfDoc, newPdfDoc.getPageIndices());
+                    copiedPages.forEach((page) => finalDoc.addPage(page));
+                    finalBytes = await finalDoc.save();
+                } else {
+                    // No existing PDF, just use the new one
+                    finalDoc = newPdfDoc;
+                    finalBytes = new Uint8Array(newPdfBytes);
+                }
+
+
+                // CRITICAL FIX: Reload the merged bytes as a pdf.js document for rendering
+                // pdf-lib document is for editing, but we need pdf.js for viewing
+                const newArrayBuffer = finalBytes.buffer.slice(0) as ArrayBuffer;
+                const pdfJsDoc = await loadPDF(newArrayBuffer);
+
+                appendPDF(pdfJsDoc, newArrayBuffer, newPageCount);
+                onClose();
             } catch (error) {
                 console.error('Failed to append PDF', error);
                 alert('Error appending PDF');
+            } finally {
+                setIsLoading(false);
             }
         } else {
             addPage('blank', undefined, width, height, backgroundColor);
+            onClose();
         }
-        onClose();
     };
 
     return createPortal(

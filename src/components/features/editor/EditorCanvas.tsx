@@ -90,6 +90,12 @@ export const EditorCanvas: React.FC = () => {
     const isDraggingRef = useRef(false);
     const dragStartPosRef = useRef<{ x: number, y: number } | null>(null);
 
+    // Pan State Refs
+    const editorWorkspaceRef = useRef<HTMLDivElement>(null);
+    const isPanningRef = useRef(false);
+    const panStartPosRef = useRef<{ x: number, y: number } | null>(null);
+    const panStartStagePosRef = useRef<{ x: number, y: number } | null>(null);
+
     // Local State
     const [rendering, setRendering] = useState(false);
     const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -260,9 +266,111 @@ export const EditorCanvas: React.FC = () => {
         return Math.round(val / g) * g;
     };
 
+    const handlePanMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+        isPanningRef.current = true;
+
+        // Normalize pointer position
+        let clientX = 0;
+        let clientY = 0;
+
+        if ('touches' in e.evt) {
+            clientX = e.evt.touches[0].clientX;
+            clientY = e.evt.touches[0].clientY;
+        } else {
+            clientX = (e.evt as MouseEvent).clientX;
+            clientY = (e.evt as MouseEvent).clientY;
+        }
+
+        panStartPosRef.current = { x: clientX, y: clientY };
+        panStartStagePosRef.current = { x: stagePosition.x, y: stagePosition.y };
+
+        document.body.style.cursor = 'grabbing';
+
+        const handleWindowMove = (we: MouseEvent | TouchEvent) => {
+            if (!isPanningRef.current || !panStartPosRef.current || !panStartStagePosRef.current) return;
+            // we.preventDefault(); // Careful blocking touch scroll?
+
+            let cx = 0;
+            let cy = 0;
+
+            if ('touches' in we) {
+                cx = we.touches[0].clientX;
+                cy = we.touches[0].clientY;
+            } else {
+                cx = (we as MouseEvent).clientX;
+                cy = (we as MouseEvent).clientY;
+            }
+
+            const dx = cx - panStartPosRef.current.x;
+            const dy = cy - panStartPosRef.current.y;
+            const newX = panStartStagePosRef.current.x + dx;
+            const newY = panStartStagePosRef.current.y + dy;
+
+            if (editorWorkspaceRef.current) {
+                editorWorkspaceRef.current.style.transform = `translate(${newX}px, ${newY}px)`;
+            }
+        };
+
+        const handleWindowUp = (we: MouseEvent | TouchEvent) => {
+            // For Touchend, we might not have clientX easily if touches is empty?
+            // But we have the last known or just use delta?
+            // Actually, Touchend doesn't have coordinates.
+            // We should rely on tracking the last known delta or re-calc?
+            // For MouseUp it works.
+            // If we used a ref for 'currentStagePos' during move, we can just use that.
+            // But simpler: Just use the delta logic if it persists?
+
+            // Simplification: We only really need the final calculated X/Y.
+            // But extracting it from DOM transform is annoying.
+            // Let's assume mouseup happens at a specific point.
+
+            let cx = 0;
+            let cy = 0;
+
+            if ('changedTouches' in we) {
+                cx = we.changedTouches[0].clientX;
+                cy = we.changedTouches[0].clientY;
+            } else {
+                cx = (we as MouseEvent).clientX;
+                cy = (we as MouseEvent).clientY;
+            }
+
+            if (isPanningRef.current && panStartPosRef.current && panStartStagePosRef.current) {
+                const dx = cx - panStartPosRef.current.x;
+                const dy = cy - panStartPosRef.current.y;
+                setStagePosition({
+                    x: panStartStagePosRef.current.x + dx,
+                    y: panStartStagePosRef.current.y + dy
+                });
+            }
+
+            isPanningRef.current = false;
+            panStartPosRef.current = null;
+            panStartStagePosRef.current = null;
+            document.body.style.cursor = 'grab';
+
+            window.removeEventListener('mousemove', handleWindowMove as any);
+            window.removeEventListener('mouseup', handleWindowUp as any);
+            window.removeEventListener('touchmove', handleWindowMove as any);
+            window.removeEventListener('touchend', handleWindowUp as any);
+        };
+
+        window.addEventListener('mousemove', handleWindowMove as any);
+        window.addEventListener('mouseup', handleWindowUp as any);
+        window.addEventListener('touchmove', handleWindowMove as any, { passive: false });
+        window.addEventListener('touchend', handleWindowUp as any);
+    };
+
     const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
         const stage = e.target.getStage();
         if (!stage) return;
+
+        // Manual Pan Handling
+        if (activeTool === 'pan') {
+            handlePanMouseDown(e);
+            return;
+        }
+
         const pos = stage.getPointerPosition();
         if (!pos) return;
 
@@ -608,7 +716,8 @@ export const EditorCanvas: React.FC = () => {
 
         // If dragging the STAGE (Panning)
         if (e.target === stageRef.current) {
-            setStagePosition({ x: newX, y: newY });
+            // Do NOT update state here. It causes full re-renders on every frame.
+            // Konva handles the visual drag; we only sync on DragEnd.
             return;
         }
 
@@ -870,6 +979,7 @@ export const EditorCanvas: React.FC = () => {
 
     return (
         <div
+            ref={editorWorkspaceRef}
             id="editor-workspace"
             className="shadow-2xl relative my-10"
             style={{
@@ -877,6 +987,7 @@ export const EditorCanvas: React.FC = () => {
                 height: dimensions.height,
                 cursor: getCursorStyle(),
                 backgroundColor: pageBackgroundColor,
+                transform: `translate(${stagePosition.x}px, ${stagePosition.y}px)`,
                 // Apply global page filter to the whole container? 
                 // No, only to the PDF logic. If we apply to container, it affects annotations too!
                 // We want strict layering: PDF -> Filter -> Overlay -> Objects
@@ -996,15 +1107,38 @@ export const EditorCanvas: React.FC = () => {
                     height={dimensions.height}
                     scaleX={scale * (currentPage.flipX ? -1 : 1)}
                     scaleY={scale * (currentPage.flipY ? -1 : 1)}
-                    x={(currentPage.flipX ? dimensions.width : 0) + stagePosition.x}
-                    y={(currentPage.flipY ? dimensions.height : 0) + stagePosition.y}
-                    draggable={activeTool === 'pan'}
+                    x={currentPage.flipX ? dimensions.width : 0}
+                    y={currentPage.flipY ? dimensions.height : 0}
+                    draggable={false}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onDragStart={handleDragStartGlobal}
                     onDragMove={handleDragMoveGlobal}
                     onDragEnd={handleDragEndGlobal}
+                    onWheel={(e) => {
+                        // Prevent default scroll
+                        e.evt.preventDefault();
+
+                        const stage = e.target.getStage();
+                        if (!stage) return;
+
+                        // Get pointer position relative to stage
+                        const pointer = stage.getPointerPosition();
+                        if (!pointer) return;
+
+                        const scaleBy = 1.08; // Zoom sensitivity
+                        const oldScale = scale;
+
+                        // Determine direction (scroll up = zoom in)
+                        const direction = e.evt.deltaY > 0 ? -1 : 1;
+
+                        // Calculate new scale with min/max limits
+                        let newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
+                        newScale = Math.min(Math.max(newScale, 0.1), 5); // Limit between 10% and 500%
+
+                        setScale(newScale);
+                    }}
                     onDblClick={(e) => {
                         const stage = e.target.getStage();
                         if (!stage || e.target === stage) return;

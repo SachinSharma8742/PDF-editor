@@ -1,31 +1,112 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { useImageStudioStore } from './useImageStudioStore';
 import {
     Sun, Contrast, Droplet, MoveHorizontal, MoveVertical,
     Ghost, RotateCw, Wand2, Sliders, Check, RotateCcw,
-    Crop, Maximize, Square, Ratio
+    Crop, Maximize, Square, Sparkles, RefreshCw
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useEditorStore } from '../../../../store/editorStore';
 
-const FilterSlider = ({ label, icon, value, min, max, step, onChange }: any) => (
-    <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between text-zinc-400">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                {icon} <span>{label}</span>
+// Premium Filter Slider Component
+const FilterSlider = ({ label, icon, value, min, max, step, onChange }: any) => {
+    const percentage = ((value - min) / (max - min)) * 100;
+
+    return (
+        <div className="group">
+            <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-zinc-500 group-hover:text-blue-400 transition-colors">
+                        {icon}
+                    </div>
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 group-hover:text-zinc-300 transition-colors">
+                        {label}
+                    </span>
+                </div>
+                <span className="text-[11px] font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20">
+                    {Math.round(value * 100) / 100}
+                </span>
             </div>
-            <span className="text-[10px] font-mono text-zinc-300 bg-white/5 px-1.5 py-0.5 rounded">{Math.round(value * 100) / 100}</span>
+            <div className="relative h-6 flex items-center">
+                {/* Track Background */}
+                <div className="absolute inset-x-0 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    {/* Fill */}
+                    <div
+                        className="h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all"
+                        style={{ width: `${Math.max(0, Math.min(100, percentage))}%` }}
+                    />
+                </div>
+                <input
+                    type="range"
+                    min={min} max={max} step={step}
+                    value={value}
+                    onChange={(e) => onChange(Number(e.target.value))}
+                    className="w-full h-6 appearance-none cursor-pointer bg-transparent relative z-10
+                               [&::-webkit-slider-thumb]:appearance-none 
+                               [&::-webkit-slider-thumb]:w-4 
+                               [&::-webkit-slider-thumb]:h-4 
+                               [&::-webkit-slider-thumb]:rounded-full 
+                               [&::-webkit-slider-thumb]:bg-white 
+                               [&::-webkit-slider-thumb]:shadow-lg 
+                               [&::-webkit-slider-thumb]:shadow-blue-500/30
+                               [&::-webkit-slider-thumb]:border-2
+                               [&::-webkit-slider-thumb]:border-blue-500
+                               [&::-webkit-slider-thumb]:cursor-pointer
+                               [&::-webkit-slider-thumb]:transition-all
+                               [&::-webkit-slider-thumb]:hover:scale-110
+                               [&::-moz-range-thumb]:w-4 
+                               [&::-moz-range-thumb]:h-4 
+                               [&::-moz-range-thumb]:rounded-full 
+                               [&::-moz-range-thumb]:bg-white 
+                               [&::-moz-range-thumb]:border-2
+                               [&::-moz-range-thumb]:border-blue-500"
+                />
+            </div>
         </div>
-        <div className="relative flex items-center h-4">
-            <input
-                type="range"
-                min={min} max={max} step={step}
-                value={value}
-                onChange={(e) => onChange(Number(e.target.value))}
-                className="w-full h-1 bg-zinc-800 rounded-full appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-all focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-            />
-        </div>
-    </div>
+    );
+};
+
+// Transform Button Component
+const TransformButton = ({ icon: Icon, label, active, onClick }: any) => (
+    <button
+        onClick={onClick}
+        className={clsx(
+            "flex flex-col items-center gap-2 px-5 py-3 rounded-xl transition-all border group",
+            active
+                ? "bg-gradient-to-b from-blue-500/20 to-blue-600/10 border-blue-500/30 text-blue-400 shadow-lg shadow-blue-500/10"
+                : "bg-zinc-800/30 border-white/5 text-zinc-500 hover:bg-zinc-800 hover:text-white hover:border-white/10"
+        )}
+    >
+        <Icon size={20} className={clsx("transition-transform", active ? "scale-110" : "group-hover:scale-110")} />
+        <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+    </button>
+);
+
+// Aspect Ratio Button Component
+const AspectButton = ({ icon: Icon, label, onClick }: any) => (
+    <button
+        onClick={onClick}
+        className="flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-xl bg-zinc-800/30 hover:bg-zinc-800 border border-white/5 hover:border-white/10 text-zinc-500 hover:text-white transition-all group"
+    >
+        <Icon size={16} className="group-hover:scale-110 transition-transform" />
+        <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
+    </button>
+);
+
+// Effect Button Component
+const EffectButton = ({ label, active, onClick }: any) => (
+    <button
+        onClick={onClick}
+        className={clsx(
+            "flex-1 min-w-[80px] h-[70px] rounded-xl flex flex-col items-center justify-center gap-2 transition-all border group",
+            active
+                ? "bg-gradient-to-br from-purple-500/20 to-pink-500/10 border-purple-500/30 text-purple-400 shadow-lg shadow-purple-500/10"
+                : "bg-zinc-800/30 border-white/5 text-zinc-500 hover:bg-zinc-800 hover:text-white hover:border-white/10"
+        )}
+    >
+        <Wand2 size={18} className={clsx("transition-transform", active ? "rotate-12" : "group-hover:rotate-12")} />
+        <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
+    </button>
 );
 
 export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void }> = ({ onApply, onCancel }) => {
@@ -40,51 +121,39 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
         const imgW = dimensions.width || 1000;
         const imgH = dimensions.height || 1000;
 
-        // "Original" / Reset
         if (ratio === null) {
-            setParam('crop', {
-                x: 0,
-                y: 0,
-                width: imgW,
-                height: imgH
-            });
+            setParam('crop', { x: 0, y: 0, width: imgW, height: imgH });
             return;
         }
-
-        // Smart Crop Logic: Maximize within Image Dimensions
-        // Use the full image as the bounding context to find the largest possible box of the target ratio.
 
         let newW, newH;
 
         if ((imgW / imgH) > ratio) {
-            // Image is wider than target ratio
-            // Height is the constraint -> Use full height
             newH = imgH;
             newW = newH * ratio;
         } else {
-            // Image is taller than target ratio
-            // Width is the constraint -> Use full width
             newW = imgW;
             newH = newW / ratio;
         }
 
-        // Center the new box (which will be centered in the image)
         const newX = (imgW - newW) / 2;
         const newY = (imgH - newH) / 2;
 
-        setParam('crop', {
-            x: newX,
-            y: newY,
-            width: newW,
-            height: newH
-        });
+        setParam('crop', { x: newX, y: newY, width: newW, height: newH });
     };
+
+    const tabs = [
+        { id: 'adjust', icon: Sliders, label: 'Adjust' },
+        { id: 'transform', icon: RefreshCw, label: 'Transform' },
+        { id: 'crop', icon: Crop, label: 'Crop' },
+        { id: 'effects', icon: Sparkles, label: 'Effects' },
+    ];
 
     const renderTools = () => {
         switch (activeTab) {
             case 'adjust':
                 return (
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-4 pt-1">
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-5">
                         <FilterSlider
                             label="Brightness"
                             icon={<Sun size={12} />}
@@ -117,84 +186,61 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                 );
             case 'transform':
                 return (
-                    <div className="flex items-center justify-center gap-4 pt-1">
-                        <button
+                    <div className="flex items-center justify-center gap-4">
+                        <TransformButton
+                            icon={RotateCw}
+                            label="Rotate 90°"
+                            active={false}
                             onClick={() => setParam('rotation', (params.rotation + 90) % 360)}
-                            className="group flex flex-col items-center gap-1.5 p-2 rounded-lg bg-zinc-800/50 hover:bg-zinc-800 hover:text-white transition-all w-20 border border-transparent hover:border-white/10"
-                        >
-                            <RotateCw size={18} className="text-zinc-500 group-hover:text-zinc-300 transition-colors" />
-                            <span className="text-[10px] font-bold uppercase tracking-wide">Rotate</span>
-                        </button>
-                        <div className="w-px h-8 bg-white/10 mx-2" />
-                        <button
+                        />
+                        <div className="w-px h-12 bg-white/10" />
+                        <TransformButton
+                            icon={MoveHorizontal}
+                            label="Flip X"
+                            active={params.flipX}
                             onClick={() => setParam('flipX', !params.flipX)}
-                            className={clsx(
-                                "flex flex-col items-center gap-1.5 p-2 rounded-lg transition-all w-20 border",
-                                params.flipX
-                                    ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                                    : "bg-zinc-800/50 text-zinc-500 border-transparent hover:bg-zinc-800 hover:text-white hover:border-white/10"
-                            )}
-                        >
-                            <MoveHorizontal size={18} />
-                            <span className="text-[10px] font-bold uppercase tracking-wide">Flip X</span>
-                        </button>
-                        <button
+                        />
+                        <TransformButton
+                            icon={MoveVertical}
+                            label="Flip Y"
+                            active={params.flipY}
                             onClick={() => setParam('flipY', !params.flipY)}
-                            className={clsx(
-                                "flex flex-col items-center gap-1.5 p-2 rounded-lg transition-all w-20 border",
-                                params.flipY
-                                    ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                                    : "bg-zinc-800/50 text-zinc-500 border-transparent hover:bg-zinc-800 hover:text-white hover:border-white/10"
-                            )}
-                        >
-                            <MoveVertical size={18} />
-                            <span className="text-[10px] font-bold uppercase tracking-wide">Flip Y</span>
-                        </button>
+                        />
                     </div>
                 );
             case 'crop':
                 return (
-                    <div className="flex flex-col gap-3 pt-1">
-                        {/* Presets */}
-                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center">
-                            {[
-                                { label: 'Original', ratio: null, icon: Maximize },
-                                { label: 'Square', ratio: 1, icon: Square },
-                                { label: '16:9', ratio: 16 / 9, icon: Ratio },
-                                { label: '4:3', ratio: 4 / 3, icon: Ratio },
-                                { label: '3:2', ratio: 3 / 2, icon: Ratio },
-                            ].map((p, i) => (
-                                <button
-                                    key={i}
-                                    onClick={() => handleAspectRatio(p.ratio)}
-                                    className="flex flex-col items-center gap-1.5 px-3 py-2 rounded-lg bg-zinc-800/30 hover:bg-zinc-800 text-zinc-500 hover:text-zinc-200 transition min-w-[60px]"
-                                >
-                                    <p.icon size={14} />
-                                    <span className="text-[9px] font-bold uppercase">{p.label}</span>
-                                </button>
-                            ))}
+                    <div className="flex flex-col gap-4">
+                        {/* Aspect Ratio Presets */}
+                        <div className="flex items-center justify-center gap-3">
+                            <AspectButton icon={Maximize} label="Original" onClick={() => handleAspectRatio(null)} />
+                            <AspectButton icon={Square} label="1:1" onClick={() => handleAspectRatio(1)} />
+                            <AspectButton icon={Crop} label="16:9" onClick={() => handleAspectRatio(16 / 9)} />
+                            <AspectButton icon={Crop} label="4:3" onClick={() => handleAspectRatio(4 / 3)} />
+                            <AspectButton icon={Crop} label="3:2" onClick={() => handleAspectRatio(3 / 2)} />
                         </div>
 
-                        {/* Manual Input */}
-                        <div className="flex items-center justify-center gap-3">
-                            <div className="flex items-center gap-2 bg-zinc-900 rounded-lg px-2 py-1 border border-white/5">
+                        {/* Manual Dimensions */}
+                        <div className="flex items-center justify-center gap-4">
+                            <div className="flex items-center gap-2 bg-zinc-900/80 rounded-xl px-3 py-2 border border-white/5">
                                 <span className="text-[10px] uppercase font-bold text-zinc-500">W</span>
                                 <input
                                     type="number"
                                     value={params.crop ? Math.round(params.crop.width) : ''}
                                     onChange={(e) => params.crop && setParam('crop', { ...params.crop, width: Number(e.target.value) })}
-                                    className="w-12 bg-transparent text-xs font-mono text-zinc-300 focus:outline-none"
-                                    placeholder="W"
+                                    className="w-16 bg-transparent text-xs font-mono text-zinc-300 focus:outline-none focus:text-white"
+                                    placeholder="Width"
                                 />
                             </div>
-                            <div className="flex items-center gap-2 bg-zinc-900 rounded-lg px-2 py-1 border border-white/5">
+                            <span className="text-zinc-600">×</span>
+                            <div className="flex items-center gap-2 bg-zinc-900/80 rounded-xl px-3 py-2 border border-white/5">
                                 <span className="text-[10px] uppercase font-bold text-zinc-500">H</span>
                                 <input
                                     type="number"
                                     value={params.crop ? Math.round(params.crop.height) : ''}
                                     onChange={(e) => params.crop && setParam('crop', { ...params.crop, height: Number(e.target.value) })}
-                                    className="w-12 bg-transparent text-xs font-mono text-zinc-300 focus:outline-none"
-                                    placeholder="H"
+                                    className="w-16 bg-transparent text-xs font-mono text-zinc-300 focus:outline-none focus:text-white"
+                                    placeholder="Height"
                                 />
                             </div>
                         </div>
@@ -202,26 +248,22 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                 );
             case 'effects':
                 return (
-                    <div className="flex items-center gap-3 pt-1 overflow-x-auto pb-2 scrollbar-hide">
-                        {[
-                            { key: 'grayscale', label: 'B&W' },
-                            { key: 'sepia', label: 'Sepia' },
-                            { key: 'invert', label: 'Invert' },
-                        ].map(ef => (
-                            <button
-                                key={ef.key}
-                                onClick={() => setParam(ef.key as any, params[ef.key as keyof typeof params] ? 0 : 1)}
-                                className={clsx(
-                                    "w-16 h-16 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all border",
-                                    params[ef.key as keyof typeof params]
-                                        ? "bg-blue-500/10 border-blue-500/50 text-blue-400 shadow-[0_0_15px_-3px_rgba(59,130,246,0.3)]"
-                                        : "bg-zinc-800/30 border-white/5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 hover:border-white/10"
-                                )}
-                            >
-                                <Wand2 size={16} />
-                                <span className="text-[9px] font-bold uppercase tracking-wider">{ef.label}</span>
-                            </button>
-                        ))}
+                    <div className="flex items-center justify-center gap-4">
+                        <EffectButton
+                            label="Grayscale"
+                            active={params.grayscale === 1}
+                            onClick={() => setParam('grayscale', params.grayscale ? 0 : 1)}
+                        />
+                        <EffectButton
+                            label="Sepia"
+                            active={params.sepia === 1}
+                            onClick={() => setParam('sepia', params.sepia ? 0 : 1)}
+                        />
+                        <EffectButton
+                            label="Invert"
+                            active={params.invert === 1}
+                            onClick={() => setParam('invert', params.invert ? 0 : 1)}
+                        />
                     </div>
                 );
             default:
@@ -230,59 +272,54 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
     };
 
     return (
-        <div className="bg-[#121214] border-t border-white/5 flex flex-col flex-shrink-0 z-50">
-
+        <div className="bg-gradient-to-b from-[#141416] to-[#0c0c0d] border-t border-white/[0.06] flex flex-col flex-shrink-0">
             {/* Tabs */}
-            <div className="flex items-center justify-center px-4 py-2 border-b border-white/5 gap-1 bg-[#18181b]">
-                {[
-                    { id: 'adjust', icon: Sliders, label: 'Adjust' },
-                    { id: 'transform', icon: RotateCw, label: 'Transform' },
-                    { id: 'crop', icon: Crop, label: 'Crop' },
-                    { id: 'effects', icon: Wand2, label: 'Filters' },
-
-                ].map(tab => (
+            <div className="flex items-center justify-center px-6 py-3 border-b border-white/[0.04] gap-2">
+                {tabs.map(tab => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
                         className={clsx(
-                            "flex items-center gap-2 px-4 py-1.5 rounded-full transition-all text-[11px] font-bold uppercase tracking-wider",
+                            "flex items-center gap-2.5 px-5 py-2 rounded-xl transition-all text-[11px] font-bold uppercase tracking-wider",
                             activeTab === tab.id
-                                ? "bg-white text-black shadow-lg shadow-white/10"
+                                ? "bg-white text-black shadow-lg shadow-white/20"
                                 : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
                         )}
                     >
-                        <tab.icon size={12} />
+                        <tab.icon size={14} />
                         <span>{tab.label}</span>
                     </button>
                 ))}
             </div>
 
             {/* Dynamic Tool Content */}
-            <div className="p-5 min-h-[120px] bg-[#121214]">
+            <div className="px-8 py-4 min-h-[110px] flex items-center justify-center">
                 {renderTools()}
             </div>
 
             {/* Footer Actions */}
-            <div className="px-5 py-4 border-t border-white/5 bg-[#09090b] flex justify-between items-center">
+            <div className="px-6 py-4 border-t border-white/[0.04] bg-[#0a0a0b] flex justify-between items-center">
                 <button
                     onClick={resetParams}
-                    className="flex items-center gap-1.5 text-zinc-500 hover:text-white transition-colors text-[10px] font-bold uppercase tracking-wider px-2 py-1 hover:bg-white/5 rounded-lg"
+                    className="flex items-center gap-2 text-zinc-500 hover:text-white transition-colors text-[11px] font-bold uppercase tracking-wider px-4 py-2 hover:bg-white/5 rounded-xl group"
                 >
-                    <RotateCcw size={12} /> Reset
+                    <RotateCcw size={14} className="group-hover:-rotate-180 transition-transform duration-500" />
+                    <span>Reset All</span>
                 </button>
 
                 <div className="flex gap-3">
                     <button
                         onClick={onCancel}
-                        className="px-4 py-2 rounded-lg bg-transparent border border-white/10 text-zinc-300 font-medium text-xs hover:bg-white/5 transition"
+                        className="px-5 py-2.5 rounded-xl bg-zinc-800/50 border border-white/10 text-zinc-300 font-semibold text-xs hover:bg-zinc-800 hover:border-white/20 transition-all"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={onApply}
-                        className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold text-xs shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition flex items-center gap-2"
+                        className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:from-blue-500 hover:to-blue-400 transition-all flex items-center gap-2 group"
                     >
-                        {isEditMode ? 'Update' : 'Add Image'} <Check size={14} />
+                        <span>{isEditMode ? 'Update Image' : 'Add Image'}</span>
+                        <Check size={14} className="group-hover:scale-110 transition-transform" />
                     </button>
                 </div>
             </div>

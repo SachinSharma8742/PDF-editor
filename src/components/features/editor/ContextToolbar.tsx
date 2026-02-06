@@ -1,6 +1,6 @@
-import React from 'react';
 import { usePDFStore } from '../../../store/pdfStore';
-import { Trash2 } from 'lucide-react';
+import { useEditorStore } from '../../../store/editorStore';
+import { Trash2, Edit3 } from 'lucide-react';
 
 export const ContextToolbar: React.FC = () => {
     const {
@@ -199,6 +199,15 @@ export const ContextToolbar: React.FC = () => {
                         title="Italic"
                     >
                         I
+                    </button>
+                    <div className="h-6 w-px bg-gray-200 mx-2" />
+
+                    <button
+                        onClick={() => useEditorStore.getState().openTextStudio('edit', obj.id)}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white rounded-lg shadow-lg shadow-purple-500/30 transition-all hover:scale-105 active:scale-95 group"
+                    >
+                        <Edit3 size={14} className="group-hover:rotate-12 transition-transform" />
+                        <span className="text-xs font-bold tracking-wide">Edit Text</span>
                     </button>
                 </>
             )}

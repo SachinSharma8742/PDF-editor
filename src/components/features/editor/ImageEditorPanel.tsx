@@ -81,41 +81,41 @@ export const ImageEditorPanel: React.FC = () => {
                 <FilterSlider
                     label="Brightness"
                     icon={<Sun size={14} />}
-                    value={getFilterValue('Brightness', 0)}
+                    value={selectedObj.brightness ?? 0}
                     min={-1} max={1} step={0.05}
-                    onChange={(v: number) => updateFilter('Brightness', v)}
+                    onChange={(v: number) => updateObject(selectedObj.id, { brightness: v })}
                 />
 
                 <FilterSlider
                     label="Contrast"
                     icon={<Contrast size={14} />}
-                    value={getFilterValue('Contrast', 0)}
+                    value={selectedObj.contrast ?? 0}
                     min={-100} max={100} step={5}
-                    onChange={(v: number) => updateFilter('Contrast', v)}
+                    onChange={(v: number) => updateObject(selectedObj.id, { contrast: v })}
                 />
 
                 <FilterSlider
                     label="Saturation"
                     icon={<Droplet size={14} />}
-                    value={getFilterValue('HSL', 0)}
+                    value={selectedObj.saturation ?? 0}
                     min={-2} max={10} step={0.1}
-                    onChange={(v: number) => updateFilter('HSL', v)}
+                    onChange={(v: number) => updateObject(selectedObj.id, { saturation: v })}
                 />
 
                 <FilterSlider
                     label="Blur"
                     icon={<Ghost size={14} />}
-                    value={getFilterValue('Blur', 0)}
+                    value={selectedObj.blurRadius ?? 0}
                     min={0} max={40} step={1}
-                    onChange={(v: number) => updateFilter('Blur', v)}
+                    onChange={(v: number) => updateObject(selectedObj.id, { blurRadius: v })}
                 />
 
                 <FilterSlider
                     label="Noise"
                     icon={<SparklesIcon size={14} />}
-                    value={getFilterValue('Noise', 0)}
+                    value={selectedObj.noise ?? 0}
                     min={0} max={4} step={0.1}
-                    onChange={(v: number) => updateFilter('Noise', v)}
+                    onChange={(v: number) => updateObject(selectedObj.id, { noise: v })}
                 />
             </div>
 
@@ -125,18 +125,18 @@ export const ImageEditorPanel: React.FC = () => {
                 <div className="grid grid-cols-2 gap-2">
                     <EffectToggle
                         label="Grayscale"
-                        active={getFilterValue('Grayscale', 0) === 1}
-                        onClick={() => updateFilter('Grayscale', getFilterValue('Grayscale', 0) === 1 ? 0 : 1)}
+                        active={selectedObj.grayscale === 1}
+                        onClick={() => updateObject(selectedObj.id, { grayscale: selectedObj.grayscale === 1 ? 0 : 1 })}
                     />
                     <EffectToggle
                         label="Invert"
-                        active={getFilterValue('Invert', 0) === 1}
-                        onClick={() => updateFilter('Invert', getFilterValue('Invert', 0) === 1 ? 0 : 1)}
+                        active={selectedObj.invert === 1}
+                        onClick={() => updateObject(selectedObj.id, { invert: selectedObj.invert === 1 ? 0 : 1 })}
                     />
                     <EffectToggle
                         label="Sepia"
-                        active={getFilterValue('Sepia', 0) === 1}
-                        onClick={() => updateFilter('Sepia', getFilterValue('Sepia', 0) === 1 ? 0 : 1)}
+                        active={selectedObj.sepia === 1}
+                        onClick={() => updateObject(selectedObj.id, { sepia: selectedObj.sepia === 1 ? 0 : 1 })}
                     />
                 </div>
             </div>

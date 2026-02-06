@@ -6,16 +6,16 @@ import {
 import clsx from 'clsx';
 import { useEditorStore } from '../../../store/editorStore';
 import { StampsPanel } from './StampsPanel';
-import { OCRPanel } from './OCRPanel';
+
 import { CalibrationPanel } from './CalibrationPanel';
 import { LeftColorPanel } from './LeftColorPanel';
 
 import { ImageEditorPanel } from './ImageEditorPanel';
 import { TextPropertyPanel } from './properties/TextPropertyPanel';
 
-import { SearchReplacePanel } from './SearchReplacePanel';
 
-type TabId = 'stamps' | 'ocr' | 'scale' | 'properties' | 'image-editor' | 'advanced';
+
+type TabId = 'stamps' | 'scale' | 'properties' | 'image-editor';
 
 export const EditorLeftPanel: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabId>('properties');
@@ -29,7 +29,7 @@ export const EditorLeftPanel: React.FC = () => {
     const selectedObj = currentPage?.objects.find(o => o.id === selectedObjectIds[0]);
 
     // Derived flags for specialized modes
-    const isLibraryTool = ['stamp', 'ocr', 'measure', 'search'].includes(activeTool);
+    const isLibraryTool = ['stamp', 'measure'].includes(activeTool);
     const isNavigateMode = (activeTool === 'select' && !hasSelection) || activeTool === 'pan';
 
     // Track if user has manually selected a tab to prevent auto-switching overriding user intent
@@ -40,14 +40,8 @@ export const EditorLeftPanel: React.FC = () => {
         if (activeTool === 'stamp') {
             setActiveTab('stamps');
             setIsCollapsed(false);
-        } else if (activeTool === 'ocr') {
-            setActiveTab('ocr');
-            setIsCollapsed(false);
         } else if (activeTool === 'measure') {
             setActiveTab('scale');
-            setIsCollapsed(false);
-        } else if (activeTool === 'search') {
-            setActiveTab('advanced');
             setIsCollapsed(false);
         } else if (hasSelection) {
             if (selectedObj?.type === 'image') {
@@ -110,18 +104,16 @@ export const EditorLeftPanel: React.FC = () => {
                         isLibraryTool ? "text-blue-400" : "text-zinc-300"
                     )}>
                         {activeTab === 'stamps' ? 'Decorations' :
-                            activeTab === 'ocr' ? 'AI OCR Engine' :
-                                activeTab === 'scale' ? 'Measurement' :
-                                    activeTab === 'image-editor' ? 'Image Studio' :
-                                        activeTab === 'advanced' ? 'Advanced Tools' :
-                                            // Dynamic Properties Title
-                                            (activeTool === 'text' || (hasSelection && selectedObj?.type === 'text')) ? 'Text Properties' :
-                                                (activeTool === 'select' && hasSelection) ? (
-                                                    selectedObj?.type === 'rectangle' ? 'Rectangle Properties' :
-                                                        selectedObj?.type === 'circle' ? 'Circle Properties' :
-                                                            selectedObj?.type === 'image' ? 'Image Properties' :
-                                                                'Properties'
-                                                ) : 'Colors & Stroke'}
+                            activeTab === 'scale' ? 'Measurement' :
+                                activeTab === 'image-editor' ? 'Image Studio' :
+                                    // Dynamic Properties Title
+                                    (activeTool === 'text' || (hasSelection && selectedObj?.type === 'text')) ? 'Text Properties' :
+                                        (activeTool === 'select' && hasSelection) ? (
+                                            selectedObj?.type === 'rectangle' ? 'Rectangle Properties' :
+                                                selectedObj?.type === 'circle' ? 'Circle Properties' :
+                                                    selectedObj?.type === 'image' ? 'Image Properties' :
+                                                        'Properties'
+                                        ) : 'Colors & Stroke'}
                     </h2>
                 </div>
                 <button
@@ -159,14 +151,11 @@ export const EditorLeftPanel: React.FC = () => {
                         <div className="flex items-center justify-between mb-4 px-1">
                             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
                                 {activeTab === 'stamps' ? 'Decorations' :
-                                    activeTab === 'ocr' ? 'Analysis' :
-                                        activeTab === 'scale' ? 'Calibration' : 'Smart Tools'}
+                                    activeTab === 'scale' ? 'Calibration' : 'Smart Tools'}
                             </span>
                         </div>
                         {activeTab === 'stamps' && <StampsPanel />}
-                        {activeTab === 'ocr' && <OCRPanel />}
                         {activeTab === 'scale' && <CalibrationPanel />}
-                        {activeTab === 'advanced' && <SearchReplacePanel />}
                     </div>
                 )}
             </div>

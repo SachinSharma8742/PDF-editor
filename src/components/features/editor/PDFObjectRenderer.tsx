@@ -76,6 +76,21 @@ const URLImage = ({ object, opacity, ...props }: any) => {
                 node.pixelSize(object.pixelate);
             }
 
+            // Grayscale (B&W)
+            if (object.grayscale === 1) {
+                activeFilters.push(Konva.Filters.Grayscale);
+            }
+
+            // Sepia
+            if (object.sepia === 1) {
+                activeFilters.push(Konva.Filters.Sepia);
+            }
+
+            // Invert
+            if (object.invert === 1) {
+                activeFilters.push(Konva.Filters.Invert);
+            }
+
             // Apply specific named filters if they exist (old way compatibility or presets)
             if (object.filters) {
                 // ... logic for old filters if needed, but improved system replaces it.
@@ -124,7 +139,10 @@ const URLImage = ({ object, opacity, ...props }: any) => {
         object.blurRadius,
         object.hue,
         object.noise,
-        object.pixelate
+        object.pixelate,
+        object.grayscale,
+        object.sepia,
+        object.invert
     ]);
 
     return (
