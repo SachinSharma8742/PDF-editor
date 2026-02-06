@@ -19,12 +19,25 @@ export interface ToolSettings {
     fontSize: number;
     fontWeight: string;
     fontStyle: string;
-    textAlign: 'left' | 'center' | 'right';
+    textAlign: 'left' | 'center' | 'right' | 'justify';
     eraserMode: 'standard' | 'object';
     smartShapeMode?: boolean;
     sides?: number;
     innerRadiusRatio?: number;
     dash?: number[];
+}
+
+export interface NativeTextItem {
+    id: string; // Composite ID or index
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fontSize: number;
+    fontFamily: string;
+    originalRef: any; // Raw PDF item reference for replacement logic
+    pageId: string;
 }
 
 export interface TextPreset {
@@ -88,7 +101,8 @@ const DEFAULT_TOOL_PREFERENCES: Record<ToolType, ToolSettings> = {
     'drop': { ...DEFAULT_SETTINGS, color: '#3b82f6', size: 2 },
     'callout-bubble': { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
     'sticky-note': { ...DEFAULT_SETTINGS, color: '#facc15' },
-    'callout': { ...DEFAULT_SETTINGS, color: '#000000' }
+    'callout': { ...DEFAULT_SETTINGS, color: '#000000' },
+    'native-text-selection': { ...DEFAULT_SETTINGS }
 };
 
 interface EditorStore {
@@ -195,6 +209,34 @@ interface EditorStore {
     openImageStudio: (src: string, objectId?: string, currentParams?: any) => void;
     closeImageStudio: () => void;
 
+    // --- Native PDF Text Editing ---
+    // --- Native PDF Text Editing ---
+    editingMode: 'standard' | 'native-text';
+    setEditingMode: (mode: 'standard' | 'native-text') => void;
+    activeNativeTextItem: NativeTextItem | null;
+    setActiveNativeTextItem: (item: NativeTextItem | null) => void;
+
+    pendingNativeTextEdits: Record<string, NativeTextItem>;
+    updateNativeTextEdit: (id: string, edit: NativeTextItem) => void;
+
+    nativeTextStudio: {
+        isOpen: boolean;
+        pageId: string | null;
+    };
+    openNativeTextStudio: (pageId: string) => void;
+    closeNativeTextStudio: () => void;
+
+    // Text Studio State
+    textStudio: {
+        isOpen: boolean;
+        mode: 'create' | 'edit';
+        elementId: string | null;
+        initialSnapshot: PDFObject | null;
+    };
+    openTextStudio: (mode: 'create' | 'edit', elementId?: string, snapshot?: PDFObject) => void;
+    closeTextStudio: () => void;
+
+
     // Shape Editor State
     shapeEditor: {
         isOpen: boolean;
@@ -292,6 +334,30 @@ export const useEditorStore = create<EditorStore>()(
             activePanelTab: 'properties',
             setActivePanelTab: (tab) => set({ activePanelTab: tab }),
 
+
+            // Native Text Editing
+            editingMode: 'standard',
+            setEditingMode: (mode) => set({ editingMode: mode, activeNativeTextItem: null }),
+            activeNativeTextItem: null,
+            setActiveNativeTextItem: (item) => set({ activeNativeTextItem: item }),
+            pendingNativeTextEdits: {},
+            updateNativeTextEdit: (id, edit) => set(state => ({
+                pendingNativeTextEdits: { ...state.pendingNativeTextEdits, [id]: edit }
+            })),
+
+            nativeTextStudio: {
+                isOpen: false,
+                pageId: null
+            },
+            openNativeTextStudio: (pageId) => set({
+                nativeTextStudio: { isOpen: true, pageId },
+                editingMode: 'native-text' // Ensure mode is set for overlays
+            }),
+            closeNativeTextStudio: () => set({
+                nativeTextStudio: { isOpen: false, pageId: null },
+                editingMode: 'standard'
+            }),
+
             // Image Studio Implementation
             imageStudio: {
                 isOpen: false,
@@ -317,6 +383,26 @@ export const useEditorStore = create<EditorStore>()(
                     targetObjectId: null
                 }
             })),
+
+            // Text Studio Implementation
+            textStudio: {
+                isOpen: false,
+                mode: 'create',
+                elementId: null,
+                initialSnapshot: null
+            },
+            openTextStudio: (mode, elementId, snapshot) => set({
+                textStudio: {
+                    isOpen: true,
+                    mode,
+                    elementId: elementId || null,
+                    initialSnapshot: snapshot || null
+                }
+            }),
+            closeTextStudio: () => set(state => ({
+                textStudio: { ...state.textStudio, isOpen: false, elementId: null, initialSnapshot: null }
+            })),
+
 
             // Shape Editor Implementation
             shapeEditor: {

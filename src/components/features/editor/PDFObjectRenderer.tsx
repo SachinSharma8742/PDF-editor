@@ -184,7 +184,8 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
         editingObjectId,
         setEditingObjectId,
         openImageStudio,
-        openShapeEditor
+        openShapeEditor,
+        openTextStudio
     } = useEditorStore();
 
     const isEditing = editingObjectId === object.id;
@@ -204,7 +205,7 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
 
     const handleObjectDblClick = () => {
         if (object.type === 'text') {
-            setEditingObjectId(object.id);
+            openTextStudio('edit', object.id);
         } else if (object.type === 'image') {
             // Re-open Image Studio
             if (object.originalSrc) {

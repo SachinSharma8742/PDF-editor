@@ -116,6 +116,23 @@ export const ContextMenu: React.FC = () => {
                 return null;
             })()}
 
+            {/* Edit Text Option */}
+            {data?.objectIds?.length === 1 && (() => {
+                const obj = currentPage?.objects.find(o => o.id === data.objectIds[0]);
+                if (obj && obj.type === 'text') {
+                    return (
+                        <button
+                            key="edit-text"
+                            onClick={() => handleObjectAction(() => useEditorStore.getState().openTextStudio('edit', obj.id))}
+                            className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center gap-3 text-sm transition-colors"
+                        >
+                            <Edit3 size={15} /> Edit Text
+                        </button>
+                    );
+                }
+                return null;
+            })()}
+
             <button key="dup" onClick={() => handleObjectAction(() => editorDuplicateObject(data?.objectIds || []))} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 flex items-center gap-3 text-sm transition-colors">
                 <Copy size={15} /> Duplicate
             </button>

@@ -5,6 +5,7 @@ import './utils/pdfWorker'; // Import worker config
 import { EditorMode } from './components/features/editor/EditorMode';
 import { ContextMenu } from './components/features/editor/ContextMenu';
 import { ContextToolbar } from './components/features/editor/ContextToolbar';
+import { NativeTextStudio } from './components/features/editor/NativeTextStudio/NativeTextStudio';
 import { useEditorStore } from './store/editorStore';
 
 import { usePDFStore } from './store/pdfStore';
@@ -72,6 +73,10 @@ export default function App() {
         </div>
       </div>
       {isActive && <EditorMode />}
+
+      {/* Native Text Studio - Rendered at app level so it works without editor init */}
+      <NativeTextStudio />
+
       <ContextMenu />
     </div>
   );

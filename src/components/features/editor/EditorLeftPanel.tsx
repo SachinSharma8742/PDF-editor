@@ -9,20 +9,20 @@ import { StampsPanel } from './StampsPanel';
 import { OCRPanel } from './OCRPanel';
 import { CalibrationPanel } from './CalibrationPanel';
 import { LeftColorPanel } from './LeftColorPanel';
-import { PageEffectsPanel } from './PageEffectsPanel';
+
 import { ImageEditorPanel } from './ImageEditorPanel';
 import { TextPropertyPanel } from './properties/TextPropertyPanel';
 
 import { SearchReplacePanel } from './SearchReplacePanel';
 
-type TabId = 'stamps' | 'ocr' | 'scale' | 'properties' | 'image-editor' | 'page-effects' | 'advanced';
+type TabId = 'stamps' | 'ocr' | 'scale' | 'properties' | 'image-editor' | 'advanced';
 
 export const EditorLeftPanel: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabId>('properties');
     const [isCollapsed, setIsCollapsed] = useState(true);
     const {
         activeTool, toolPreferences, updateToolSettings, selectedObjectIds,
-        currentPage, updateObject, recentColors, addColorToHistory
+        currentPage, updateObject, recentColors, addColorToHistory, editingMode
     } = useEditorStore();
 
     const hasSelection = selectedObjectIds.length > 0;
@@ -30,6 +30,7 @@ export const EditorLeftPanel: React.FC = () => {
 
     // Derived flags for specialized modes
     const isLibraryTool = ['stamp', 'ocr', 'measure', 'search'].includes(activeTool);
+    const isNavigateMode = (activeTool === 'select' && !hasSelection) || activeTool === 'pan';
 
     // Track if user has manually selected a tab to prevent auto-switching overriding user intent
     // const [userHasSelectedTab, setUserHasSelectedTab] = useState(false);
@@ -49,39 +50,44 @@ export const EditorLeftPanel: React.FC = () => {
             setActiveTab('advanced');
             setIsCollapsed(false);
         } else if (hasSelection) {
-            if (activeTab === 'page-effects') {
-                // If we were on page effects, switch to properties for the selection
-                setActiveTab('properties');
-            }
             if (selectedObj?.type === 'image') {
                 setActiveTab('image-editor');
             } else {
                 setActiveTab('properties');
             }
             setIsCollapsed(false);
-        } else if (activeTool === 'select' && !hasSelection) {
-            // Default to Page Effects when standard selection mode is active but nothing selected
-            setActiveTab('page-effects');
+        } else if (editingMode === 'native-text') {
+            setActiveTab('properties');
             setIsCollapsed(false);
+        } else if ((activeTool === 'select' && !hasSelection) || activeTool === 'pan') {
+            setIsCollapsed(true);
         } else if (['pen', 'highlighter', 'rectangle', 'circle', 'text', 'line', 'arrow', 'eraser'].includes(activeTool)) {
             setActiveTab('properties');
             setIsCollapsed(false);
         }
-    }, [activeTool, hasSelection, selectedObj?.type, activeTab]);
+    }, [activeTool, hasSelection, selectedObj?.type, activeTab, editingMode]);
 
 
 
     if (isCollapsed) {
         return (
-            <div className="w-5 transition-all duration-300 relative border-r border-white/5 bg-[#1e1e20] flex flex-col items-center py-4 group hover:bg-white/5 cursor-pointer" onClick={() => setIsCollapsed(false)}>
-                <button
-                    onClick={(e) => { e.stopPropagation(); setIsCollapsed(false); }}
-                    className="p-1 rounded-md text-zinc-500 hover:text-white transition-colors mt-1"
-                    title="Open Sidebar"
-                >
-                    <ChevronRight size={14} />
-                </button>
-                <div className="h-full w-[1px] bg-white/5 my-2 group-hover:bg-blue-500/50 transition-colors" />
+            <div
+                className={clsx(
+                    "w-5 transition-all duration-300 relative border-r border-white/5 bg-[#1e1e20] flex flex-col items-center py-4 group",
+                    isNavigateMode ? "cursor-default" : "hover:bg-white/5 cursor-pointer"
+                )}
+                onClick={() => !isNavigateMode && setIsCollapsed(false)}
+            >
+                {!isNavigateMode && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); setIsCollapsed(false); }}
+                        className="p-1 rounded-md text-zinc-500 hover:text-white transition-colors mt-1"
+                        title="Open Sidebar"
+                    >
+                        <ChevronRight size={14} />
+                    </button>
+                )}
+                {!isNavigateMode && <div className="h-full w-[1px] bg-white/5 my-2 group-hover:bg-blue-500/50 transition-colors" />}
             </div>
         );
     }
@@ -107,16 +113,15 @@ export const EditorLeftPanel: React.FC = () => {
                             activeTab === 'ocr' ? 'AI OCR Engine' :
                                 activeTab === 'scale' ? 'Measurement' :
                                     activeTab === 'image-editor' ? 'Image Studio' :
-                                        activeTab === 'page-effects' ? 'Page Effects' :
-                                            activeTab === 'advanced' ? 'Advanced Tools' :
-                                                // Dynamic Properties Title
-                                                (activeTool === 'text' || (hasSelection && selectedObj?.type === 'text')) ? 'Text Properties' :
-                                                    (activeTool === 'select' && hasSelection) ? (
-                                                        selectedObj?.type === 'rectangle' ? 'Rectangle Properties' :
-                                                            selectedObj?.type === 'circle' ? 'Circle Properties' :
-                                                                selectedObj?.type === 'image' ? 'Image Properties' :
-                                                                    'Properties'
-                                                    ) : 'Colors & Stroke'}
+                                        activeTab === 'advanced' ? 'Advanced Tools' :
+                                            // Dynamic Properties Title
+                                            (activeTool === 'text' || (hasSelection && selectedObj?.type === 'text')) ? 'Text Properties' :
+                                                (activeTool === 'select' && hasSelection) ? (
+                                                    selectedObj?.type === 'rectangle' ? 'Rectangle Properties' :
+                                                        selectedObj?.type === 'circle' ? 'Circle Properties' :
+                                                            selectedObj?.type === 'image' ? 'Image Properties' :
+                                                                'Properties'
+                                                ) : 'Colors & Stroke'}
                     </h2>
                 </div>
                 <button
@@ -149,8 +154,6 @@ export const EditorLeftPanel: React.FC = () => {
                     )
                 ) : activeTab === 'image-editor' ? (
                     <ImageEditorPanel />
-                ) : activeTab === 'page-effects' ? (
-                    <PageEffectsPanel />
                 ) : (
                     <div className="px-4 py-4">
                         <div className="flex items-center justify-between mb-4 px-1">

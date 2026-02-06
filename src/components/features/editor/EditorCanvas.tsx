@@ -32,11 +32,55 @@ export const EditorCanvas: React.FC = () => {
         setEditingObjectId,
         stagePosition,
         setStagePosition,
-        previewStyle // Get preview style
+        openTextStudio,
+        previewStyle,
+        setScale
     } = useEditorStore();
 
     // PDF Global State (Source)
     const { pdfDocument, eraserMode } = usePDFStore();
+
+    // Auto-Fit PDF on Page Load
+    useEffect(() => {
+        if (!currentPage || currentPage.source !== 'pdf' || !pdfDocument) return;
+
+        const fitToScreen = async () => {
+            const index = currentPage.originalPageIndex;
+            if (index === undefined || index === null) return;
+
+            try {
+                const page = await pdfDocument.getPage(index);
+                // Get unscaled viewport
+                const rotation = (currentPage.rotation || 0) + (page.rotate || 0);
+                const viewport = page.getViewport({ scale: 1, rotation: rotation % 360 });
+
+                const container = document.getElementById('editor-workspace');
+                if (!container) return;
+
+                const padding = 60; // Comfortable padding
+                const containerW = container.clientWidth;
+                const containerH = container.clientHeight;
+
+                if (containerW === 0 || containerH === 0) return;
+
+                const scaleX = (containerW - padding) / viewport.width;
+                const scaleY = (containerH - padding) / viewport.height;
+
+                // Fit entirely visible, cap at 1.5 if it's tiny, but allow shrinking
+                const newScale = Math.min(scaleX, scaleY);
+
+                // Only set if different enough to avoid jitters, or just set it.
+                // We want to force it on page load.
+                setScale(newScale);
+            } catch (e) {
+                console.error("Auto-fit failed", e);
+            }
+        };
+
+        // Run when the page identifier changes
+        fitToScreen();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentPage?.id, pdfDocument]);
 
     // Refs
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -961,6 +1005,17 @@ export const EditorCanvas: React.FC = () => {
                     onDragStart={handleDragStartGlobal}
                     onDragMove={handleDragMoveGlobal}
                     onDragEnd={handleDragEndGlobal}
+                    onDblClick={(e) => {
+                        const stage = e.target.getStage();
+                        if (!stage || e.target === stage) return;
+                        const id = e.target.id();
+                        if (!id) return;
+                        const object = currentPage.objects.find(o => o.id === id);
+                        if (object && object.type === 'text') {
+                            openTextStudio('edit', id);
+                            selectObject(id);
+                        }
+                    }}
                 >
                     <Layer>
                         {/* 0. Grid Layer */}

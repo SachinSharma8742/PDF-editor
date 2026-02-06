@@ -5,6 +5,7 @@ import { useEditorStore } from '../../../store/editorStore';
 import { Loader2 } from 'lucide-react';
 import { PageSelectionOverlay } from '../page-operations/PageSelectionOverlay';
 import { CanvasLayer } from '../editor/CanvasLayer';
+import { PDFTextLayer } from './PDFTextLayer';
 
 interface PDFPageProps {
     pageNumber: number;
@@ -151,6 +152,95 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                     height={dimensions.height}
                     scale={scale}
                 />
+            )}
+
+            {/* Text Edits Overlay - Shows pending edits in view mode */}
+            {dimensions && pageState.source === 'pdf' && (
+                <PDFTextLayer
+                    pageNumber={pageNumber}
+                    scale={scale}
+                    viewOnly={true}
+                />
+            )}
+
+            {/* Watermark Overlay */}
+            {pageState.watermark && pageState.watermark.text && dimensions && (
+                <div
+                    className="absolute inset-0 pointer-events-none overflow-hidden flex items-center justify-center z-[6]"
+                    style={{ opacity: pageState.watermark.opacity ?? 0.2 }}
+                >
+                    {pageState.watermark.isRepeating ? (
+                        <div className="flex flex-wrap content-center justify-center gap-16 -rotate-12 scale-150 w-[200%] h-[200%]">
+                            {Array.from({ length: 40 }).map((_, i) => (
+                                <span
+                                    key={i}
+                                    style={{
+                                        fontSize: (pageState.watermark?.fontSize || 40) * scale,
+                                        color: pageState.watermark?.color || '#000000',
+                                        fontWeight: 'bold',
+                                        userSelect: 'none',
+                                        fontFamily: 'sans-serif'
+                                    }}
+                                >
+                                    {pageState.watermark?.text}
+                                </span>
+                            ))}
+                        </div>
+                    ) : (
+                        <span
+                            style={{
+                                fontSize: (pageState.watermark.fontSize || 80) * scale,
+                                color: pageState.watermark.color || '#000000',
+                                transform: `rotate(${pageState.watermark.rotate || -45}deg)`,
+                                fontWeight: 'bold',
+                                whiteSpace: 'nowrap',
+                                userSelect: 'none',
+                                fontFamily: 'sans-serif'
+                            }}
+                        >
+                            {pageState.watermark.text}
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {/* Header/Footer Overlay */}
+            {(pageState.structure?.header || pageState.structure?.footer) && dimensions && (
+                <div className="absolute inset-0 pointer-events-none z-[7] flex flex-col justify-between p-8">
+                    {/* Header */}
+                    {pageState.structure?.header?.text ? (
+                        <div style={{
+                            textAlign: pageState.structure.header.align as any,
+                            color: pageState.structure.header.color,
+                            fontSize: pageState.structure.header.fontSize * scale,
+                            opacity: pageState.structure.header.opacity ?? 1,
+                            fontFamily: 'sans-serif',
+                            whiteSpace: 'pre-wrap'
+                        }}>
+                            {pageState.structure.header.text
+                                .replace('{{page}}', `${pageState.pageNumber}`)
+                                .replace('{{total}}', `${pages.length}`)
+                                .replace('{{date}}', new Date().toLocaleDateString())}
+                        </div>
+                    ) : <div />}
+
+                    {/* Footer */}
+                    {pageState.structure?.footer?.text ? (
+                        <div style={{
+                            textAlign: pageState.structure.footer.align as any,
+                            color: pageState.structure.footer.color,
+                            fontSize: pageState.structure.footer.fontSize * scale,
+                            opacity: pageState.structure.footer.opacity ?? 1,
+                            fontFamily: 'sans-serif',
+                            whiteSpace: 'pre-wrap'
+                        }}>
+                            {pageState.structure.footer.text
+                                .replace('{{page}}', `${pageState.pageNumber}`)
+                                .replace('{{total}}', `${pages.length}`)
+                                .replace('{{date}}', new Date().toLocaleDateString())}
+                        </div>
+                    ) : <div />}
+                </div>
             )}
 
             {rendering && (

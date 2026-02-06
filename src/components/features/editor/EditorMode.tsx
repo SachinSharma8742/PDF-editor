@@ -8,6 +8,7 @@ import { EditorCanvas } from './EditorCanvas';
 import { usePDFStore, type ToolType } from '../../../store/pdfStore';
 import { loadPDF } from '../../../utils/pdfOps';
 import { ImageStudio } from './ImageStudio/ImageStudio';
+import { TextStudio } from './TextStudio/TextStudio';
 import { ShapeEditorModal } from './ShapeEditorModal';
 import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
 
@@ -90,6 +91,8 @@ export const EditorMode: React.FC = () => {
 
             {/* Image Studio Overlay */}
             <ImageStudio />
+            <TextStudio />
+            {/* NativeTextStudio moved to App.tsx level */}
             <ShapeEditorModal />
         </div>
     );

@@ -97,3 +97,69 @@ export const extractPagesAsPDF = async (
         alert('Failed to extract PDF pages.');
     }
 };
+
+import type { NativeTextItem } from '../store/editorStore';
+import { rgb, StandardFonts } from 'pdf-lib';
+
+export const applyNativeTextEdits = async (
+    originalPdfBytes: ArrayBuffer,
+    edits: NativeTextItem[],
+    pages: PageState[]
+) => {
+    if (!originalPdfBytes || edits.length === 0) return null;
+
+    try {
+        const pdfDoc = await PDFDocument.load(originalPdfBytes);
+        const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+        const pdfPages = pdfDoc.getPages();
+
+        for (const edit of edits) {
+            // Find the page index
+            const pageState = pages.find(p => p.id === edit.pageId);
+            if (!pageState || pageState.originalPageIndex === undefined) continue;
+
+            const pageIndex = pageState.originalPageIndex - 1; // 0-based
+            if (pageIndex < 0 || pageIndex >= pdfPages.length) continue;
+
+            const page = pdfPages[pageIndex];
+            const { height: pageHeight } = page.getSize();
+
+            // NativeTextItem coords (x,y) are from pdfjs transform which is PDF coords (bottom-left origin).
+            // edit.y is baseline.
+
+            // 1. Redact original (Draw White Rect)
+            // Need to estimate descent for rect position
+            // PDFJS height usually covers the bounding box.
+            // If edit.y is baseline, and font size is 12, height might be 14.
+            // We generally want to cover from [y - descent] to [y + ascent].
+            // A safe bet is `y - (fontSize * 0.25)` for bottom of rect?
+            // Actually `item.height` from pdfjs is the font size roughly? No, `item.height` is the height of the bounding box.
+            // Let's assume rect bottom is `y` (baseline) for now, or safely slightly below.
+            // Better strategy: Draw a slightly larger rect to be sure.
+
+            page.drawRectangle({
+                x: edit.x - 2,
+                y: edit.y - (edit.fontSize * 0.3), // Descent approx
+                width: edit.width + 4,
+                height: edit.height * 1.2 || edit.fontSize * 1.2,
+                color: rgb(1, 1, 1), // White
+            });
+
+            // 2. Draw New Text
+            page.drawText(edit.text, {
+                x: edit.x,
+                y: edit.y,
+                size: edit.fontSize,
+                font: helveticaFont,
+                color: rgb(0, 0, 0),
+            });
+        }
+
+        const savedBytes = await pdfDoc.save();
+        return savedBytes;
+    } catch (e) {
+        console.error("Failed to apply text edits", e);
+        return null;
+    }
+};

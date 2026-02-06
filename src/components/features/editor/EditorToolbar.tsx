@@ -73,7 +73,7 @@ const getToolIcon = (tool: ToolType): React.ElementType => {
 export const EditorToolbar: React.FC = () => {
     const {
         activeTool, setActiveTool, addObject, toolPreferences, updateToolSettings,
-        addColorToHistory, openShapeEditor
+        addColorToHistory, openShapeEditor, openTextStudio
     } = useEditorStore();
 
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -107,10 +107,11 @@ export const EditorToolbar: React.FC = () => {
             setIsSignatureModalOpen(true);
             setGroupDefaults(prev => ({ ...prev, insert: 'signature' }));
         } else if (toolId === ('shapes' as ToolType)) {
-            openShapeEditor('add');
-            // shapes doesn't map to a specific sub-tool id exactly in this list? 
-            // actually 'shapes' IS the id in the list.
             setGroupDefaults(prev => ({ ...prev, insert: 'shapes' as ToolType }));
+        } else if (toolId === 'text') {
+            // Open Text Studio in CREATE mode (don't add object yet)
+            openTextStudio('create');
+            setGroupDefaults(prev => ({ ...prev, insert: 'text' }));
         } else {
             setActiveTool(toolId);
         }
@@ -227,6 +228,7 @@ export const EditorToolbar: React.FC = () => {
                         onSelect={handleToolSelect}
                     />
 
+
                     {/* Color Picker Tool - 2nd Position */}
                     <button
                         onClick={handleEyedropper}
@@ -246,6 +248,17 @@ export const EditorToolbar: React.FC = () => {
                             style={{ backgroundColor: currentSettings?.color || '#000' }}
                         />
                     </button>
+
+                    <div className="w-8 h-px bg-white/5 mx-auto rounded-full" />
+                    <ToolGroup
+                        groupKey="insert"
+                        groupLabel={TOOL_GROUPS.insert.groupLabel}
+                        groupIcon={TOOL_GROUPS.insert.groupIcon}
+                        tools={TOOL_GROUPS.insert.tools}
+                        activeTool={activeTool}
+                        currentDefault={groupDefaults.insert}
+                        onSelect={handleToolSelect}
+                    />
 
                     {/* AI OCR Tool - Standalone */}
                     <button
@@ -285,16 +298,7 @@ export const EditorToolbar: React.FC = () => {
                         onSelect={handleToolSelect}
                     />
 
-                    <div className="w-8 h-px bg-white/5 mx-auto rounded-full" />
-                    <ToolGroup
-                        groupKey="insert"
-                        groupLabel={TOOL_GROUPS.insert.groupLabel}
-                        groupIcon={TOOL_GROUPS.insert.groupIcon}
-                        tools={TOOL_GROUPS.insert.tools}
-                        activeTool={activeTool}
-                        currentDefault={groupDefaults.insert}
-                        onSelect={handleToolSelect}
-                    />
+
 
 
                 </div>

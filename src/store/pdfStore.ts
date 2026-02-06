@@ -4,7 +4,7 @@ import microdiff from 'microdiff';
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 import { savePDFToStorage } from '../utils/storage';
 
-export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature' | 'measure' | 'redaction' | 'form-text' | 'form-checkbox' | 'ocr' | 'sticky-note' | 'callout' | 'search' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble';
+export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature' | 'measure' | 'redaction' | 'form-text' | 'form-checkbox' | 'ocr' | 'sticky-note' | 'callout' | 'search' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble' | 'native-text-selection';
 export type PageSource = 'pdf' | 'image' | 'blank';
 
 // --- Core Data Models ---
@@ -53,7 +53,7 @@ export interface PDFObject {
     fontFamily?: string;
     fontWeight?: string;
     fontStyle?: string;
-    align?: 'left' | 'center' | 'right';
+    align?: 'left' | 'center' | 'right' | 'justify';
 
     // Image specific
     src?: string; // Data URL or Object URL
@@ -437,7 +437,8 @@ export const usePDFStore = create<PDFStore>()(
                     redaction: { ...DEFAULT_SETTINGS, color: '#000000', size: 0 },
                     'form-text': { ...DEFAULT_SETTINGS },
                     'form-checkbox': { ...DEFAULT_SETTINGS },
-                    'ocr': { ...DEFAULT_SETTINGS }
+                    'ocr': { ...DEFAULT_SETTINGS },
+                    'native-text-selection': { ...DEFAULT_SETTINGS }
                 },
 
                 selectedObjectIds: [],

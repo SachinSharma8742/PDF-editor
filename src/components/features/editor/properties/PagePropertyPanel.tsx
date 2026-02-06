@@ -10,13 +10,15 @@ import {
 import { CollapsibleSection } from './CollapsibleSection';
 
 export const PagePropertyPanel: React.FC = () => {
-    const { currentPage } = useEditorStore();
+    const { currentPage, updateCurrentPage } = useEditorStore();
     const { updatePage, deletePage, removeBlankPages, applyStructureToAllPages } = usePDFStore();
 
     if (!currentPage) return null;
 
     const handleUpdate = (updates: any) => {
-        updatePage(currentPage.id, updates);
+        // Update both stores for immediate visual feedback
+        updatePage(currentPage.id, updates);      // Persist to pdfStore
+        updateCurrentPage(updates);                // Update editorStore for canvas
     };
 
     return (
