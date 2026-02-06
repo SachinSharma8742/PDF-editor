@@ -8,6 +8,7 @@ import { EditorCanvas } from './EditorCanvas';
 import { usePDFStore, type ToolType } from '../../../store/pdfStore';
 import { loadPDF } from '../../../utils/pdfOps';
 import { ImageStudio } from './ImageStudio/ImageStudio';
+import { ShapeEditorModal } from './ShapeEditorModal';
 
 export const EditorMode: React.FC = () => {
     const {
@@ -134,6 +135,7 @@ export const EditorMode: React.FC = () => {
 
             {/* Image Studio Overlay */}
             <ImageStudio />
+            <ShapeEditorModal />
         </div>
     );
 };

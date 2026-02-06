@@ -39,7 +39,7 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
         switch (activeTab) {
             case 'adjust':
                 return (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-4">
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-6 pt-2">
                         <FilterSlider
                             label="Brightness"
                             icon={<Sun size={14} />}
@@ -68,32 +68,24 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                             min={0} max={40} step={1}
                             onChange={(v: number) => setParam('blur', v)}
                         />
-                        <FilterSlider
-                            label="Noise"
-                            icon={<ScanLine size={14} />} // Mock noise icon
-                            value={params.noise}
-                            min={0} max={4} step={0.1}
-                            onChange={(v: number) => setParam('noise', v)}
-                        />
                     </div>
                 );
             case 'crop':
                 return (
-                    <div className="flex flex-col items-center justify-center h-full text-zinc-500 gap-4">
-                        <p className="text-sm">Crop & Rotate</p>
-                        <div className="flex gap-4">
+                    <div className="flex flex-col gap-4 pt-2">
+                        <div className="flex justify-center gap-4">
                             <button
                                 onClick={() => setParam('rotation', (params.rotation + 90) % 360)}
-                                className="flex flex-col items-center gap-2 p-4 rounded-xl bg-zinc-800/50 hover:bg-zinc-800 hover:text-white transition-all"
+                                className="flex flex-col items-center gap-2 p-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-800 hover:text-white transition-all w-24"
                             >
                                 <RotateCw size={20} />
-                                <span className="text-[10px] font-bold uppercase">Rotate 90°</span>
+                                <span className="text-[10px] font-bold uppercase">Rotate</span>
                             </button>
                             <button
                                 onClick={() => setParam('flipX', !params.flipX)}
                                 className={clsx(
-                                    "flex flex-col items-center gap-2 p-4 rounded-xl transition-all",
-                                    params.flipX ? "bg-blue-600 text-white" : "bg-zinc-800/50 hover:bg-zinc-800 hover:text-white"
+                                    "flex flex-col items-center gap-2 p-3 rounded-xl transition-all w-24",
+                                    params.flipX ? "bg-blue-600/20 text-blue-400 border border-blue-500/30" : "bg-zinc-800/50 hover:bg-zinc-800 hover:text-white"
                                 )}
                             >
                                 <MoveHorizontal size={20} />
@@ -102,8 +94,8 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                             <button
                                 onClick={() => setParam('flipY', !params.flipY)}
                                 className={clsx(
-                                    "flex flex-col items-center gap-2 p-4 rounded-xl transition-all",
-                                    params.flipY ? "bg-blue-600 text-white" : "bg-zinc-800/50 hover:bg-zinc-800 hover:text-white"
+                                    "flex flex-col items-center gap-2 p-3 rounded-xl transition-all w-24",
+                                    params.flipY ? "bg-blue-600/20 text-blue-400 border border-blue-500/30" : "bg-zinc-800/50 hover:bg-zinc-800 hover:text-white"
                                 )}
                             >
                                 <MoveVertical size={20} />
@@ -114,7 +106,7 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                 );
             case 'effects':
                 return (
-                    <div className="flex items-center justify-center gap-4 p-4">
+                    <div className="flex items-center gap-4 pt-2">
                         {[
                             { key: 'grayscale', label: 'B&W' },
                             { key: 'sepia', label: 'Sepia' },
@@ -124,14 +116,14 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                                 key={ef.key}
                                 onClick={() => setParam(ef.key as any, params[ef.key as keyof typeof params] ? 0 : 1)}
                                 className={clsx(
-                                    "w-24 h-24 rounded-xl flex flex-col items-center justify-center gap-2 transition-all border",
+                                    "w-20 h-20 rounded-xl flex flex-col items-center justify-center gap-2 transition-all border",
                                     params[ef.key as keyof typeof params]
-                                        ? "bg-blue-600 border-blue-400 text-white"
-                                        : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700 hover:text-white"
+                                        ? "bg-blue-600/20 border-blue-500/50 text-blue-400"
+                                        : "bg-white/[0.02] border-white/5 text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
                                 )}
                             >
-                                <Wand2 size={24} />
-                                <span className="text-xs font-bold uppercase">{ef.label}</span>
+                                <Wand2 size={20} />
+                                <span className="text-[10px] font-bold uppercase">{ef.label}</span>
                             </button>
                         ))}
                     </div>
@@ -142,62 +134,60 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
     };
 
     return (
-        <div className="h-[320px] bg-[#09090b] border-t border-white/10 flex flex-col flex-shrink-0 z-50">
-            {/* Top Bar of Toolbar: Cancel/Apply and Tabs */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#121214]">
-                <button
-                    onClick={onCancel}
-                    className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors px-4 py-2 hover:bg-white/5 rounded-lg"
-                >
-                    <X size={18} />
-                    <span className="text-xs font-bold uppercase tracking-widest">Cancel</span>
-                </button>
+        <div className="bg-[#121214] border-t border-white/5 flex flex-col flex-shrink-0 z-50">
 
-                {/* Tabs */}
-                <div className="flex items-center bg-black/50 p-1 rounded-full border border-white/5">
-                    {[
-                        { id: 'adjust', icon: Sliders, label: 'Adjust' },
-                        { id: 'crop', icon: RotateCw, label: 'Transform' },
-                        { id: 'effects', icon: Wand2, label: 'Effects' },
+            {/* Tabs */}
+            <div className="flex items-center px-4 py-1.5 border-b border-white/5 gap-2 bg-[#09090b]">
+                {[
+                    { id: 'adjust', icon: Sliders, label: 'Adjust' },
+                    { id: 'crop', icon: RotateCw, label: 'Shape' },
+                    { id: 'effects', icon: Wand2, label: 'Filters' },
 
-                    ].map(tab => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTab(tab.id as any)}
-                            className={clsx(
-                                "flex items-center gap-2 px-6 py-2 rounded-full transition-all text-xs font-bold uppercase tracking-wide",
-                                activeTab === tab.id
-                                    ? "bg-zinc-800 text-white shadow-sm"
-                                    : "text-zinc-500 hover:text-zinc-300"
-                            )}
-                        >
-                            <tab.icon size={14} />
-                            <span>{tab.label}</span>
-                        </button>
-                    ))}
-                </div>
-
-                <div className="flex items-center gap-4">
+                ].map(tab => (
                     <button
-                        onClick={resetParams}
-                        className="flex items-center gap-2 text-zinc-500 hover:text-white transition-colors px-3 py-2"
-                        title="Reset All"
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        className={clsx(
+                            "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-[10px] font-bold uppercase tracking-wide",
+                            activeTab === tab.id
+                                ? "bg-white/10 text-white"
+                                : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+                        )}
                     >
-                        <RotateCcw size={16} />
+                        <tab.icon size={12} />
+                        <span>{tab.label}</span>
                     </button>
-                    <button
-                        onClick={onApply}
-                        className="flex items-center gap-3 bg-blue-600 hover:bg-blue-500 text-white px-8 py-2.5 rounded-full transition-all shadow-lg shadow-blue-900/20 font-bold text-xs uppercase tracking-widest"
-                    >
-                        <Check size={16} />
-                        <span>{isEditMode ? 'Update Image' : 'Insert Image'}</span>
-                    </button>
-                </div>
+                ))}
             </div>
 
             {/* Dynamic Tool Content */}
-            <div className="flex-1 overflow-auto custom-scrollbar relative">
+            <div className="p-4 h-[140px] overflow-y-auto custom-scrollbar bg-[#121214]">
                 {renderTools()}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="px-4 py-3 border-t border-white/5 bg-[#09090b] flex justify-between items-center">
+                <button
+                    onClick={resetParams}
+                    className="flex items-center gap-2 text-zinc-500 hover:text-white transition-colors text-[10px] font-bold uppercase tracking-wider px-2"
+                >
+                    <RotateCcw size={12} /> Reset
+                </button>
+
+                <div className="flex gap-2">
+                    <button
+                        onClick={onCancel}
+                        className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 font-medium text-xs hover:bg-zinc-700 transition"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={onApply}
+                        className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold text-xs shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition flex items-center gap-2"
+                    >
+                        {isEditMode ? 'Update' : 'Add Image'} <Check size={14} />
+                    </button>
+                </div>
             </div>
         </div>
     );

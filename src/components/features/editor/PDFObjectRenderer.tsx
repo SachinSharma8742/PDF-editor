@@ -1,10 +1,12 @@
 import React, { useRef, useEffect } from 'react';
-import { Text, TextPath, Rect, Circle as KonvaCircle, Image as KonvaImage, Group, Line, Arrow, RegularPolygon, Star as KonvaStar, Ellipse as KonvaEllipse, Label, Tag } from 'react-konva';
+import { Text, TextPath, Rect, Circle as KonvaCircle, Image as KonvaImage, Group, Line, Arrow, RegularPolygon, Star as KonvaStar, Ellipse as KonvaEllipse, Label, Tag, Path } from 'react-konva';
 import { createPortal } from 'react-dom';
 import useImage from 'use-image';
 import type { PDFObject } from '../../../store/pdfStore';
 import { usePDFStore } from '../../../store/pdfStore';
 import { useEditorStore } from '../../../store/editorStore';
+import { SHAPE_PATHS } from '../../../constants/shapeConstants';
+import { hexToRgba } from '../../../utils/colorUtils';
 
 interface PDFObjectRendererProps {
     object: PDFObject;
@@ -22,7 +24,7 @@ interface PDFObjectRendererProps {
 import Konva from 'konva';
 
 const URLImage = ({ object, opacity, ...props }: any) => {
-    const [img] = useImage(object.src || '');
+    const [img] = useImage(object.src || '', 'anonymous');
     const imageRef = useRef<Konva.Image>(null);
 
     // Apply filters and cache
@@ -81,8 +83,25 @@ const URLImage = ({ object, opacity, ...props }: any) => {
 
             node.filters(activeFilters);
 
-            // Caching is required for filters to work
-            node.cache();
+            // Clear previous cache to avoid artifacts or errors
+            node.clearCache();
+
+            // Only cache if we have filters or we need to cache for some other reason
+            if (activeFilters.length > 0) {
+                try {
+                    node.cache({
+                        pixelRatio: 1, // Fix resolution for performance/memory
+                        imageSmoothingEnabled: true
+                    });
+                } catch (e) {
+                    console.error("PDFObjectRenderer: Failed to cache image", e);
+                }
+            } else {
+                // If no filters, we might still want to clear cache effectively
+                // But generally Konva handles non-cached images fine.
+                // However, if we HAD filters and now don't, clearing cache is enough.
+            }
+
             node.getLayer()?.batchDraw();
         }
     }, [
@@ -191,6 +210,8 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                 // Legacy: just crop
                 useEditorStore.getState().setCropping(true);
             }
+        } else if (['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse', 'heart', 'cloud', 'lightning', 'drop', 'callout-bubble'].includes(object.type)) {
+            useEditorStore.getState().openShapeEditor('edit');
         }
     };
 
@@ -383,9 +404,9 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     {...innerProps}
                     stroke={object.stroke || 'black'}
                     strokeWidth={object.strokeWidth || 2}
-                    fill={object.fill || 'transparent'}
+                    fill={hexToRgba(object.fill, object.opacity)}
                     cornerRadius={5}
-                    opacity={object.opacity ?? 1}
+                    opacity={1}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -400,8 +421,8 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     radiusY={height / 2}
                     stroke={object.stroke || 'black'}
                     strokeWidth={object.strokeWidth || 2}
-                    fill={object.fill || 'transparent'}
-                    opacity={object.opacity ?? 1}
+                    fill={hexToRgba(object.fill, object.opacity)}
+                    opacity={1}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -416,8 +437,8 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     radiusY={height / 2}
                     stroke={object.stroke || 'black'}
                     strokeWidth={object.strokeWidth || 2}
-                    fill={object.fill || 'transparent'}
-                    opacity={object.opacity ?? 1}
+                    fill={hexToRgba(object.fill, object.opacity)}
+                    opacity={1}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -434,8 +455,8 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     scaleY={height / 100}
                     stroke={object.stroke || 'black'}
                     strokeWidth={(object.strokeWidth || 2) / (width / 100)} // Normalize stroke width
-                    fill={object.fill || 'transparent'}
-                    opacity={object.opacity ?? 1}
+                    fill={hexToRgba(object.fill, object.opacity)}
+                    opacity={1}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -453,10 +474,33 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     scaleY={height / 100}
                     stroke={object.stroke || 'black'}
                     strokeWidth={object.strokeWidth || 2}
-                    fill={object.fill || 'transparent'}
-                    opacity={object.opacity ?? 1}
+                    fill={hexToRgba(object.fill, object.opacity)}
+                    opacity={1}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
+                />
+            )}
+
+            {/* NEW SHAPES */}
+            {['heart', 'cloud', 'lightning', 'drop', 'callout-bubble'].includes(object.type) && (
+                <Path
+                    {...innerProps}
+                    x={0}
+                    y={0}
+                    data={
+                        SHAPE_PATHS[object.type] || ""
+                    }
+                    fill={hexToRgba(object.fill, object.opacity)}
+                    stroke={object.stroke || 'black'}
+                    strokeWidth={object.strokeWidth || 2}
+                    scaleX={width / 24} // Normalizing from typical SVG viewbox 24x24 or similar
+                    scaleY={height / 24}
+                    opacity={1}
+                    shadowColor={object.shadowColor}
+                    shadowBlur={object.shadowBlur}
+                    shadowOffsetX={object.shadowOffsetX}
+                    shadowOffsetY={object.shadowOffsetY}
+                    shadowOpacity={object.shadowOpacity}
                 />
             )}
 
@@ -598,73 +642,7 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                 />
             )}
 
-            {object.type === 'callout' && (
-                <Label
-                    {...containerProps} // Label needs x,y
-                    opacity={object.opacity}
-                >
-                    <Tag
-                        fill={object.bgFill || '#ffffff'}
-                        stroke={object.stroke || '#000000'}
-                        strokeWidth={object.strokeWidth || 1}
-                        cornerRadius={object.cornerRadius || 5}
-                        pointerDirection={object.pointerDirection || 'down'}
-                        pointerWidth={object.pointerWidth || 10}
-                        pointerHeight={object.pointerHeight || 10}
-                        shadowColor={object.shadowColor}
-                        shadowBlur={object.shadowBlur}
-                        shadowOffsetX={object.shadowOffsetX}
-                        shadowOffsetY={object.shadowOffsetY}
-                        shadowOpacity={object.shadowOpacity}
-                    />
-                    <Text
-                        text={isEditing ? '' : (object.text || "Double click to edit")}
-                        padding={10}
-                        fontSize={object.fontSize || 14}
-                        fontFamily={object.fontFamily || 'Inter'}
-                        fill={object.fill || 'black'}
-                        align={object.align || 'center'}
-                        opacity={isEditing ? 0 : 1}
-                        width={object.width} // Optional constraint
-                    />
-                </Label>
-            )}
 
-            {object.type === 'sticky-note' && (
-                <Group>
-                    <Rect
-                        {...innerProps}
-                        fill={object.fill || '#fef08a'} // Default yellow
-                        stroke={object.stroke || '#eab308'}
-                        strokeWidth={1}
-                        cornerRadius={2}
-                        shadowColor="black"
-                        shadowBlur={5}
-                        shadowOpacity={0.2}
-                        shadowOffsetX={2}
-                        shadowOffsetY={2}
-                    />
-                    <Text
-                        {...innerProps}
-                        text={isEditing ? '' : (object.text || "Double click to edit")}
-                        fontSize={object.fontSize || 14}
-                        fontFamily={object.fontFamily || 'Arial'}
-                        fill="black"
-                        padding={10}
-                        align="left"
-                        verticalAlign="top"
-                        width={width} // Ensure wrapping
-                        opacity={isEditing ? 0 : 1}
-                    />
-                    {isEditing && (
-                        <TextEditorOverlay
-                            object={object}
-                            onBlur={handleTextBlur}
-                            onKeyDown={handleTextKeyDown}
-                        />
-                    )}
-                </Group>
-            )}
         </Group>
     );
 };

@@ -4,7 +4,7 @@ import microdiff from 'microdiff';
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 import { savePDFToStorage } from '../utils/storage';
 
-export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature' | 'measure' | 'redaction' | 'form-text' | 'form-checkbox' | 'ocr' | 'sticky-note' | 'callout' | 'search';
+export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature' | 'measure' | 'redaction' | 'form-text' | 'form-checkbox' | 'ocr' | 'sticky-note' | 'callout' | 'search' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble';
 export type PageSource = 'pdf' | 'image' | 'blank';
 
 // --- Core Data Models ---
@@ -26,7 +26,7 @@ export interface Comment {
 export interface PDFObject {
     id: string;
     comments?: Comment[]; // For collaboration/notes
-    type: 'text' | 'image' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path' | 'measure' | 'redaction' | 'sticky-note' | 'callout' | 'form-text' | 'form-checkbox';
+    type: 'text' | 'image' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path' | 'measure' | 'redaction' | 'sticky-note' | 'callout' | 'form-text' | 'form-checkbox' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble';
     x: number;
     y: number;
     width?: number;
@@ -904,7 +904,12 @@ export const usePDFStore = create<PDFStore>()(
                         'ocr': { ...DEFAULT_SETTINGS },
                         'search': { ...DEFAULT_SETTINGS },
                         'sticky-note': { ...DEFAULT_SETTINGS, color: '#fef08a' }, // Default yellow note
-                        'callout': { ...DEFAULT_SETTINGS, color: '#000000', size: 14 } // Default text settings
+                        'callout': { ...DEFAULT_SETTINGS, color: '#000000', size: 14 },
+                        'heart': { ...DEFAULT_SETTINGS, color: '#ef4444', size: 2 },
+                        'cloud': { ...DEFAULT_SETTINGS, color: '#3b82f6', size: 2 },
+                        'lightning': { ...DEFAULT_SETTINGS, color: '#eab308', size: 2 },
+                        'drop': { ...DEFAULT_SETTINGS, color: '#3b82f6', size: 2 },
+                        'callout-bubble': { ...DEFAULT_SETTINGS, color: '#000000', size: 2 }
                     }
                 }),
 

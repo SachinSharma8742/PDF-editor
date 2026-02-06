@@ -2,17 +2,17 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useEditorStore } from '../../../store/editorStore';
 import type { ToolType } from '../../../store/pdfStore';
 import {
-    MousePointerClick, Move, RectangleHorizontal, CircleDot, TypeOutline, ImagePlus,
+    MousePointerClick, Move, TypeOutline, ImagePlus,
     PenTool, Brush, EraserIcon,
-    Pipette, PlusCircle, Shapes, Ruler,
-    Triangle, Star, Pentagon, Signature, Smile, ScanText, MoveUpRight, Minus,
-    StickyNote, MessageSquare, Search
+    Pipette, PlusCircle, Ruler,
+    Signature, Smile, ScanText,
+    StickyNote, MessageSquare, Search, Shapes
 } from 'lucide-react';
 import clsx from 'clsx';
 import { SignatureModal } from './SignatureModal';
 
 // --- Configuration ---
-type ToolGroupKey = 'essentials' | 'draw' | 'shapes' | 'insert';
+type ToolGroupKey = 'essentials' | 'draw' | 'insert';
 
 interface ToolDef {
     id: ToolType;
@@ -38,28 +38,14 @@ const TOOL_GROUPS: Record<ToolGroupKey, { groupLabel: string; groupIcon?: React.
             { id: 'measure', icon: Ruler, label: 'Measure', shortcut: 'K' },
         ]
     },
-    shapes: {
-        groupLabel: 'Shapes',
-        groupIcon: Shapes,
-        tools: [
-            { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle', shortcut: 'R' },
-            { id: 'circle', icon: CircleDot, label: 'Circle', shortcut: 'O' },
-            { id: 'triangle', icon: Triangle, label: 'Triangle' },
-            { id: 'star', icon: Star, label: 'Star' },
-            { id: 'polygon', icon: Pentagon, label: 'Polygon' },
-            { id: 'ellipse', icon: CircleDot, label: 'Ellipse' },
-            { id: 'line', icon: Minus, label: 'Line', shortcut: 'L' },
-            { id: 'arrow', icon: MoveUpRight, label: 'Arrow', shortcut: 'A' },
-        ]
-    },
+
     insert: {
         groupLabel: 'Insert / Secure',
         groupIcon: PlusCircle,
         tools: [
             { id: 'text', icon: TypeOutline, label: 'Text', shortcut: 'T' },
-            { id: 'callout', icon: MessageSquare, label: 'Callout' },
-            { id: 'sticky-note', icon: StickyNote, label: 'Sticky Note' },
             { id: 'image', icon: ImagePlus, label: 'Image', shortcut: 'I' },
+            { id: 'shapes' as ToolType, icon: Shapes, label: 'Shapes' },
             { id: 'signature', icon: Signature, label: 'Signature', shortcut: 'S' },
             { id: 'stamp', icon: Smile, label: 'Stamps', shortcut: 'X' },
         ]
@@ -87,7 +73,7 @@ const getToolIcon = (tool: ToolType): React.ElementType => {
 export const EditorToolbar: React.FC = () => {
     const {
         activeTool, setActiveTool, addObject, toolPreferences, updateToolSettings,
-        addColorToHistory
+        addColorToHistory, openShapeEditor
     } = useEditorStore();
 
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -99,7 +85,6 @@ export const EditorToolbar: React.FC = () => {
     const [groupDefaults, setGroupDefaults] = useState<Record<ToolGroupKey, ToolType>>({
         essentials: 'select',
         draw: 'pen',
-        shapes: 'rectangle',
         insert: 'text'
     });
 
@@ -117,8 +102,15 @@ export const EditorToolbar: React.FC = () => {
     const handleToolSelect = (toolId: ToolType) => {
         if (toolId === 'image') {
             imageInputRef.current?.click();
+            setGroupDefaults(prev => ({ ...prev, insert: 'image' }));
         } else if (toolId === 'signature') {
             setIsSignatureModalOpen(true);
+            setGroupDefaults(prev => ({ ...prev, insert: 'signature' }));
+        } else if (toolId === ('shapes' as ToolType)) {
+            openShapeEditor('add');
+            // shapes doesn't map to a specific sub-tool id exactly in this list? 
+            // actually 'shapes' IS the id in the list.
+            setGroupDefaults(prev => ({ ...prev, insert: 'shapes' as ToolType }));
         } else {
             setActiveTool(toolId);
         }
@@ -139,19 +131,51 @@ export const EditorToolbar: React.FC = () => {
         setActiveTool('select');
     };
 
+
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
             const dataUrl = ev.target?.result as string;
-            // Open Image Studio instead of direct insert
-            useEditorStore.getState().openImageStudio(dataUrl);
 
-            // Clear input so same file can be selected again
-            if (imageInputRef.current) {
-                imageInputRef.current.value = '';
-            }
+            // Direct Add (Restoring previous behavior as requested)
+            const img = new Image();
+            img.onload = () => {
+                const aspect = img.width / img.height;
+                const baseW = 300;
+                addObject({
+                    id: crypto.randomUUID(),
+                    type: 'image',
+                    x: 100,
+                    y: 100,
+                    width: baseW,
+                    height: baseW / aspect,
+                    src: dataUrl,
+                    originalSrc: dataUrl,
+                    rotation: 0,
+                    opacity: 1
+                });
+                // Reset input
+                if (imageInputRef.current) imageInputRef.current.value = '';
+            };
+            img.onerror = () => {
+                // Fallback if image load fails
+                addObject({
+                    id: crypto.randomUUID(),
+                    type: 'image',
+                    x: 100,
+                    y: 100,
+                    width: 300,
+                    height: 200,
+                    src: dataUrl,
+                    originalSrc: dataUrl,
+                    rotation: 0,
+                    opacity: 1
+                });
+                if (imageInputRef.current) imageInputRef.current.value = '';
+            };
+            img.src = dataUrl;
         };
         reader.readAsDataURL(file);
     };
@@ -260,15 +284,7 @@ export const EditorToolbar: React.FC = () => {
                         currentDefault={groupDefaults.draw}
                         onSelect={handleToolSelect}
                     />
-                    <ToolGroup
-                        groupKey="shapes"
-                        groupLabel={TOOL_GROUPS.shapes.groupLabel}
-                        groupIcon={TOOL_GROUPS.shapes.groupIcon}
-                        tools={TOOL_GROUPS.shapes.tools}
-                        activeTool={activeTool}
-                        currentDefault={groupDefaults.shapes}
-                        onSelect={handleToolSelect}
-                    />
+
                     <div className="w-8 h-px bg-white/5 mx-auto rounded-full" />
                     <ToolGroup
                         groupKey="insert"
@@ -289,7 +305,14 @@ export const EditorToolbar: React.FC = () => {
                 onClose={() => setIsSignatureModalOpen(false)}
                 onSave={handleSignatureSave}
             />
-            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+
+            <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                style={{ position: 'absolute', width: 0, height: 0, opacity: 0, overflow: 'hidden', pointerEvents: 'none' }}
+                onChange={handleImageUpload}
+            />
             <input ref={fallbackColorInputRef} type="color" className="hidden" onChange={(e) => { updateToolSettings({ color: e.target.value }); addColorToHistory(e.target.value); }} />
         </div>
     );

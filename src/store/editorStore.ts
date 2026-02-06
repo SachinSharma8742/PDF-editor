@@ -64,8 +64,11 @@ const DEFAULT_TOOL_PREFERENCES: Record<ToolType, ToolSettings> = {
     'form-checkbox': { ...DEFAULT_SETTINGS },
     'ocr': { ...DEFAULT_SETTINGS },
     'search': { ...DEFAULT_SETTINGS },
-    'sticky-note': { ...DEFAULT_SETTINGS, color: '#fef08a' },
-    'callout': { ...DEFAULT_SETTINGS, color: '#000000', size: 14 }
+    'heart': { ...DEFAULT_SETTINGS, color: '#ef4444', size: 2 },
+    'cloud': { ...DEFAULT_SETTINGS, color: '#3b82f6', size: 2 },
+    'lightning': { ...DEFAULT_SETTINGS, color: '#eab308', size: 2 },
+    'drop': { ...DEFAULT_SETTINGS, color: '#3b82f6', size: 2 },
+    'callout-bubble': { ...DEFAULT_SETTINGS, color: '#000000', size: 2 }
 };
 
 interface EditorStore {
@@ -158,6 +161,14 @@ interface EditorStore {
     };
     openImageStudio: (src: string, objectId?: string, currentParams?: any) => void;
     closeImageStudio: () => void;
+
+    // Shape Editor State
+    shapeEditor: {
+        isOpen: boolean;
+        mode: 'add' | 'edit';
+    };
+    openShapeEditor: (mode: 'add' | 'edit') => void;
+    closeShapeEditor: () => void;
 }
 
 const deepClone = <T>(obj: T): T => {
@@ -232,6 +243,18 @@ export const useEditorStore = create<EditorStore>()(
                     initialImageSrc: null,
                     targetObjectId: null
                 }
+            })),
+
+            // Shape Editor Implementation
+            shapeEditor: {
+                isOpen: false,
+                mode: 'add'
+            },
+            openShapeEditor: (mode) => set({
+                shapeEditor: { isOpen: true, mode }
+            }),
+            closeShapeEditor: () => set(state => ({
+                shapeEditor: { ...state.shapeEditor, isOpen: false }
             })),
 
             initEditor: (page) => {

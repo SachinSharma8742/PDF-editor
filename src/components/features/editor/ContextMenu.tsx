@@ -17,7 +17,8 @@ export const ContextMenu: React.FC = () => {
         updateObject,
         deleteObjects: editorDeleteObjects,
         duplicateObject: editorDuplicateObject,
-        reorderObject: editorReorderObject
+        reorderObject: editorReorderObject,
+        openShapeEditor
     } = useEditorStore();
 
     const menuRef = useRef<HTMLDivElement>(null);
@@ -80,6 +81,24 @@ export const ContextMenu: React.FC = () => {
             <button key="del" onClick={() => handleObjectAction(() => editorDeleteObjects(data?.objectIds || []))} className="w-full text-left px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-3 text-sm transition-colors">
                 <Trash2 size={15} /> Delete
             </button>
+
+            {/* Edit Shape Option */}
+            {data?.objectIds?.length === 1 && (() => {
+                const obj = currentPage?.objects.find(o => o.id === data.objectIds[0]);
+                const isShape = obj && ['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse', 'heart', 'cloud', 'lightning', 'drop', 'callout-bubble'].includes(obj.type);
+
+                if (isShape) return (
+                    <button
+                        key="edit-shape"
+                        onClick={() => handleObjectAction(() => openShapeEditor('edit'))}
+                        className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center gap-3 text-sm transition-colors"
+                    >
+                        <Edit3 size={15} /> Edit Shape
+                    </button>
+                );
+                return null;
+            })()}
+
             <button key="dup" onClick={() => handleObjectAction(() => editorDuplicateObject(data?.objectIds || []))} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 flex items-center gap-3 text-sm transition-colors">
                 <Copy size={15} /> Duplicate
             </button>
