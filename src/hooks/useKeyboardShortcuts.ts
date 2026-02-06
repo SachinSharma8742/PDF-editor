@@ -24,34 +24,35 @@ export const useKeyboardShortcuts = () => {
             }
 
             // Shortcuts
-            if (e.key === 'Delete' || e.key === 'Backspace') {
+            const key = e.key.toLowerCase();
+            const isMeta = e.ctrlKey || e.metaKey;
+
+            // Shortcuts
+            if (key === 'delete' || key === 'backspace') {
                 if (selectedObjectIds.length > 0) {
                     e.preventDefault();
                     deleteObjects(selectedObjectIds);
                 }
-            } else if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+            } else if (isMeta && key === 'c') {
                 e.preventDefault();
                 copySelection();
-            } else if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+            } else if (isMeta && key === 'v') {
                 e.preventDefault();
                 pasteClipboard();
-            } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+            } else if (isMeta && key === 'z') {
                 e.preventDefault();
                 if (e.shiftKey) {
                     redo();
                 } else {
                     undo();
                 }
-            } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+            } else if (isMeta && key === 'y') {
                 e.preventDefault();
                 redo();
-            } else if (e.key === 'Escape') {
+            } else if (key === 'escape') {
                 e.preventDefault();
                 if (selectedObjectIds.length > 0) {
                     clearSelection();
-                } else {
-                    // Optional: cancel() to exit editor? Or just switch to select tool?
-                    // Let's just deselect for now to avoid accidental exists.
                 }
             }
         };

@@ -1,18 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Line, Transformer, Rect, Group } from 'react-konva';
+import { Stage, Layer, Line, Transformer, Rect, Group, Text } from 'react-konva';
 import Konva from 'konva';
 import { useEditorStore } from '../../../store/editorStore';
 import { usePDFStore, type PDFObject } from '../../../store/pdfStore'; // Need this for the PDF Document source
 import { PDFObjectRenderer } from './PDFObjectRenderer';
 import { CropOverlay } from './CropOverlay';
+import { TextEditorOverlay } from './TextEditorOverlay';
 import { Loader2 } from 'lucide-react';
 
 
-import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
 import { detectShape } from '../../../utils/shapeDetection';
 
 export const EditorCanvas: React.FC = () => {
-    useKeyboardShortcuts();
     // Editor State
     const {
         currentPage,
@@ -29,6 +28,11 @@ export const EditorCanvas: React.FC = () => {
         setActiveTool,
         snapToGrid,
         gridSize,
+        editingObjectId,
+        setEditingObjectId,
+        stagePosition,
+        setStagePosition,
+        previewStyle // Get preview style
     } = useEditorStore();
 
     // PDF Global State (Source)
@@ -57,6 +61,7 @@ export const EditorCanvas: React.FC = () => {
     const [selectionRect, setSelectionRect] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
 
     const toolSettings = toolPreferences[activeTool];
+    const hasSelection = selectedObjectIds.length > 0;
 
     // --- Multi-Selection Overlay Logic (Computed) ---
     const selectionBounds = React.useMemo(() => {
@@ -438,19 +443,42 @@ export const EditorCanvas: React.FC = () => {
                 });
                 // TODO: Dispatch actual OCR action
             } else if (activeTool === 'text') {
+                const defaultWidth = 250;
+                const defaultHeight = 40;
+
+                // If it's a click (small drag), place at click position with default size
+                // If it's a drag, use the dragged dimensions (finalX/Y are already top-left)
+
+                const x = finalX;
+                const y = finalY;
+                const w = isClick ? defaultWidth : Math.abs(width);
+                const h = isClick ? defaultHeight : Math.abs(height);
+
                 addObject({
                     id: crypto.randomUUID(),
                     type: 'text',
-                    x: finalX,
-                    y: finalY,
-                    text: 'Double click to edit', // Placeholder
+                    x: x,
+                    y: y,
+                    text: 'Type here',
                     fill: toolSettings.color,
                     fontSize: toolSettings.fontSize || 24,
                     fontFamily: toolSettings.fontFamily || 'Inter',
-                    width: Math.max(200, finalW),
-                    height: 50,
+                    width: Math.max(50, w),
+                    height: Math.max(50, h), // Ensure height accommodates font size
                     rotation: 0,
                     isNew: true
+                });
+                // Save to Recent Styles
+                useEditorStore.getState().addRecentTextStyle({
+                    fontSize: toolSettings.fontSize || 24,
+                    color: toolSettings.color,
+                    fontFamily: toolSettings.fontFamily || 'Inter',
+                    fontStyle: toolSettings.fontStyle || 'normal',
+                    fontWeight: toolSettings.fontWeight || 'normal',
+                    opacity: toolSettings.opacity || 1,
+                    size: 0,
+                    textAlign: 'left',
+                    eraserMode: 'standard'
                 });
             } else {
                 // Shapes & Measure
@@ -534,6 +562,12 @@ export const EditorCanvas: React.FC = () => {
         // Update the ref so next move is relative to this one
         dragStartPosRef.current = newPos;
 
+        // If dragging the STAGE (Panning)
+        if (e.target === stageRef.current) {
+            setStagePosition({ x: newX, y: newY });
+            return;
+        }
+
         // Move all OTHER selected objects
         selectedObjectIds.forEach(objId => {
             if (objId !== id) {
@@ -569,6 +603,11 @@ export const EditorCanvas: React.FC = () => {
                     });
                 }
             });
+        }
+
+        // If dragging Stage
+        if (e.target === stageRef.current) {
+            setStagePosition({ x: e.target.x(), y: e.target.y() });
         }
     };
 
@@ -905,19 +944,17 @@ export const EditorCanvas: React.FC = () => {
                 </div>
             )}
 
-            {/* Konva Stage for Objects (Z=10) */}
-
-
             {/* Editing Layer: Konva Stage */}
-            <div className="absolute inset-0 z-10">
+            <div className="absolute inset-0 z-50">
                 <Stage
                     ref={stageRef}
                     width={dimensions.width}
                     height={dimensions.height}
                     scaleX={scale * (currentPage.flipX ? -1 : 1)}
                     scaleY={scale * (currentPage.flipY ? -1 : 1)}
-                    x={currentPage.flipX ? dimensions.width : 0}
-                    y={currentPage.flipY ? dimensions.height : 0}
+                    x={(currentPage.flipX ? dimensions.width : 0) + stagePosition.x}
+                    y={(currentPage.flipY ? dimensions.height : 0) + stagePosition.y}
+                    draggable={activeTool === 'pan'}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
@@ -952,6 +989,23 @@ export const EditorCanvas: React.FC = () => {
                             </Group>
                         )}
 
+                        {/* GHOST PREVIEW (Hover Layer) */}
+                        {previewStyle && !hasSelection && (
+                            <Text
+                                x={stageRef.current ? ((-stagePosition.x + stageRef.current.width() / 2) / scale) : 100}
+                                y={stageRef.current ? ((-stagePosition.y + stageRef.current.height() / 2) / scale) : 100}
+                                text="Preview"
+                                fontSize={previewStyle.fontSize}
+                                fontFamily={previewStyle.fontFamily}
+                                fontStyle={previewStyle.fontStyle} // e.g. "italic bold"
+                                fill={previewStyle.color}
+                                opacity={0.6} // Ghostly opacity
+                                align="center"
+                                offsetX={50} // Rough center alignment
+                                offsetY={previewStyle.fontSize / 2}
+                                listening={false} // Don't interact with mouse
+                            />
+                        )}
 
                         {/* 2. Drawing Path */}
                         {isDrawing && currentPath.length > 0 && (
@@ -1031,7 +1085,8 @@ export const EditorCanvas: React.FC = () => {
                                 key={obj.id}
                                 object={{
                                     ...obj,
-                                    visible: obj.visible !== false && !(useEditorStore.getState().isCropping && selectedObjectIds.includes(obj.id))
+                                    // Only hide if cropping AND it's an image
+                                    visible: obj.visible !== false && !(useEditorStore.getState().isCropping && selectedObjectIds.includes(obj.id) && obj.type === 'image')
                                 } as PDFObject}
                                 isSelected={selectedObjectIds.includes(obj.id)}
                                 onSelect={(e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -1118,6 +1173,30 @@ export const EditorCanvas: React.FC = () => {
                         )}
                     </Layer>
                 </Stage>
+
+                {/* Text Editor Overlay via Portal (Outside Stage) */}
+                {editingObjectId && (() => {
+                    const editingObj = currentPage?.objects.find(o => o.id === editingObjectId);
+                    if (editingObj && editingObj.type === 'text') {
+                        return (
+                            <TextEditorOverlay
+                                object={editingObj}
+                                onBlur={(text) => {
+                                    updateObject(editingObj.id, { text });
+                                    setEditingObjectId(null);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Escape') {
+                                        setEditingObjectId(null);
+                                    }
+                                }}
+                                stageX={(currentPage.flipX ? dimensions.width : 0) + stagePosition.x}
+                                stageY={(currentPage.flipY ? dimensions.height : 0) + stagePosition.y}
+                            />
+                        );
+                    }
+                    return null;
+                })()}
             </div>
 
             {/* Simple Loading Indicator */}

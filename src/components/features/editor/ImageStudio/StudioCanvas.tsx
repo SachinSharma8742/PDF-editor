@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useMemo } from 'react';
-import { Stage, Layer, Image as KonvaImage, Rect, Transformer } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Path } from 'react-konva';
 import Konva from 'konva';
 import useImage from 'use-image';
 import { useImageStudioStore } from './useImageStudioStore';
@@ -11,52 +11,79 @@ interface StudioCanvasProps {
 }
 
 export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }) => {
-    const { params, activeTab, setParam } = useImageStudioStore();
+    const { params, activeTab, setParam, setDimensions } = useImageStudioStore();
     const imageRef = useRef<Konva.Image>(null);
     const transformerRef = useRef<Konva.Transformer>(null);
     const cropRectRef = useRef<Konva.Rect>(null);
     const [img] = useImage(src, 'anonymous');
 
-    // Calculate fit dimensions
+    useEffect(() => {
+        if (img) {
+            setDimensions(img.width, img.height);
+        }
+    }, [img, setDimensions]);
+
+    // Calculate fit dimensions with rotation support
     const displayDims = useMemo(() => {
-        if (!img || width === 0 || height === 0) return { width, height, scale: 1, x: 0, y: 0 };
+        if (!img || width === 0 || height === 0) return {
+            width: 0, height: 0, scale: 1, x: 0, y: 0,
+            stageCenterX: width / 2, stageCenterY: height / 2
+        };
 
         // Add padding
-        const padding = 20;
+        const padding = 48;
         const availW = width - padding * 2;
         const availH = height - padding * 2;
 
-        const scaleW = availW / img.width;
-        const scaleH = availH / img.height;
+        const isRotated = (params.rotation / 90) % 2 !== 0; // 90, 270, etc.
+
+        // If rotated 90deg, the image's height becomes its width in the container
+        const effectiveIW = isRotated ? img.height : img.width;
+        const effectiveIH = isRotated ? img.width : img.height;
+
+        const scaleW = availW / effectiveIW;
+        const scaleH = availH / effectiveIH;
         const scale = Math.min(scaleW, scaleH, 1);
 
+        // Current visual width/height
+        const visualW = img.width * scale;
+        const visualH = img.height * scale;
+
         return {
-            width: img.width * scale,
-            height: img.height * scale,
+            width: visualW,
+            height: visualH,
             scale,
-            x: (width - img.width * scale) / 2,
-            y: (height - img.height * scale) / 2
+            x: (width - visualW) / 2, // Top-left of unrotated image relative to stage (approx)
+            y: (height - visualH) / 2,
+            stageCenterX: width / 2,
+            stageCenterY: height / 2,
         };
-    }, [img, width, height]);
+    }, [img, width, height, params.rotation]);
 
-    // Apply Crop Overlay (Simple visual only for now, logic needs to map back to params.crop)
+    // Apply Crop Overlay
     useEffect(() => {
-        if (activeTab === 'crop' && transformerRef.current && cropRectRef.current) {
-            transformerRef.current.nodes([cropRectRef.current]);
-            transformerRef.current.getLayer()?.batchDraw();
-        }
-    }, [activeTab]);
+        if (activeTab === 'crop') {
+            // Auto-initialize crop if valid image
+            if (!params.crop && img) {
+                setParam('crop', { x: 0, y: 0, width: img.width, height: img.height });
+            }
 
-    // Apply Filters
+            if (transformerRef.current && cropRectRef.current) {
+                // We need to detach first to avoid issues
+                transformerRef.current.nodes([]);
+                // Then attach
+                transformerRef.current.nodes([cropRectRef.current]);
+                transformerRef.current.getLayer()?.batchDraw();
+            }
+        }
+    }, [activeTab, params.crop, img]);
+
     // Apply Filters
     useEffect(() => {
         if (!img || !imageRef.current) return;
 
         const node = imageRef.current;
         const activeFilters: any[] = [];
-
-        // Debug log
-        // console.log("StudioCanvas: Applying params", params);
 
         // 1. Basic Adjustments
         if (params.brightness !== 0) {
@@ -89,16 +116,12 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
         if (params.invert) activeFilters.push(Konva.Filters.Invert);
         if (params.sepia) activeFilters.push(Konva.Filters.Sepia);
 
-        // Pixelate (if added) or others...
-
         // Apply
         node.filters(activeFilters);
 
         // Clear previous cache to avoid artifacts or errors
         node.clearCache();
 
-        // Only cache if we have filters or we need to cache for some other reason
-        // But for consistency we always cache here to ensure filters appear
         if (activeFilters.length > 0) {
             try {
                 node.cache({
@@ -121,10 +144,13 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
                 {/* Checkerboard Background for Transparency */}
                 <KonvaImage
                     image={checkerboardPattern(20)}
-                    x={displayDims.x}
-                    y={displayDims.y}
+                    x={displayDims.stageCenterX}
+                    y={displayDims.stageCenterY}
                     width={displayDims.width}
                     height={displayDims.height}
+                    offsetX={displayDims.width / 2}
+                    offsetY={displayDims.height / 2}
+                    rotation={params.rotation} // Rotate background too
                     fillPatternRepeat="repeat"
                     opacity={0.5}
                 />
@@ -142,9 +168,9 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
                     offsetX={displayDims.width / 2}
                     offsetY={displayDims.height / 2}
 
-                    // We need to adjust X/Y to account for pivot offset
-                    x={displayDims.x + (displayDims.width / 2)}
-                    y={displayDims.y + (displayDims.height / 2)}
+                    // Place at center of stage
+                    x={displayDims.stageCenterX}
+                    y={displayDims.stageCenterY}
 
                     scaleX={(params.flipX ? -1 : 1)}
                     scaleY={(params.flipY ? -1 : 1)}
@@ -153,74 +179,82 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
                 {/* Crop Overlay */}
                 {activeTab === 'crop' && (
                     <>
-                        <Rect
-                            ref={cropRectRef}
-                            x={params.crop ? (displayDims.x + params.crop.x * displayDims.scale) : displayDims.x}
-                            y={params.crop ? (displayDims.y + params.crop.y * displayDims.scale) : displayDims.y}
-                            width={params.crop ? (params.crop.width * displayDims.scale) : displayDims.width}
-                            height={params.crop ? (params.crop.height * displayDims.scale) : displayDims.height}
-                            stroke="white"
-                            strokeWidth={2}
-                            dash={[10, 5]}
-                            draggable
-                            dragBoundFunc={(pos: Konva.Vector2d) => {
-                                // Simple bounds check relative to the image display area
-                                const x = Math.max(displayDims.x, Math.min(pos.x, displayDims.x + displayDims.width - (cropRectRef.current?.width() || 0)));
-                                const y = Math.max(displayDims.y, Math.min(pos.y, displayDims.y + displayDims.height - (cropRectRef.current?.height() || 0)));
-                                return { x, y };
-                            }}
-                            onTransformEnd={() => {
-                                if (cropRectRef.current) {
-                                    const node = cropRectRef.current;
-                                    const scaleX = node.scaleX();
-                                    const scaleY = node.scaleY();
+                        <Group
+                            x={displayDims.stageCenterX}
+                            y={displayDims.stageCenterY}
+                            offsetX={displayDims.width / 2}
+                            offsetY={displayDims.height / 2}
+                            rotation={params.rotation}
+                            scaleX={(params.flipX ? -1 : 1)}
+                            scaleY={(params.flipY ? -1 : 1)}
+                        >
+                            {/* Dark Tint Overlay with Hole */}
+                            <Path
+                                data={`M 0 0 H ${displayDims.width} V ${displayDims.height} H 0 Z M ${(params.crop ? params.crop.x * displayDims.scale : 0)} ${(params.crop ? params.crop.y * displayDims.scale : 0)} H ${(params.crop ? (params.crop.x + params.crop.width) * displayDims.scale : displayDims.width)} V ${(params.crop ? (params.crop.y + params.crop.height) * displayDims.scale : displayDims.height)} H ${(params.crop ? params.crop.x * displayDims.scale : 0)} Z`}
+                                fill="rgba(0, 0, 0, 0.6)"
+                                fillRule="evenodd" // Important for hole
+                                listening={false} // Don't block interactions
+                            />
 
-                                    // Reset scale to 1 and adjust width/height to avoid compounding scales
-                                    node.scaleX(1);
-                                    node.scaleY(1);
-                                    node.width(node.width() * scaleX);
-                                    node.height(node.height() * scaleY);
+                            <Rect
+                                ref={cropRectRef}
+                                x={params.crop ? params.crop.x * displayDims.scale : 0}
+                                y={params.crop ? params.crop.y * displayDims.scale : 0}
+                                width={params.crop ? params.crop.width * displayDims.scale : displayDims.width}
+                                height={params.crop ? params.crop.height * displayDims.scale : displayDims.height}
+                                stroke="white"
+                                strokeWidth={2 / displayDims.scale} // Counter-scale stroke? Or just 2
+                                dash={[10, 5]}
+                                draggable
+                                dragBoundFunc={(pos) => {
+                                    // POS is absolute global coordinates.
+                                    // This is tricky inside a transformed group.
+                                    // Easier: Don't implement dragBoundFunc strictly or use local conversion.
+                                    // For now, let it be loose.
+                                    return pos;
+                                }}
+                                onTransformEnd={() => {
+                                    if (cropRectRef.current) {
+                                        const node = cropRectRef.current;
+                                        const scaleX = node.scaleX();
+                                        const scaleY = node.scaleY();
 
-                                    // Calculate relative crop
-                                    const relativeX = (node.x() - displayDims.x) / displayDims.scale;
-                                    const relativeY = (node.y() - displayDims.y) / displayDims.scale;
-                                    const relativeW = node.width() / displayDims.scale;
-                                    const relativeH = node.height() / displayDims.scale;
+                                        // Reset scale to 1
+                                        node.scaleX(1);
+                                        node.scaleY(1);
+                                        node.width(node.width() * scaleX);
+                                        node.height(node.height() * scaleY);
 
-                                    setParam('crop', {
-                                        x: Math.max(0, relativeX),
-                                        y: Math.max(0, relativeY),
-                                        width: relativeW,
-                                        height: relativeH
-                                    });
-                                }
-                            }}
-                            onDragEnd={() => {
-                                if (cropRectRef.current) {
-                                    const node = cropRectRef.current;
-                                    const relativeX = (node.x() - displayDims.x) / displayDims.scale;
-                                    const relativeY = (node.y() - displayDims.y) / displayDims.scale;
-                                    const relativeW = node.width() / displayDims.scale;
-                                    const relativeH = node.height() / displayDims.scale;
-
-                                    setParam('crop', {
-                                        x: Math.max(0, relativeX),
-                                        y: Math.max(0, relativeY),
-                                        width: relativeW,
-                                        height: relativeH
-                                    });
-                                }
-                            }}
-                        />
+                                        // Store as relative to image pixels?
+                                        // node.x() is local to the Group (which matches Image).
+                                        // So node.x() / displayDims.scale = Image Pixels X.
+                                        setParam('crop', {
+                                            x: node.x() / displayDims.scale,
+                                            y: node.y() / displayDims.scale,
+                                            width: node.width() / displayDims.scale,
+                                            height: node.height() / displayDims.scale
+                                        });
+                                    }
+                                }}
+                                onDragEnd={() => {
+                                    if (cropRectRef.current) {
+                                        const node = cropRectRef.current;
+                                        // node.x() is local
+                                        setParam('crop', {
+                                            x: node.x() / displayDims.scale,
+                                            y: node.y() / displayDims.scale,
+                                            width: node.width() / displayDims.scale,
+                                            height: node.height() / displayDims.scale
+                                        });
+                                    }
+                                }}
+                            />
+                        </Group>
                         <Transformer
                             ref={transformerRef}
                             rotateEnabled={false}
-                            boundBoxFunc={(oldBox: any, newBox: any) => {
-                                // limit resize
-                                if (newBox.width < 5 || newBox.height < 5) {
-                                    return oldBox;
-                                }
-                                // Constrain to image bounds could go here too for perfection
+                            boundBoxFunc={(oldBox, newBox) => {
+                                if (newBox.width < 5 || newBox.height < 5) return oldBox;
                                 return newBox;
                             }}
                         />

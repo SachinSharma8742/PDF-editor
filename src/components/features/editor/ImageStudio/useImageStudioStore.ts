@@ -42,18 +42,21 @@ export const DEFAULT_EDIT_PARAMS: ImageEditParams = {
 
 interface ImageStudioStore {
     params: ImageEditParams;
-    activeTab: 'adjust' | 'filter' | 'effects' | 'crop' | 'mask' | 'settings';
+    activeTab: 'adjust' | 'transform' | 'crop' | 'effects' | 'mask' | 'settings';
+    dimensions: { width: number; height: number };
 
     // Actions
     setParam: (key: keyof ImageEditParams, value: any) => void;
     resetParams: () => void;
     setAllParams: (params: ImageEditParams) => void;
     setActiveTab: (tab: ImageStudioStore['activeTab']) => void;
+    setDimensions: (width: number, height: number) => void;
 }
 
 export const useImageStudioStore = create<ImageStudioStore>((set) => ({
     params: { ...DEFAULT_EDIT_PARAMS },
     activeTab: 'adjust',
+    dimensions: { width: 0, height: 0 },
 
     setParam: (key, value) => set(state => ({
         params: { ...state.params, [key]: value }
@@ -63,5 +66,7 @@ export const useImageStudioStore = create<ImageStudioStore>((set) => ({
 
     setAllParams: (params) => set({ params: { ...params } }),
 
-    setActiveTab: (tab) => set({ activeTab: tab })
+    setActiveTab: (tab) => set({ activeTab: tab }),
+
+    setDimensions: (width, height) => set({ dimensions: { width, height } })
 }));

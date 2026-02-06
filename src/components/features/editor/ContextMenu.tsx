@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { usePDFStore } from '../../../store/pdfStore';
 import { useEditorStore } from '../../../store/editorStore';
-import { Copy, Trash2, ArrowUp, ArrowDown, Edit3, ClipboardPaste, Split, StickyNote, RefreshCw, Ruler } from 'lucide-react';
+import { Copy, Trash2, ArrowUp, ArrowDown, Edit3, ClipboardPaste, Split, StickyNote, RefreshCw, Ruler, Image } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 
@@ -81,6 +81,23 @@ export const ContextMenu: React.FC = () => {
             <button key="del" onClick={() => handleObjectAction(() => editorDeleteObjects(data?.objectIds || []))} className="w-full text-left px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-3 text-sm transition-colors">
                 <Trash2 size={15} /> Delete
             </button>
+
+            {/* Edit Image Option */}
+            {data?.objectIds?.length === 1 && (() => {
+                const obj = currentPage?.objects.find(o => o.id === data.objectIds[0]);
+                if (obj && obj.type === 'image' && obj.src) {
+                    return (
+                        <button
+                            key="edit-image"
+                            onClick={() => handleObjectAction(() => useEditorStore.getState().openImageStudio(obj.src!, obj.id, (obj as any).editParams))}
+                            className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center gap-3 text-sm transition-colors"
+                        >
+                            <Image size={15} /> Edit Image
+                        </button>
+                    );
+                }
+                return null;
+            })()}
 
             {/* Edit Shape Option */}
             {data?.objectIds?.length === 1 && (() => {

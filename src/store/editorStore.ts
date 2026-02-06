@@ -27,6 +27,24 @@ export interface ToolSettings {
     dash?: number[];
 }
 
+export interface TextPreset {
+    id: 'heading' | 'subheading' | 'body' | 'caption';
+    name: string;
+    fontSize: number;
+    fontWeight: string;
+    fontFamily: string;
+    opacity: number;
+    fontStyle: string;
+    color?: string; // Optional override
+}
+
+export const TEXT_PRESETS: TextPreset[] = [
+    { id: 'heading', name: 'Heading', fontSize: 32, fontWeight: 'bold', fontFamily: 'Inter', opacity: 1, fontStyle: 'normal' },
+    { id: 'subheading', name: 'Subheading', fontSize: 24, fontWeight: '600', fontFamily: 'Inter', opacity: 1, fontStyle: 'normal' },
+    { id: 'body', name: 'Body Text', fontSize: 16, fontWeight: 'normal', fontFamily: 'Inter', opacity: 1, fontStyle: 'normal' },
+    { id: 'caption', name: 'Caption', fontSize: 12, fontWeight: 'normal', fontFamily: 'Inter', opacity: 0.7, fontStyle: 'italic' }
+];
+
 const DEFAULT_SETTINGS: ToolSettings = {
     color: '#000000',
     size: 2,
@@ -68,7 +86,9 @@ const DEFAULT_TOOL_PREFERENCES: Record<ToolType, ToolSettings> = {
     'cloud': { ...DEFAULT_SETTINGS, color: '#3b82f6', size: 2 },
     'lightning': { ...DEFAULT_SETTINGS, color: '#eab308', size: 2 },
     'drop': { ...DEFAULT_SETTINGS, color: '#3b82f6', size: 2 },
-    'callout-bubble': { ...DEFAULT_SETTINGS, color: '#000000', size: 2 }
+    'callout-bubble': { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
+    'sticky-note': { ...DEFAULT_SETTINGS, color: '#facc15' },
+    'callout': { ...DEFAULT_SETTINGS, color: '#000000' }
 };
 
 interface EditorStore {
@@ -81,6 +101,9 @@ interface EditorStore {
     activeTool: ToolType;
     toolPreferences: Record<ToolType, ToolSettings>;
     selectedObjectIds: string[];
+    recentColors: string[];
+    recentTextStyles: ToolSettings[]; // Track last used text styles
+    previewStyle: ToolSettings | null; // For hover previews
 
     history: EditorHistory;
 
@@ -110,10 +133,16 @@ interface EditorStore {
     // History
     undo: () => void;
     redo: () => void;
+
+    // Text Actions
+    applyTextPreset: (preset: TextPreset) => void;
+    addRecentTextStyle: (style: ToolSettings) => void;
+    setPreviewStyle: (style: ToolSettings | null) => void;
+
+    // Internal
     saveToHistory: () => void;
 
     // Eyedropper / Color Memory
-    recentColors: string[];
     addColorToHistory: (color: string) => void;
 
     groupObjects: (objectIds: string[]) => void;
@@ -132,6 +161,10 @@ interface EditorStore {
 
     isCropping: boolean;
     setCropping: (isCropping: boolean) => void;
+
+    // Canvas State (Pan)
+    stagePosition: { x: number; y: number };
+    setStagePosition: (pos: { x: number; y: number }) => void;
 
     // Grid Snap
     snapToGrid: boolean;
@@ -169,6 +202,9 @@ interface EditorStore {
     };
     openShapeEditor: (mode: 'add' | 'edit') => void;
     closeShapeEditor: () => void;
+
+    editingObjectId: string | null;
+    setEditingObjectId: (id: string | null) => void;
 }
 
 const deepClone = <T>(obj: T): T => {
@@ -189,7 +225,9 @@ export const useEditorStore = create<EditorStore>()(
             toolPreferences: DEFAULT_TOOL_PREFERENCES,
             selectedObjectIds: [],
             recentColors: ['#000000', '#df4b26', '#10B981', '#3B82F6', '#6366F1', '#ffffff', '#ef4444', '#f59e0b', '#8B5CF6'], // Initial palette (9 colors)
+            recentTextStyles: [],
             clipboard: [],
+            previewStyle: null,
 
             history: { past: [], future: [] },
 
@@ -197,6 +235,38 @@ export const useEditorStore = create<EditorStore>()(
                 const newRecent = [color, ...state.recentColors.filter(c => c !== color)].slice(0, 9);
                 return { recentColors: newRecent };
             }),
+
+            applyTextPreset: (preset) => set((state) => {
+                const newSettings: Partial<ToolSettings> = {
+                    fontSize: preset.fontSize,
+                    fontWeight: preset.fontWeight,
+                    fontFamily: preset.fontFamily,
+                    opacity: preset.opacity,
+                    fontStyle: preset.fontStyle
+                };
+                if (preset.color) newSettings.color = preset.color;
+
+                // Update tool preferences
+                const newPrefs = { ...state.toolPreferences };
+                newPrefs.text = { ...newPrefs.text, ...newSettings };
+                return { toolPreferences: newPrefs };
+            }),
+
+            addRecentTextStyle: (style) => set((state) => {
+                // Check if style already exists at top
+                const current = state.recentTextStyles[0];
+                if (current &&
+                    current.fontSize === style.fontSize &&
+                    current.fontFamily === style.fontFamily &&
+                    current.fontWeight === style.fontWeight &&
+                    current.color === style.color
+                ) return {};
+
+                const newRecent = [style, ...state.recentTextStyles].slice(0, 3);
+                return { recentTextStyles: newRecent };
+            }),
+
+            setPreviewStyle: (style) => set({ previewStyle: style }),
 
             contextMenu: { isOpen: false, x: 0, y: 0, type: null },
 
@@ -210,6 +280,9 @@ export const useEditorStore = create<EditorStore>()(
 
             isCropping: false,
             setCropping: (isCropping) => set({ isCropping }),
+
+            stagePosition: { x: 0, y: 0 },
+            setStagePosition: (pos) => set({ stagePosition: pos }),
 
             snapToGrid: false,
             gridSize: 20,
@@ -257,9 +330,16 @@ export const useEditorStore = create<EditorStore>()(
                 shapeEditor: { ...state.shapeEditor, isOpen: false }
             })),
 
+            editingObjectId: null,
+            setEditingObjectId: (id) => set({ editingObjectId: id }),
+
             initEditor: (page) => {
+                // Fetch the LATEST page state from the main store to ensure sync
+                // The passed 'page' might be stale if it came from a closure or older render
+                const latestPage = usePDFStore.getState().pages.find(p => p.id === page.id) || page;
+
                 // Deep clone the page to ensure isolation
-                const pageClone = deepClone(page);
+                const pageClone = deepClone(latestPage);
                 set({
                     isActive: true,
                     originalPageId: page.id,
@@ -404,7 +484,7 @@ export const useEditorStore = create<EditorStore>()(
                             // Add to objects instead of paths. 
                             // We can keep paths array empty or ignore it, 
                             // but let's just not add to it to avoid duplication.
-                            objects: [...state.currentPage.objects, newObject],
+                            objects: [...(state.currentPage.objects || []), newObject],
                             isEdited: true
                         }
                     };
@@ -431,7 +511,7 @@ export const useEditorStore = create<EditorStore>()(
                     return {
                         currentPage: {
                             ...state.currentPage,
-                            objects: [...state.currentPage.objects, object],
+                            objects: [...(state.currentPage.objects || []), object],
                             isEdited: true
                         }
                     };
@@ -705,7 +785,7 @@ export const useEditorStore = create<EditorStore>()(
                 set(state => ({
                     currentPage: {
                         ...state.currentPage!,
-                        objects: [...state.currentPage!.objects, ...newObjects]
+                        objects: [...(state.currentPage!.objects || []), ...newObjects]
                     },
                     selectedObjectIds: newObjects.map(o => o.id)
                 }));

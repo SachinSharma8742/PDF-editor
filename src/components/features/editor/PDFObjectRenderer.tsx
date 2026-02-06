@@ -180,28 +180,35 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
     isSelectionEnabled = true
 }) => {
     const groupRef = useRef<any>(null);
-    const [isEditing, setIsEditing] = React.useState(object.isNew);
+    const {
+        editingObjectId,
+        setEditingObjectId,
+        openImageStudio,
+        openShapeEditor
+    } = useEditorStore();
+
+    const isEditing = editingObjectId === object.id;
     const { calibration } = usePDFStore();
 
     // Debug Log
-    console.log(`[Renderer] ${object.id} (${object.type}) Opacity:`, object.opacity);
+    // console.log(`[Renderer] ${object.id} (${object.type}) Opacity:`, object.opacity);
 
 
     // If it's a new text object, focus it immediately
     useEffect(() => {
         if (object.type === 'text' && object.isNew && !isEditing) {
-            setIsEditing(true);
+            setEditingObjectId(object.id);
             onChange?.({ isNew: false });
         }
-    }, [object.isNew, object.type, isEditing, onChange]);
+    }, [object.isNew, object.type, isEditing, onChange, object.id, setEditingObjectId]);
 
     const handleObjectDblClick = () => {
         if (object.type === 'text') {
-            setIsEditing(true);
+            setEditingObjectId(object.id);
         } else if (object.type === 'image') {
             // Re-open Image Studio
             if (object.originalSrc) {
-                useEditorStore.getState().openImageStudio(
+                openImageStudio(
                     object.originalSrc,
                     object.id,
                     object.editParams
@@ -211,21 +218,7 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                 useEditorStore.getState().setCropping(true);
             }
         } else if (['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse', 'heart', 'cloud', 'lightning', 'drop', 'callout-bubble'].includes(object.type)) {
-            useEditorStore.getState().openShapeEditor('edit');
-        }
-    };
-
-    const handleTextBlur = (newText: string) => {
-        setIsEditing(false);
-        onChange?.({ text: newText });
-    };
-
-    const handleTextKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.currentTarget.blur();
-        }
-        if (e.key === 'Escape') {
-            setIsEditing(false);
+            openShapeEditor('edit');
         }
     };
 
@@ -329,7 +322,7 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                         // Curved Text using TextPath
                         <TextPath
                             {...innerProps}
-                            text={isEditing ? '' : (object.text || " ")}
+                            text={object.text || " "}
                             fontSize={object.fontSize || 16}
                             fontFamily={object.fontFamily || 'Inter'}
                             fill={object.fill || 'black'}
@@ -341,8 +334,8 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                             fontStyle={object.fontStyle}
                             textDecoration={object.textDecoration}
                             align={object.align || 'left'}
-                            opacity={object.opacity ?? 1}
-                            visible={!isEditing}
+                            opacity={isEditing ? 0.3 : (object.opacity ?? 1)}
+                            visible={true}
 
                             // Spacing
                             letterSpacing={object.letterSpacing || 0}
@@ -356,7 +349,7 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     ) : (
                         <Text
                             {...innerProps}
-                            text={isEditing ? '' : (object.text || " ")}
+                            text={object.text || " "}
                             fontSize={object.fontSize || 16}
                             fontFamily={object.fontFamily || 'Inter'}
                             fill={object.fill || 'black'}
@@ -373,8 +366,8 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                             textDecoration={object.textDecoration}
                             align={object.align || 'left'}
                             verticalAlign="middle"
-                            opacity={object.opacity ?? 1}
-                            visible={!isEditing}
+                            opacity={isEditing ? 0.3 : (object.opacity ?? 1)}
+                            visible={true}
 
                             // Spacing
                             letterSpacing={object.letterSpacing || 0}
@@ -386,14 +379,6 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                             shadowOffsetX={object.shadowOffsetX}
                             shadowOffsetY={object.shadowOffsetY}
                             shadowOpacity={object.shadowOpacity}
-                        />
-                    )}
-
-                    {isEditing && (
-                        <TextEditorOverlay
-                            object={object}
-                            onBlur={handleTextBlur}
-                            onKeyDown={handleTextKeyDown}
                         />
                     )}
                 </>
@@ -647,74 +632,4 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
     );
 };
 
-// --- Text Editor Overlay ---
-const TextEditorOverlay: React.FC<{
-    object: PDFObject;
-    onBlur: (text: string) => void;
-    onKeyDown: (e: any) => void;
-}> = ({ object, onBlur, onKeyDown }) => {
-    const { scale } = useEditorStore();
-    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-    const [val, setVal] = React.useState(object.text || '');
-
-    useEffect(() => {
-        if (textareaRef.current) {
-            textareaRef.current.focus();
-            textareaRef.current.setSelectionRange(val.length, val.length);
-        }
-    }, []);
-
-    const parentContainer = document.getElementById('editor-workspace');
-    if (!parentContainer) return null;
-
-    const top = object.y * scale;
-    const left = object.x * scale;
-    const width = (object.width || 200) * scale;
-    const height = (object.height || 100) * scale;
-
-    const style: React.CSSProperties = {
-        position: 'absolute',
-        top: `${top}px`,
-        left: `${left}px`,
-        width: `${width}px`,
-        height: `${height}px`,
-        fontSize: `${(object.fontSize || 16) * scale}px`,
-        fontFamily: object.fontFamily || 'Arial',
-        fontWeight: object.fontWeight as any,
-        fontStyle: object.fontStyle as any,
-        color: object.fill || 'black',
-        textAlign: object.align || 'left',
-        background: 'transparent',
-        border: '1px dashed #3b82f6',
-        outline: 'none',
-        resize: 'none',
-        overflow: 'hidden',
-        padding: '0',
-        margin: '0',
-        lineHeight: '1.2',
-        zIndex: 200,
-        transform: `rotate(${object.rotation || 0}deg)`,
-        transformOrigin: '0 0'
-    };
-
-    return createPortal(
-        <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none'
-        }}>
-            <textarea
-                ref={textareaRef}
-                style={{ ...style, pointerEvents: 'auto' }}
-                value={val}
-                onChange={(e) => setVal(e.target.value)}
-                onBlur={() => onBlur(val)}
-                onKeyDown={onKeyDown}
-            />
-        </div>,
-        parentContainer
-    );
-};
+// TextEditorOverlay removed - moved to separate file and outside Konva tree

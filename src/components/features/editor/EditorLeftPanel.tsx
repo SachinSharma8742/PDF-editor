@@ -11,6 +11,7 @@ import { CalibrationPanel } from './CalibrationPanel';
 import { LeftColorPanel } from './LeftColorPanel';
 import { PageEffectsPanel } from './PageEffectsPanel';
 import { ImageEditorPanel } from './ImageEditorPanel';
+import { TextPropertyPanel } from './properties/TextPropertyPanel';
 
 import { SearchReplacePanel } from './SearchReplacePanel';
 
@@ -72,14 +73,15 @@ export const EditorLeftPanel: React.FC = () => {
 
     if (isCollapsed) {
         return (
-            <div className="w-0 overflow-hidden transition-all duration-300 relative border-r border-white/5 bg-[#1e1e20]">
+            <div className="w-5 transition-all duration-300 relative border-r border-white/5 bg-[#1e1e20] flex flex-col items-center py-4 group hover:bg-white/5 cursor-pointer" onClick={() => setIsCollapsed(false)}>
                 <button
-                    onClick={() => setIsCollapsed(false)}
-                    className="absolute left-0 top-4 z-40 p-1.5 bg-blue-600 text-white rounded-r-md shadow-lg border border-white/10 hover:bg-blue-500 transition-colors"
+                    onClick={(e) => { e.stopPropagation(); setIsCollapsed(false); }}
+                    className="p-1 rounded-md text-zinc-500 hover:text-white transition-colors mt-1"
                     title="Open Sidebar"
                 >
                     <ChevronRight size={14} />
                 </button>
+                <div className="h-full w-[1px] bg-white/5 my-2 group-hover:bg-blue-500/50 transition-colors" />
             </div>
         );
     }
@@ -101,12 +103,20 @@ export const EditorLeftPanel: React.FC = () => {
                         "text-[11px] font-bold uppercase tracking-widest",
                         isLibraryTool ? "text-blue-400" : "text-zinc-300"
                     )}>
-                        {activeTab === 'stamps' ? 'Stamp Library' :
+                        {activeTab === 'stamps' ? 'Decorations' :
                             activeTab === 'ocr' ? 'AI OCR Engine' :
                                 activeTab === 'scale' ? 'Measurement' :
                                     activeTab === 'image-editor' ? 'Image Studio' :
                                         activeTab === 'page-effects' ? 'Page Effects' :
-                                            activeTab === 'advanced' ? 'Advanced Tools' : 'Properties'}
+                                            activeTab === 'advanced' ? 'Advanced Tools' :
+                                                // Dynamic Properties Title
+                                                (activeTool === 'text' || (hasSelection && selectedObj?.type === 'text')) ? 'Text Properties' :
+                                                    (activeTool === 'select' && hasSelection) ? (
+                                                        selectedObj?.type === 'rectangle' ? 'Rectangle Properties' :
+                                                            selectedObj?.type === 'circle' ? 'Circle Properties' :
+                                                                selectedObj?.type === 'image' ? 'Image Properties' :
+                                                                    'Properties'
+                                                    ) : 'Colors & Stroke'}
                     </h2>
                 </div>
                 <button
@@ -120,17 +130,23 @@ export const EditorLeftPanel: React.FC = () => {
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#1e1e20]">
                 {activeTab === 'properties' ? (
-                    <LeftColorPanel
-                        activeTool={activeTool}
-                        toolPreferences={toolPreferences}
-                        updateToolSettings={updateToolSettings}
-                        hasSelection={hasSelection}
-                        selectedObj={selectedObj}
-                        recentColors={recentColors}
-                        onColorPick={addColorToHistory}
-                        selectedObjectIds={selectedObjectIds}
-                        updateObject={updateObject}
-                    />
+                    (activeTool === 'text' || (hasSelection && selectedObj?.type === 'text')) ? (
+                        <div className="p-4">
+                            <TextPropertyPanel mode={hasSelection ? 'selection' : 'tool'} />
+                        </div>
+                    ) : (
+                        <LeftColorPanel
+                            activeTool={activeTool}
+                            toolPreferences={toolPreferences}
+                            updateToolSettings={updateToolSettings}
+                            hasSelection={hasSelection}
+                            selectedObj={selectedObj}
+                            recentColors={recentColors}
+                            onColorPick={addColorToHistory}
+                            selectedObjectIds={selectedObjectIds}
+                            updateObject={updateObject}
+                        />
+                    )
                 ) : activeTab === 'image-editor' ? (
                     <ImageEditorPanel />
                 ) : activeTab === 'page-effects' ? (

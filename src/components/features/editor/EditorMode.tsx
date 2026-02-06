@@ -9,63 +9,18 @@ import { usePDFStore, type ToolType } from '../../../store/pdfStore';
 import { loadPDF } from '../../../utils/pdfOps';
 import { ImageStudio } from './ImageStudio/ImageStudio';
 import { ShapeEditorModal } from './ShapeEditorModal';
+import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
 
 export const EditorMode: React.FC = () => {
     const {
         selectedObjectIds
     } = useEditorStore();
 
-    // Keyboard Shortcuts
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            // Don't trigger if user is typing in an input or textarea
-            if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+    // Use centralized hook for shortcuts
+    useKeyboardShortcuts();
 
-            const key = e.key.toLowerCase();
-            const isMeta = e.metaKey || e.ctrlKey;
-
-            // Undo: Ctrl/Cmd + Z
-            if (isMeta && key === 'z' && !e.shiftKey) {
-                e.preventDefault();
-                useEditorStore.getState().undo();
-                return;
-            }
-
-            // Redo: Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y
-            if ((isMeta && key === 'z' && e.shiftKey) || (isMeta && key === 'y')) {
-                e.preventDefault();
-                useEditorStore.getState().redo();
-                return;
-            }
-
-            const toolMap: Record<string, string> = {
-                'v': 'select',
-                'h': 'pan',
-                'p': 'pen',
-                'm': 'highlighter',
-                'e': 'eraser',
-                'k': 'measure',
-                'r': 'rectangle',
-                'o': 'circle',
-                't': 'text',
-                'x': 'stamp',
-            };
-
-            if (!isMeta && !e.altKey && toolMap[key]) {
-                useEditorStore.getState().setActiveTool(toolMap[key] as ToolType);
-                return;
-            }
-
-            // Deletion
-            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObjectIds.length > 0) {
-                e.preventDefault();
-                useEditorStore.getState().deleteObjects(selectedObjectIds);
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedObjectIds]);
+    // Legacy/Duplicate listeners removed in favor of useKeyboardShortcuts
+    // The previous useEffect block is deleted.
 
     // Prevent body scroll when editor is active
     useEffect(() => {
@@ -124,7 +79,7 @@ export const EditorMode: React.FC = () => {
                 <EditorLeftPanel />
 
                 {/* Primary Canvas Container - Full remaining width */}
-                <main className="flex-1 relative overflow-auto bg-[#09090b] shadow-inner flex items-center justify-center">
+                <main id="editor-workspace" className="flex-1 relative overflow-auto bg-[#09090b] shadow-inner flex items-center justify-center">
                     <EditorCanvas />
                 </main>
 

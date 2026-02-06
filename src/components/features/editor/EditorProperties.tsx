@@ -4,11 +4,12 @@ import {
     ArrowLeftToLine, ArrowRightToLine, AlignHorizontalJustifyCenter,
     ArrowUpToLine, ArrowDownToLine, AlignVerticalJustifyCenter,
     Trash2, Layers, Copy, Group, Ungroup,
-    Type, Image as ImageIcon, Box, PenTool
+    Type, Image as ImageIcon, Box, PenTool,
+    Zap, PaintBucket, LayoutTemplate, Scaling
 } from 'lucide-react';
 import type { PDFObject } from '../../../store/pdfStore';
-import { PropertyLabel, ActionButton, SimpleInput, Slider, ColorGrid } from './properties/PropertyComponents';
-import { TextPropertyPanel } from './properties/TextPropertyPanel';
+import { ActionButton, SimpleInput, Slider, ColorGrid } from './properties/PropertyComponents';
+import { CollapsibleSection } from './properties/CollapsibleSection';
 
 import { PagePropertyPanel } from './properties/PagePropertyPanel';
 
@@ -41,10 +42,6 @@ export const EditorProperties: React.FC = () => {
     }, [currentPage, selectedObjectIds]);
 
     const hasSelection = selectedObjects.length > 0;
-
-
-
-    // ...
 
     // --- RENDER NO SELECTION (Simple Page Properties) ---
     if (!hasSelection) {
@@ -158,109 +155,117 @@ export const EditorProperties: React.FC = () => {
                 </div>
             </div>
 
-            <div className="p-6 space-y-10">
+            <div className="p-6 space-y-2">
                 {/* Actions Section */}
-                <div className="space-y-4">
-                    <PropertyLabel label="Quick Actions" />
-                    <div className="grid grid-cols-2 gap-2">
-                        <ActionButton
-                            label="Clone"
-                            icon={<Copy size={13} />}
-                            onClick={() => duplicateObject(selectedObjectIds)}
-                        />
-                        <ActionButton
-                            label="Delete"
-                            icon={<Trash2 size={13} />}
-                            variant="danger"
-                            onClick={() => deleteObjects(selectedObjectIds)}
-                        />
+                <CollapsibleSection
+                    title="Quick Actions"
+                    icon={<Zap size={12} />}
+                    storageKey="quick_actions"
+                >
+                    <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                            <ActionButton
+                                label="Clone"
+                                icon={<Copy size={13} />}
+                                onClick={() => duplicateObject(selectedObjectIds)}
+                            />
+                            <ActionButton
+                                label="Delete"
+                                icon={<Trash2 size={13} />}
+                                variant="danger"
+                                onClick={() => deleteObjects(selectedObjectIds)}
+                            />
+                        </div>
+                        {isMulti && (
+                            <ActionButton
+                                label={canUngroup ? "Ungroup" : "Group Selection"}
+                                icon={canUngroup ? <Ungroup size={13} /> : <Group size={13} />}
+                                onClick={() => canUngroup ? ungroupObjects(selectedObjectIds) : groupObjects(selectedObjectIds)}
+                                className="w-full"
+                            />
+                        )}
                     </div>
-                    {isMulti && (
-                        <ActionButton
-                            label={canUngroup ? "Ungroup" : "Group Selection"}
-                            icon={canUngroup ? <Ungroup size={13} /> : <Group size={13} />}
-                            onClick={() => canUngroup ? ungroupObjects(selectedObjectIds) : groupObjects(selectedObjectIds)}
-                            className="w-full"
-                        />
-                    )}
-                </div>
+                </CollapsibleSection>
 
                 {/* Style & Content Controls */}
                 {!isShape && (
-                    <div className="space-y-4">
-                        <PropertyLabel label="Style & Appearance" />
-
-                        {/* Opacity - Common to all */}
-                        <div className="space-y-2">
-                            <div className="flex justify-between items-center text-[10px] text-zinc-400">
-                                <span>Opacity</span>
-                                <span>{Math.round(opacity * 100)}%</span>
+                    <CollapsibleSection
+                        title="Style & Appearance"
+                        icon={<PaintBucket size={12} />}
+                        storageKey="style_appearance"
+                    >
+                        <div className="space-y-4">
+                            {/* Opacity - Common to all */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center text-[10px] text-zinc-400">
+                                    <span>Opacity</span>
+                                    <span>{Math.round(opacity * 100)}%</span>
+                                </div>
+                                <Slider
+                                    value={opacity} min={0} max={1} step={0.01}
+                                    onChange={(v) => {
+                                        selectedObjects.forEach(o => updateObject(o.id, { opacity: v }));
+                                    }}
+                                />
                             </div>
-                            <Slider
-                                value={opacity} min={0} max={1} step={0.01}
-                                onChange={(v) => {
-                                    selectedObjects.forEach(o => updateObject(o.id, { opacity: v }));
-                                }}
-                            />
+
+                            {/* Shape Specific (Fill/Stroke) - Maintained for non-text */}
+                            {(firstObj.type === 'rectangle' || firstObj.type === 'circle' || firstObj.type === 'triangle' || firstObj.type === 'star' || firstObj.type === 'polygon') && (
+                                <div className="space-y-3 pt-2 border-t border-white/5">
+                                    <div>
+                                        <span className="text-[9px] text-zinc-500 mb-2 block">Fill Color</span>
+                                        <ColorGrid
+                                            current={getCommonValue(selectedObjects, 'fill', 'transparent') as string}
+                                            recentColors={recentColors}
+                                            onSelect={(c) => {
+                                                addColorToHistory(c);
+                                                selectedObjects.forEach(o => updateObject(o.id, { fill: c }));
+                                            }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <span className="text-[9px] text-zinc-500 mb-2 block">Stroke Color</span>
+                                        <ColorGrid
+                                            current={getCommonValue(selectedObjects, 'stroke', '#000000') as string}
+                                            recentColors={recentColors}
+                                            onSelect={(c) => {
+                                                addColorToHistory(c);
+                                                selectedObjects.forEach(o => updateObject(o.id, { stroke: c }));
+                                            }}
+                                        />
+                                    </div>
+                                    <SimpleInput
+                                        label="Thickness"
+                                        value={getCommonValue(selectedObjects, 'strokeWidth', 2) as number}
+                                        onChange={(v) => selectedObjects.forEach(o => updateObject(o.id, { strokeWidth: v }))}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Image Specific (Crop) */}
+                            {firstObj.type === 'image' && (
+                                <div className="space-y-3 pt-2 border-t border-white/5">
+                                    <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 uppercase tracking-widest pl-1">
+                                        <ImageIcon size={10} /> <span>Image Tools</span>
+                                    </div>
+                                    <ActionButton
+                                        label={useEditorStore.getState().isCropping ? "Done Cropping" : "Crop Image"}
+                                        icon={<Box size={13} />}
+                                        onClick={() => useEditorStore.getState().setCropping(!useEditorStore.getState().isCropping)}
+                                        className={useEditorStore.getState().isCropping ? "bg-blue-600 text-white" : ""}
+                                    />
+                                </div>
+                            )}
                         </div>
-
-                        {/* Text Specific Panel */}
-                        {firstObj.type === 'text' && !isMulti && (
-                            <TextPropertyPanel />
-                        )}
-
-                        {/* Shape Specific (Fill/Stroke) - Maintained for non-text */}
-                        {(firstObj.type === 'rectangle' || firstObj.type === 'circle' || firstObj.type === 'triangle' || firstObj.type === 'star' || firstObj.type === 'polygon') && (
-                            <div className="space-y-3 pt-2 border-t border-white/5">
-                                <PropertyLabel label="Fill & Stroke" />
-                                <div>
-                                    <span className="text-[9px] text-zinc-500 mb-2 block">Fill Color</span>
-                                    <ColorGrid
-                                        current={getCommonValue(selectedObjects, 'fill', 'transparent') as string}
-                                        recentColors={recentColors}
-                                        onSelect={(c) => {
-                                            addColorToHistory(c);
-                                            selectedObjects.forEach(o => updateObject(o.id, { fill: c }));
-                                        }}
-                                    />
-                                </div>
-                                <div>
-                                    <span className="text-[9px] text-zinc-500 mb-2 block">Stroke Color</span>
-                                    <ColorGrid
-                                        current={getCommonValue(selectedObjects, 'stroke', '#000000') as string}
-                                        recentColors={recentColors}
-                                        onSelect={(c) => {
-                                            addColorToHistory(c);
-                                            selectedObjects.forEach(o => updateObject(o.id, { stroke: c }));
-                                        }}
-                                    />
-                                </div>
-                                <SimpleInput
-                                    label="Thickness"
-                                    value={getCommonValue(selectedObjects, 'strokeWidth', 2) as number}
-                                    onChange={(v) => selectedObjects.forEach(o => updateObject(o.id, { strokeWidth: v }))}
-                                />
-                            </div>
-                        )}
-
-                        {/* Image Specific (Crop) */}
-                        {firstObj.type === 'image' && (
-                            <div className="space-y-3 pt-2 border-t border-white/5">
-                                <PropertyLabel label="Image Tools" icon={<ImageIcon size={12} />} />
-                                <ActionButton
-                                    label={useEditorStore.getState().isCropping ? "Done Cropping" : "Crop Image"}
-                                    icon={<Box size={13} />}
-                                    onClick={() => useEditorStore.getState().setCropping(!useEditorStore.getState().isCropping)}
-                                    className={useEditorStore.getState().isCropping ? "bg-blue-600 text-white" : ""}
-                                />
-                            </div>
-                        )}
-                    </div>
+                    </CollapsibleSection>
                 )}
 
                 {/* Layout & Alignment */}
-                <div className="space-y-4">
-                    <PropertyLabel label="Align to Canvas" />
+                <CollapsibleSection
+                    title="Align to Canvas"
+                    icon={<LayoutTemplate size={12} />}
+                    storageKey="alignment"
+                >
                     <div className="bg-white/[0.03] p-3 rounded-xl border border-white/5 space-y-3">
                         <div className="grid grid-cols-3 gap-2">
                             <button onClick={() => handleAlign('left')} className="p-2 rounded bg-white/[0.03] hover:bg-white/10 flex justify-center"><ArrowLeftToLine size={14} /></button>
@@ -272,11 +277,14 @@ export const EditorProperties: React.FC = () => {
                             <button onClick={() => handleAlign('bottom')} className="p-2 rounded bg-white/[0.03] hover:bg-white/10 flex justify-center"><ArrowDownToLine size={14} /></button>
                         </div>
                     </div>
-                </div>
+                </CollapsibleSection>
 
                 {/* Transform Section */}
-                <div className="space-y-4">
-                    <PropertyLabel label="Transform" />
+                <CollapsibleSection
+                    title="Transform"
+                    icon={<Scaling size={12} />}
+                    storageKey="transform"
+                >
                     <div className="grid grid-cols-2 gap-3">
                         <SimpleInput label="X" value={Math.round(firstObj.x)} disabled={isMulti} onChange={(v: number) => updateObject(firstObj.id, { x: v })} />
                         <SimpleInput label="Y" value={Math.round(firstObj.y)} disabled={isMulti} onChange={(v: number) => updateObject(firstObj.id, { y: v })} />
@@ -284,7 +292,7 @@ export const EditorProperties: React.FC = () => {
                         <SimpleInput label="H" value={Math.round(firstObj.height || 0)} disabled={isMulti} onChange={(v: number) => updateObject(firstObj.id, { height: v })} />
                         <SimpleInput label="R" value={rotation === 'mixed' ? 0 : Math.round(rotation as number)} className="col-span-2" suffix="°" onChange={(v: number) => selectedObjects.forEach(o => updateObject(o.id, { rotation: v }))} />
                     </div>
-                </div>
+                </CollapsibleSection>
 
             </div>
         </div>

@@ -8,7 +8,7 @@ interface CropOverlayProps {
 }
 
 export const CropOverlay: React.FC<CropOverlayProps> = ({ objectId }) => {
-    const { currentPage, updateObject, scale: stageScale, setCropping } = useEditorStore();
+    const { currentPage, updateObject, scale: stageScale, setCropping, saveToHistory } = useEditorStore();
     const object = currentPage?.objects.find(o => o.id === objectId);
 
     const [imageElement, setImageElement] = useState<HTMLImageElement | null>(null);
@@ -86,7 +86,10 @@ export const CropOverlay: React.FC<CropOverlayProps> = ({ objectId }) => {
                 const stage = e.target.getStage();
                 if (stage) stage.container().style.cursor = 'default';
             }}
-            onDragStart={() => setIsDragging(true)}
+            onDragStart={() => {
+                saveToHistory();
+                setIsDragging(true);
+            }}
             onDragEnd={(e) => {
                 setIsDragging(false);
                 e.target.position({ x, y });
