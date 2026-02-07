@@ -4,7 +4,7 @@ import Konva from 'konva';
 import { useEditorStore } from '../../../store/editorStore';
 import { usePDFStore, type PDFObject } from '../../../store/pdfStore'; // Need this for the PDF Document source
 import { PDFObjectRenderer } from './PDFObjectRenderer';
-import { CropOverlay } from './CropOverlay';
+import { ImageCropOverlay } from './ImageCropOverlay';
 import { TextEditorOverlay } from './TextEditorOverlay';
 import { Loader2 } from 'lucide-react';
 
@@ -34,7 +34,9 @@ export const EditorCanvas: React.FC = () => {
         setStagePosition,
         openTextStudio,
         previewStyle,
-        setScale
+        setScale,
+        isCropping,
+        setCropping
     } = useEditorStore();
 
     // PDF Global State (Source)
@@ -1319,12 +1321,12 @@ export const EditorCanvas: React.FC = () => {
                         )}
 
                         {/* 3.6 Crop Overlay */}
-                        {selectedObjectIds.length === 1 && useEditorStore.getState().isCropping && (
-                            <CropOverlay objectId={selectedObjectIds[0]} />
+                        {selectedObjectIds.length === 1 && isCropping && (
+                            <ImageCropOverlay objectId={selectedObjectIds[0]} />
                         )}
 
                         {/* Global Transformer */}
-                        {!useEditorStore.getState().isCropping && (
+                        {!isCropping && (
                             <Transformer
                                 ref={transformerRef}
                                 borderStroke="#3b82f6"

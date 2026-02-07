@@ -1,29 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useEditorStore } from '../../../../store/editorStore';
-import { X, Check, ChevronDown, ChevronRight, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, ArrowUp, ArrowDown, Type, Palette, Sparkles, Sliders } from 'lucide-react';
+import { X, Check, ChevronDown, ChevronRight, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, ArrowUp, ArrowDown, Type, Palette, Sparkles, Sliders, History } from 'lucide-react';
 import clsx from 'clsx';
 import { Slider, ColorGrid, ToggleButton } from '../properties/PropertyComponents';
 
-// Collapsible Section Component
-const Section: React.FC<{ title: string; icon: React.ElementType; defaultOpen?: boolean; children: React.ReactNode }> =
-    ({ title, icon: Icon, defaultOpen = true, children }) => {
-        const [isOpen, setIsOpen] = useState(defaultOpen);
-        return (
-            <div className="border-b border-white/5 last:border-b-0">
-                <button
-                    onClick={() => setIsOpen(!isOpen)}
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
-                >
-                    <div className="flex items-center gap-2">
-                        <Icon size={14} className="text-zinc-500" />
-                        <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wide">{title}</span>
-                    </div>
-                    {isOpen ? <ChevronDown size={14} className="text-zinc-500" /> : <ChevronRight size={14} className="text-zinc-500" />}
-                </button>
-                {isOpen && <div className="px-4 pb-4 space-y-4">{children}</div>}
-            </div>
-        );
-    };
+import { CollapsibleSection } from '../properties/CollapsibleSection';
 
 export const TextStudio: React.FC = () => {
     const {
@@ -33,10 +14,13 @@ export const TextStudio: React.FC = () => {
         updateObject,
         currentPage,
         saveToHistory,
-        reorderObject
+        reorderObject,
+        recentTextStyles,
+        addRecentTextStyle // Add this
     } = useEditorStore();
 
     const { isOpen, mode, elementId } = textStudio;
+
 
     // Local State for Creation Mode
     const [localCreationState, setLocalCreationState] = useState<any>({
@@ -102,6 +86,19 @@ export const TextStudio: React.FC = () => {
     };
 
     const handleApply = () => {
+        const styleToSave = {
+            color: currentValues.fill,
+            size: 0,
+            opacity: currentValues.opacity,
+            fontFamily: currentValues.fontFamily,
+            fontSize: currentValues.fontSize,
+            fontWeight: currentValues.fontWeight,
+            fontStyle: currentValues.fontStyle,
+            textAlign: (currentValues.align || 'left') as any,
+            eraserMode: 'standard' as const
+        };
+        addRecentTextStyle(styleToSave);
+
         if (mode === 'create') {
             saveToHistory();
             addObject({
@@ -216,80 +213,147 @@ export const TextStudio: React.FC = () => {
                             />
                         </div>
 
+                        {/* Last Used Section */}
+                        {recentTextStyles.length > 0 && (
+                            <CollapsibleSection
+                                title="Last Used"
+                                icon={<History size={12} />}
+                                defaultOpen={true}
+                                storageKey="text_studio_last_used"
+                            >
+                                <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-2 pt-1 px-1">
+                                    {recentTextStyles.map((style, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => {
+                                                handleUpdate({
+                                                    fontSize: style.fontSize,
+                                                    fontFamily: style.fontFamily,
+                                                    fontWeight: style.fontWeight,
+                                                    fontStyle: style.fontStyle,
+                                                    fill: style.color,
+                                                    opacity: style.opacity
+                                                });
+                                            }}
+                                            className="group relative flex-shrink-0 w-16 h-16 flex flex-col items-center justify-center rounded-xl bg-zinc-900/50 border border-white/10 hover:bg-white/[0.06] hover:border-blue-500/50 hover:scale-105 transition-all shadow-sm"
+                                            title={`${style.fontFamily}, ${style.fontSize}px`}
+                                        >
+                                            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:4px_4px] rounded-xl pointer-events-none" />
+                                            <span style={{
+                                                fontFamily: style.fontFamily,
+                                                fontWeight: style.fontWeight as any,
+                                                fontStyle: style.fontStyle as any,
+                                                fontSize: Math.min(Math.max(style.fontSize * 0.7, 14), 32),
+                                                color: style.color
+                                            }} className="leading-none z-10">
+                                                Ag
+                                            </span>
+                                            <div className="absolute bottom-1 right-1 bg-black/60 backdrop-blur-md text-[8px] text-white/90 px-1 rounded font-mono border border-white/10 opacity-60 group-hover:opacity-100 transition-opacity">
+                                                {style.fontSize}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </CollapsibleSection>
+                        )}
+
                         {/* Typography Section */}
-                        <Section title="Typography" icon={Type} defaultOpen={true}>
-                            {/* Font & Size */}
-                            <div className="flex gap-2">
-                                <select
-                                    className="flex-1 bg-zinc-900 border border-white/10 rounded-lg p-2.5 text-xs text-white outline-none focus:border-blue-500/50 appearance-none"
-                                    value={currentValues.fontFamily || 'Inter'}
-                                    onChange={(e) => handleUpdate({ fontFamily: e.target.value })}
-                                >
-                                    <option value="Inter">Inter</option>
-                                    <option value="Arial">Arial</option>
-                                    <option value="Times New Roman">Times New Roman</option>
-                                    <option value="Courier New">Courier New</option>
-                                    <option value="Georgia">Georgia</option>
-                                    <option value="Verdana">Verdana</option>
-                                    <option value="Impact">Impact</option>
-                                </select>
-                                <div className="flex items-center bg-zinc-900 border border-white/10 rounded-lg">
-                                    <button
-                                        onClick={() => handleUpdate({ fontSize: Math.max(8, (currentValues.fontSize || 16) - 2) })}
-                                        className="px-2 py-2 text-zinc-400 hover:text-white"
-                                    >−</button>
-                                    <span className="w-10 text-center text-xs text-white">{currentValues.fontSize}px</span>
-                                    <button
-                                        onClick={() => handleUpdate({ fontSize: Math.min(200, (currentValues.fontSize || 16) + 2) })}
-                                        className="px-2 py-2 text-zinc-400 hover:text-white"
-                                    >+</button>
+                        <CollapsibleSection
+                            title="Typography"
+                            icon={<Type size={12} />}
+                            defaultOpen={true}
+                            storageKey="text_studio_typography"
+                        >
+                            <div className="space-y-4 pt-2">
+                                {/* Font & Size */}
+                                <div className="flex gap-2">
+                                    <select
+                                        className="flex-1 bg-zinc-900 border border-white/10 rounded-lg p-2.5 text-xs text-white outline-none focus:border-blue-500/50 appearance-none"
+                                        value={currentValues.fontFamily || 'Inter'}
+                                        onChange={(e) => handleUpdate({ fontFamily: e.target.value })}
+                                    >
+                                        <option value="Inter">Inter</option>
+                                        <option value="Arial">Arial</option>
+                                        <option value="Times New Roman">Times New Roman</option>
+                                        <option value="Courier New">Courier New</option>
+                                        <option value="Georgia">Georgia</option>
+                                        <option value="Verdana">Verdana</option>
+                                        <option value="Impact">Impact</option>
+                                    </select>
+                                    <div className="flex items-center bg-zinc-900 border border-white/10 rounded-lg">
+                                        <button
+                                            onClick={() => handleUpdate({ fontSize: Math.max(8, (currentValues.fontSize || 16) - 2) })}
+                                            className="px-2 py-2 text-zinc-400 hover:text-white"
+                                        >−</button>
+                                        <span className="w-12 text-center text-xs text-white">
+                                            {typeof currentValues.fontSize === 'number'
+                                                ? Number(currentValues.fontSize).toFixed(2).replace(/\.00$/, '')
+                                                : currentValues.fontSize}px
+                                        </span>
+                                        <button
+                                            onClick={() => handleUpdate({ fontSize: Math.min(200, (currentValues.fontSize || 16) + 2) })}
+                                            className="px-2 py-2 text-zinc-400 hover:text-white"
+                                        >+</button>
+                                    </div>
+                                </div>
+
+                                {/* Style Buttons */}
+                                <div className="flex gap-1">
+                                    <button onClick={() => toggleStyle('bold')} className={clsx("flex-1 py-2 rounded-lg flex items-center justify-center transition-all", isBold ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700")}>
+                                        <Bold size={16} />
+                                    </button>
+                                    <button onClick={() => toggleStyle('italic')} className={clsx("flex-1 py-2 rounded-lg flex items-center justify-center transition-all", isItalic ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700")}>
+                                        <Italic size={16} />
+                                    </button>
+                                    <button onClick={() => toggleStyle('underline')} className={clsx("flex-1 py-2 rounded-lg flex items-center justify-center transition-all", isUnderline ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700")}>
+                                        <Underline size={16} />
+                                    </button>
+                                </div>
+
+                                {/* Alignment */}
+                                <div className="flex gap-1">
+                                    {[
+                                        { id: 'left', icon: AlignLeft },
+                                        { id: 'center', icon: AlignCenter },
+                                        { id: 'right', icon: AlignRight },
+                                        { id: 'justify', icon: AlignJustify }
+                                    ].map(a => (
+                                        <button
+                                            key={a.id}
+                                            onClick={() => handleUpdate({ align: a.id })}
+                                            className={clsx("flex-1 py-2 rounded-lg flex items-center justify-center transition-all", currentValues.align === a.id ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700")}
+                                        >
+                                            <a.icon size={16} />
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
-
-                            {/* Style Buttons */}
-                            <div className="flex gap-1">
-                                <button onClick={() => toggleStyle('bold')} className={clsx("flex-1 py-2 rounded-lg flex items-center justify-center transition-all", isBold ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700")}>
-                                    <Bold size={16} />
-                                </button>
-                                <button onClick={() => toggleStyle('italic')} className={clsx("flex-1 py-2 rounded-lg flex items-center justify-center transition-all", isItalic ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700")}>
-                                    <Italic size={16} />
-                                </button>
-                                <button onClick={() => toggleStyle('underline')} className={clsx("flex-1 py-2 rounded-lg flex items-center justify-center transition-all", isUnderline ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700")}>
-                                    <Underline size={16} />
-                                </button>
-                            </div>
-
-                            {/* Alignment */}
-                            <div className="flex gap-1">
-                                {[
-                                    { id: 'left', icon: AlignLeft },
-                                    { id: 'center', icon: AlignCenter },
-                                    { id: 'right', icon: AlignRight },
-                                    { id: 'justify', icon: AlignJustify }
-                                ].map(a => (
-                                    <button
-                                        key={a.id}
-                                        onClick={() => handleUpdate({ align: a.id })}
-                                        className={clsx("flex-1 py-2 rounded-lg flex items-center justify-center transition-all", currentValues.align === a.id ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700")}
-                                    >
-                                        <a.icon size={16} />
-                                    </button>
-                                ))}
-                            </div>
-                        </Section>
+                        </CollapsibleSection>
 
                         {/* Color Section */}
-                        <Section title="Color" icon={Palette} defaultOpen={true}>
-                            <ColorGrid
-                                current={currentValues.fill || '#ffffff'}
-                                onSelect={(c) => handleUpdate({ fill: c })}
-                                recentColors={['#ffffff', '#000000', '#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899']}
-                            />
-                        </Section>
+                        <CollapsibleSection
+                            title="Color"
+                            icon={<Palette size={12} />}
+                            defaultOpen={true}
+                            storageKey="text_studio_color"
+                        >
+                            <div className="pt-2">
+                                <ColorGrid
+                                    current={currentValues.fill || '#ffffff'}
+                                    onSelect={(c) => handleUpdate({ fill: c })}
+                                    recentColors={['#ffffff', '#000000', '#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899']}
+                                />
+                            </div>
+                        </CollapsibleSection>
 
                         {/* Properties Section */}
-                        <Section title="Properties" icon={Sliders} defaultOpen={false}>
-                            <div className="space-y-4">
+                        <CollapsibleSection
+                            title="Properties"
+                            icon={<Sliders size={12} />}
+                            defaultOpen={false}
+                            storageKey="text_studio_properties"
+                        >
+                            <div className="space-y-4 pt-2">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-[10px] text-zinc-500">
                                         <span>Opacity</span>
@@ -319,11 +383,16 @@ export const TextStudio: React.FC = () => {
                                     <Slider value={currentValues.rotation || 0} min={0} max={360} step={1} onChange={(v) => handleUpdate({ rotation: v })} />
                                 </div>
                             </div>
-                        </Section>
+                        </CollapsibleSection>
 
                         {/* Effects Section */}
-                        <Section title="Effects" icon={Sparkles} defaultOpen={false}>
-                            <div className="space-y-4">
+                        <CollapsibleSection
+                            title="Effects"
+                            icon={<Sparkles size={12} />}
+                            defaultOpen={false}
+                            storageKey="text_studio_effects"
+                        >
+                            <div className="space-y-4 pt-2">
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-[10px] text-zinc-500">
                                         <span>Stroke / Outline</span>
@@ -339,27 +408,9 @@ export const TextStudio: React.FC = () => {
                                     />
                                 )}
                             </div>
-                        </Section>
+                        </CollapsibleSection>
 
-                        {/* Layer Order (Edit Mode Only) */}
-                        {mode === 'edit' && elementId && (
-                            <Section title="Layer" icon={ArrowUp} defaultOpen={false}>
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => reorderObject(elementId, 'forward')}
-                                        className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center justify-center gap-2 text-xs text-zinc-300 transition-colors"
-                                    >
-                                        <ArrowUp size={14} /> Bring Forward
-                                    </button>
-                                    <button
-                                        onClick={() => reorderObject(elementId, 'backward')}
-                                        className="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center justify-center gap-2 text-xs text-zinc-300 transition-colors"
-                                    >
-                                        <ArrowDown size={14} /> Send Back
-                                    </button>
-                                </div>
-                            </Section>
-                        )}
+
                     </div>
 
                     {/* Footer Actions */}

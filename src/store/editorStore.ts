@@ -36,6 +36,7 @@ export interface NativeTextItem {
     height: number;
     fontSize: number;
     fontFamily: string;
+    color: string; // Text color (hex or rgb)
     originalRef: any; // Raw PDF item reference for replacement logic
     pageId: string;
 }
@@ -247,6 +248,37 @@ interface EditorStore {
 
     editingObjectId: string | null;
     setEditingObjectId: (id: string | null) => void;
+
+    // Find & Replace State
+    findReplaceState: {
+        isOpen: boolean;
+        searchTerm: string;
+        replaceTerm: string;
+        caseSensitive: boolean;
+        matches: { id: string; text: string; startIndex: number; endIndex: number; originalItem: any }[];
+        currentMatchIndex: number;
+    };
+    setFindReplaceOpen: (isOpen: boolean) => void;
+    setSearchTerm: (term: string) => void;
+    setReplaceTerm: (term: string) => void;
+    toggleCaseSensitive: () => void;
+    findMatches: (textItems: any[]) => void;
+    navigateMatch: (direction: 'next' | 'prev') => void;
+    replaceCurrentMatch: () => void;
+    replaceAllMatches: () => void;
+    clearFindReplace: () => void;
+
+    // OCR State
+    ocrState: {
+        isOpen: boolean;
+        isProcessing: boolean;
+        progress: number;
+        result: string | null;
+        error: string | null;
+    };
+    setOCROpen: (isOpen: boolean) => void;
+    startOCR: (imageSource: string | HTMLCanvasElement) => Promise<void>;
+    clearOCRResult: () => void;
 }
 
 const deepClone = <T>(obj: T): T => {
@@ -267,7 +299,11 @@ export const useEditorStore = create<EditorStore>()(
             toolPreferences: DEFAULT_TOOL_PREFERENCES,
             selectedObjectIds: [],
             recentColors: ['#000000', '#df4b26', '#10B981', '#3B82F6', '#6366F1', '#ffffff', '#ef4444', '#f59e0b', '#8B5CF6'], // Initial palette (9 colors)
-            recentTextStyles: [],
+            recentTextStyles: [
+                { ...DEFAULT_SETTINGS, fontSize: 32, fontFamily: 'Inter', fontWeight: 'bold', color: '#000000' },
+                { ...DEFAULT_SETTINGS, fontSize: 24, fontFamily: 'Inter', fontWeight: '600', color: '#2563eb' },
+                { ...DEFAULT_SETTINGS, fontSize: 16, fontFamily: 'Inter', fontStyle: 'italic', opacity: 0.8 }
+            ],
             clipboard: [],
             previewStyle: null,
 
@@ -358,7 +394,200 @@ export const useEditorStore = create<EditorStore>()(
                 editingMode: 'standard'
             }),
 
-            // Image Studio Implementation
+            // Find & Replace Implementation
+            findReplaceState: {
+                isOpen: false,
+                searchTerm: '',
+                replaceTerm: '',
+                caseSensitive: false,
+                matches: [],
+                currentMatchIndex: -1
+            },
+            setFindReplaceOpen: (isOpen) => set(state => ({
+                findReplaceState: { ...state.findReplaceState, isOpen }
+            })),
+            setSearchTerm: (term) => set(state => ({
+                findReplaceState: { ...state.findReplaceState, searchTerm: term }
+            })),
+            setReplaceTerm: (term) => set(state => ({
+                findReplaceState: { ...state.findReplaceState, replaceTerm: term }
+            })),
+            toggleCaseSensitive: () => set(state => ({
+                findReplaceState: { ...state.findReplaceState, caseSensitive: !state.findReplaceState.caseSensitive }
+            })),
+            findMatches: (textItems) => set(state => {
+                const { searchTerm, caseSensitive } = state.findReplaceState;
+                if (!searchTerm.trim()) {
+                    return { findReplaceState: { ...state.findReplaceState, matches: [], currentMatchIndex: -1 } };
+                }
+                const matches: { id: string; text: string; startIndex: number; endIndex: number; originalItem: any }[] = [];
+                textItems.forEach(item => {
+                    const text = item.str || item.text || '';
+                    const searchIn = caseSensitive ? text : text.toLowerCase();
+                    const searchFor = caseSensitive ? searchTerm : searchTerm.toLowerCase();
+                    let idx = searchIn.indexOf(searchFor);
+                    while (idx !== -1) {
+                        matches.push({
+                            id: item.id,
+                            text,
+                            startIndex: idx,
+                            endIndex: idx + searchTerm.length,
+                            originalItem: item // Store full original item data
+                        });
+                        idx = searchIn.indexOf(searchFor, idx + 1);
+                    }
+                });
+                return {
+                    findReplaceState: {
+                        ...state.findReplaceState,
+                        matches,
+                        currentMatchIndex: matches.length > 0 ? 0 : -1
+                    }
+                };
+            }),
+            navigateMatch: (direction) => set(state => {
+                const { matches, currentMatchIndex } = state.findReplaceState;
+                if (matches.length === 0) return state;
+                let newIndex = currentMatchIndex;
+                if (direction === 'next') {
+                    newIndex = (currentMatchIndex + 1) % matches.length;
+                } else {
+                    newIndex = (currentMatchIndex - 1 + matches.length) % matches.length;
+                }
+                return { findReplaceState: { ...state.findReplaceState, currentMatchIndex: newIndex } };
+            }),
+            replaceCurrentMatch: () => {
+                const state = get();
+                const { matches, currentMatchIndex, replaceTerm } = state.findReplaceState;
+                if (currentMatchIndex < 0 || currentMatchIndex >= matches.length) return;
+                const match = matches[currentMatchIndex];
+                const existingEdit = state.pendingNativeTextEdits[match.id];
+                const currentText = existingEdit?.text || match.text;
+                const newText = currentText.substring(0, match.startIndex) + replaceTerm + currentText.substring(match.endIndex);
+
+                // Get original item properties for proper positioning/styling
+                const origItem = match.originalItem;
+                const tx = origItem?.originalTransform || origItem?.transform || [1, 0, 0, 1, 0, 0];
+                const fontScaleY = Math.abs(tx[3]) || 12;
+
+                const updatedEdit: NativeTextItem = existingEdit
+                    ? { ...existingEdit, text: newText, color: existingEdit.color || origItem?.color || '#000000' }
+                    : {
+                        id: match.id,
+                        text: newText,
+                        x: tx[4] || 0,
+                        y: tx[5] || 0,
+                        width: origItem?.width || 100,
+                        height: origItem?.height || fontScaleY,
+                        fontSize: fontScaleY,
+                        fontFamily: origItem?.fontName || 'sans-serif',
+                        color: origItem?.color || '#000000',
+                        originalRef: origItem,
+                        pageId: state.nativeTextStudio.pageId || ''
+                    };
+                set(s => ({
+                    pendingNativeTextEdits: { ...s.pendingNativeTextEdits, [match.id]: updatedEdit },
+                    findReplaceState: {
+                        ...s.findReplaceState,
+                        matches: s.findReplaceState.matches.filter((_, i) => i !== currentMatchIndex),
+                        currentMatchIndex: Math.min(currentMatchIndex, s.findReplaceState.matches.length - 2)
+                    }
+                }));
+            },
+            replaceAllMatches: () => {
+                const state = get();
+                const { matches, replaceTerm } = state.findReplaceState;
+                if (matches.length === 0) return;
+                // Group matches by id and replace from end to start to preserve indices
+                const matchesByItem = new Map<string, typeof matches>();
+                matches.forEach(m => {
+                    if (!matchesByItem.has(m.id)) matchesByItem.set(m.id, []);
+                    matchesByItem.get(m.id)!.push(m);
+                });
+                const newEdits = { ...state.pendingNativeTextEdits };
+                matchesByItem.forEach((itemMatches, id) => {
+                    // Sort by startIndex descending to replace from end
+                    itemMatches.sort((a, b) => b.startIndex - a.startIndex);
+                    const existingEdit = newEdits[id];
+                    let currentText = existingEdit?.text || itemMatches[0].text;
+                    itemMatches.forEach(m => {
+                        currentText = currentText.substring(0, m.startIndex) + replaceTerm + currentText.substring(m.endIndex);
+                    });
+
+                    // Get original item properties from first match
+                    const origItem = itemMatches[0].originalItem;
+                    const tx = origItem?.originalTransform || origItem?.transform || [1, 0, 0, 1, 0, 0];
+                    const fontScaleY = Math.abs(tx[3]) || 12;
+
+                    newEdits[id] = existingEdit
+                        ? { ...existingEdit, text: currentText, color: existingEdit.color || origItem?.color || '#000000' }
+                        : {
+                            id,
+                            text: currentText,
+                            x: tx[4] || 0,
+                            y: tx[5] || 0,
+                            width: origItem?.width || 100,
+                            height: origItem?.height || fontScaleY,
+                            fontSize: fontScaleY,
+                            fontFamily: origItem?.fontName || 'sans-serif',
+                            color: origItem?.color || '#000000',
+                            originalRef: origItem,
+                            pageId: state.nativeTextStudio.pageId || ''
+                        };
+                });
+                set({ pendingNativeTextEdits: newEdits, findReplaceState: { ...state.findReplaceState, matches: [], currentMatchIndex: -1 } });
+            },
+            clearFindReplace: () => set(state => ({
+                findReplaceState: {
+                    isOpen: false,
+                    searchTerm: '',
+                    replaceTerm: '',
+                    caseSensitive: false,
+                    matches: [],
+                    currentMatchIndex: -1
+                }
+            })),
+
+            // OCR Implementation
+            ocrState: {
+                isOpen: false,
+                isProcessing: false,
+                progress: 0,
+                result: null,
+                error: null
+            },
+            setOCROpen: (isOpen) => set(state => ({
+                ocrState: { ...state.ocrState, isOpen }
+            })),
+            startOCR: async (imageSource) => {
+                set(state => ({
+                    ocrState: { ...state.ocrState, isProcessing: true, progress: 0, result: null, error: null }
+                }));
+                try {
+                    const Tesseract = await import('tesseract.js');
+                    const worker = await Tesseract.createWorker('eng', 1, {
+                        logger: (m: any) => {
+                            if (m.status === 'recognizing text') {
+                                set(state => ({
+                                    ocrState: { ...state.ocrState, progress: Math.round(m.progress * 100) }
+                                }));
+                            }
+                        }
+                    });
+                    const { data: { text } } = await worker.recognize(imageSource);
+                    await worker.terminate();
+                    set(state => ({
+                        ocrState: { ...state.ocrState, isProcessing: false, progress: 100, result: text }
+                    }));
+                } catch (error: any) {
+                    set(state => ({
+                        ocrState: { ...state.ocrState, isProcessing: false, error: error.message || 'OCR failed' }
+                    }));
+                }
+            },
+            clearOCRResult: () => set(state => ({
+                ocrState: { ...state.ocrState, result: null, error: null, progress: 0 }
+            })),
             imageStudio: {
                 isOpen: false,
                 mode: 'create',

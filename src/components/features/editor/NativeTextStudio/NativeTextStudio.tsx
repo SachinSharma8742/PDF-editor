@@ -1,19 +1,83 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useEditorStore } from '../../../../store/editorStore';
-import { X, Save, Undo2, Redo2, Type } from 'lucide-react';
-import { SinglePageCanvas } from './SinglePageCanvas';
+import { usePDFStore } from '../../../../store/pdfStore';
+import { X, Save, Undo2, Redo2, Type, Search, ScanLine } from 'lucide-react';
+import { SinglePageCanvas, type SinglePageCanvasHandle } from './SinglePageCanvas';
 import { NativeTextProperties } from '../NativeTextProperties';
+import { FindReplacePanel } from './FindReplacePanel';
+import { OCRPanel } from './OCRPanel';
+import * as pdfjsLib from 'pdfjs-dist';
+import clsx from 'clsx';
 
 export const NativeTextStudio: React.FC = () => {
-    const { nativeTextStudio, closeNativeTextStudio, pendingNativeTextEdits } = useEditorStore();
+    const {
+        nativeTextStudio,
+        closeNativeTextStudio,
+        pendingNativeTextEdits,
+        findReplaceState,
+        setFindReplaceOpen,
+        clearFindReplace,
+        ocrState,
+        setOCROpen,
+        startOCR
+    } = useEditorStore();
+    const { pdfDocument, pages } = usePDFStore();
+    const [textItems, setTextItems] = useState<any[]>([]);
+    const canvasRef = useRef<SinglePageCanvasHandle>(null);
+
+    const pageState = pages.find(p => p.id === nativeTextStudio.pageId);
+
+    // Load text items from PDF page
+    useEffect(() => {
+        if (!pdfDocument || !pageState || pageState.source !== 'pdf') return;
+
+        const loadText = async () => {
+            try {
+                const page = await pdfDocument.getPage(pageState.originalPageIndex!);
+                const textContent = await page.getTextContent();
+                const items = textContent.items
+                    .filter((item: any) => item.str?.trim())
+                    .map((item: any) => ({
+                        ...item,
+                        id: `text-${pageState.pageNumber}-${item.transform[4]}-${item.transform[5]}`,
+                        text: item.str
+                    }));
+                setTextItems(items);
+            } catch (err) {
+                console.error("Error loading text items:", err);
+            }
+        };
+        loadText();
+    }, [pdfDocument, pageState]);
 
     if (!nativeTextStudio.isOpen || !nativeTextStudio.pageId) return null;
 
     const handleSave = () => {
-        // Here we would trigger the actual save/apply logic
-        // For now, checks "Walkthrough" verifying visual feedback
-        // Just closing acts as "Keeping edits in memory"
+        clearFindReplace();
         closeNativeTextStudio();
+    };
+
+    const handleClose = () => {
+        clearFindReplace();
+        closeNativeTextStudio();
+    };
+
+    const toggleFindReplace = () => {
+        setFindReplaceOpen(!findReplaceState.isOpen);
+        if (ocrState.isOpen) setOCROpen(false);
+    };
+
+    const toggleOCR = () => {
+        setOCROpen(!ocrState.isOpen);
+        if (findReplaceState.isOpen) setFindReplaceOpen(false);
+    };
+
+    const handleOCRScan = async () => {
+        const canvas = canvasRef.current?.getCanvas();
+        if (canvas) {
+            const dataUrl = canvas.toDataURL('image/png');
+            await startOCR(dataUrl);
+        }
     };
 
     return (
@@ -31,6 +95,33 @@ export const NativeTextStudio: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {/* Find & Replace Toggle */}
+                    <button
+                        onClick={toggleFindReplace}
+                        className={clsx(
+                            "p-2 rounded-lg transition-colors flex items-center gap-1.5",
+                            findReplaceState.isOpen
+                                ? "bg-indigo-600 text-white"
+                                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                        )}
+                        title="Find & Replace"
+                    >
+                        <Search size={18} />
+                    </button>
+                    {/* OCR Toggle */}
+                    <button
+                        onClick={toggleOCR}
+                        className={clsx(
+                            "p-2 rounded-lg transition-colors flex items-center gap-1.5",
+                            ocrState.isOpen
+                                ? "bg-emerald-600 text-white"
+                                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                        )}
+                        title="OCR Scanner"
+                    >
+                        <ScanLine size={18} />
+                    </button>
+                    <div className="w-[1px] h-6 bg-white/10 mx-1" />
                     <button className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
                         <Undo2 size={18} />
                     </button>
@@ -46,7 +137,7 @@ export const NativeTextStudio: React.FC = () => {
                         Save & Close
                     </button>
                     <button
-                        onClick={closeNativeTextStudio}
+                        onClick={handleClose}
                         className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
                     >
                         <X size={20} />
@@ -58,7 +149,14 @@ export const NativeTextStudio: React.FC = () => {
             <div className="flex-1 flex overflow-hidden">
 
                 {/* Left Properties Panel */}
-                <div className="w-80 border-r border-white/10 bg-[#1e1e20] p-4 overflow-y-auto">
+                <div className="w-80 border-r border-white/10 bg-[#1e1e20] p-4 overflow-y-auto space-y-4">
+                    {/* Find & Replace Panel */}
+                    <FindReplacePanel textItems={textItems} />
+
+                    {/* OCR Panel */}
+                    <OCRPanel canvasRef={canvasRef} />
+
+                    {/* Text Properties */}
                     <NativeTextProperties />
                 </div>
 
@@ -72,7 +170,7 @@ export const NativeTextStudio: React.FC = () => {
                         }}
                     />
 
-                    <SinglePageCanvas pageId={nativeTextStudio.pageId} />
+                    <SinglePageCanvas ref={canvasRef} pageId={nativeTextStudio.pageId} />
                 </div>
 
             </div>

@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import { usePDFStore } from '../../../../store/pdfStore';
-import { CanvasLayer } from '../CanvasLayer';
 import { PDFTextLayer } from '../../pdf-viewer/PDFTextLayer';
 import { useEditorStore } from '../../../../store/editorStore';
 
@@ -8,7 +7,11 @@ interface SinglePageCanvasProps {
     pageId: string;
 }
 
-export const SinglePageCanvas: React.FC<SinglePageCanvasProps> = ({ pageId }) => {
+export interface SinglePageCanvasHandle {
+    getCanvas: () => HTMLCanvasElement | null;
+}
+
+export const SinglePageCanvas = forwardRef<SinglePageCanvasHandle, SinglePageCanvasProps>(({ pageId }, ref) => {
     const { pages, pdfDocument } = usePDFStore();
     const { nativeTextStudio } = useEditorStore();
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -17,6 +20,11 @@ export const SinglePageCanvas: React.FC<SinglePageCanvasProps> = ({ pageId }) =>
     const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
 
     const pageState = pages.find(p => p.id === pageId);
+
+    // Expose the canvas to parent via ref
+    useImperativeHandle(ref, () => ({
+        getCanvas: () => canvasRef.current
+    }), []);
 
     // Calculate scale to fit container
     useEffect(() => {
@@ -82,4 +90,4 @@ export const SinglePageCanvas: React.FC<SinglePageCanvasProps> = ({ pageId }) =>
             )}
         </div>
     );
-};
+});

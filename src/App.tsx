@@ -4,7 +4,6 @@ import { PDFViewer } from './components/features/pdf-viewer/PDFViewer';
 import './utils/pdfWorker'; // Import worker config
 import { EditorMode } from './components/features/editor/EditorMode';
 import { ContextMenu } from './components/features/editor/ContextMenu';
-import { ContextToolbar } from './components/features/editor/ContextToolbar';
 import { NativeTextStudio } from './components/features/editor/NativeTextStudio/NativeTextStudio';
 import { useEditorStore } from './store/editorStore';
 
@@ -58,10 +57,7 @@ export default function App() {
             <div className="pointer-events-auto">
               <Toolbar />
             </div>
-            {/* Multi-Select / Context Toolbar */}
-            <div className="absolute top-20 pointer-events-auto z-[60]">
-              <ContextToolbar />
-            </div>
+            {/* Multi-Select / Context Toolbar removed as it is reported useless in Home mode */}
           </div>
 
           {/* Scrollable Content Area */}

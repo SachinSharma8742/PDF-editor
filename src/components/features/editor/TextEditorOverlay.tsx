@@ -84,7 +84,68 @@ export const TextEditorOverlay: React.FC<TextEditorOverlayProps> = ({ object, on
                 onKeyDown={onKeyDown}
                 autoFocus
             />
+            {/* Last Used Styles - Positioned below the textarea */}
+            <div style={{
+                position: 'absolute',
+                top: `${top + height + 10}px`, // Below the text box
+                left: `${left}px`,
+                // constrain width if needed, or let it flow based on content
+                width: 'max-content',
+                maxWidth: '300px',
+                pointerEvents: 'auto'
+            }}>
+                <RecentStylesPanel objectId={object.id} />
+            </div>
         </div>,
         parentContainer
+    );
+};
+
+// Extracted for clean component structure
+const RecentStylesPanel: React.FC<{ objectId: string }> = ({ objectId }) => {
+    const { recentTextStyles, updateObject } = useEditorStore();
+    // Start open? Or manage internal state? The snippet implies it's just rendered.
+
+    if (recentTextStyles.length === 0) return null;
+
+    return (
+        <div className="bg-black/80 backdrop-blur-md border border-white/10 rounded-xl p-2 shadow-2xl">
+            <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-2 pt-1 px-1 max-w-[300px]">
+                {recentTextStyles.map((style, i) => (
+                    <button
+                        key={i}
+                        onClick={(e) => {
+                            e.preventDefault(); // Prevent blur
+                            e.stopPropagation();
+                            updateObject(objectId, {
+                                fontSize: style.fontSize,
+                                fontFamily: style.fontFamily,
+                                fontWeight: style.fontWeight,
+                                fontStyle: style.fontStyle,
+                                fill: style.color,
+                                opacity: style.opacity
+                            });
+                        }}
+                        className="group relative flex-shrink-0 w-12 h-12 flex flex-col items-center justify-center rounded-lg bg-zinc-900/50 border border-white/10 hover:bg-white/[0.06] hover:border-blue-500/50 hover:scale-105 transition-all shadow-sm"
+                        title={`${style.fontFamily}, ${style.fontSize}px`}
+                    >
+                        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:4px_4px] rounded-lg pointer-events-none" />
+                        <span style={{
+                            fontFamily: style.fontFamily,
+                            fontWeight: style.fontWeight as any,
+                            fontStyle: style.fontStyle as any,
+                            fontSize: Math.min(Math.max(style.fontSize * 0.5, 10), 20),
+                            color: style.color
+                        }} className="leading-none z-10">
+                            Ag
+                        </span>
+                        {/* Tiny badge for size */}
+                        <div className="absolute -bottom-1 -right-1 scale-75 origin-bottom-right bg-black/80 backdrop-blur-md text-[8px] text-white/90 px-1 rounded font-mono border border-white/10 opacity-60 group-hover:opacity-100 transition-opacity">
+                            {style.fontSize}
+                        </div>
+                    </button>
+                ))}
+            </div>
+        </div>
     );
 };

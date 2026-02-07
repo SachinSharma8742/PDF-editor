@@ -61,7 +61,7 @@ export interface PDFObject {
     flipX?: boolean;
     flipY?: boolean;
     crop?: { x: number; y: number; width: number; height: number };
-    cropShape?: 'rect' | 'circle';
+    cropShape?: 'rect' | 'circle' | 'heart';
 
     // Styling
     blendMode?: string;
@@ -130,6 +130,7 @@ export interface PDFObject {
         invert?: number; // 0 or 1
         sepia?: number; // 0 or 1
         crop?: { x: number; y: number; width: number; height: number };
+        cropShape?: 'rect' | 'circle' | 'heart';
         rotation?: number; // 0, 90, 180, 270
         flipX?: boolean;
         flipY?: boolean;
@@ -151,6 +152,20 @@ export interface DrawingPath {
     width?: number;
     height?: number;
     rotation?: number;
+}
+
+// Native text edit item for PDF text editing
+export interface NativeTextEdit {
+    id: string;
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fontSize: number;
+    fontFamily: string;
+    color: string;
+    originalRef?: any;
 }
 
 export interface PageState {
@@ -227,6 +242,9 @@ export interface PageState {
         color?: string;
         opacity?: number;
     };
+
+    // Native PDF text edits (for text studio)
+    nativeTextEdits?: Record<string, NativeTextEdit>;
 }
 
 // --- History Model (Diff Based) ---
@@ -349,6 +367,11 @@ interface PDFStore {
     reorderObject: (pageId: string, objectId: string, direction: 'front' | 'back') => void;
     groupObjects: (pageId: string, objectIds: string[]) => void;
     ungroupObjects: (pageId: string, objectIds: string[]) => void;
+
+    // Native Text Edit Actions (for PDF Text Studio)
+    updateNativeTextEdit: (pageId: string, editId: string, edit: NativeTextEdit) => void;
+    deleteNativeTextEdit: (pageId: string, editId: string) => void;
+    clearNativeTextEdits: (pageId: string) => void;
 
     reset: () => void;
 }
@@ -562,7 +585,6 @@ export const usePDFStore = create<PDFStore>()(
                 },
 
                 appendPDF: (doc, bytes, addedPagesCount) => {
-                    get().saveToHistory();
                     const currentCount = get().pages.length;
                     const newPages: PageState[] = Array.from({ length: addedPagesCount }, (_, i) => ({
                         id: generateId(),
@@ -583,6 +605,7 @@ export const usePDFStore = create<PDFStore>()(
                         pages: [...state.pages, ...newPages]
                     }));
                     savePDFToStorage(bytes, { fileName: get().fileName || 'Document.pdf', lastSaved: Date.now() });
+                    get().saveToHistory();
                 },
 
                 addPage: (source, content, width = 595, height = 842, backgroundColor) => {
@@ -732,6 +755,7 @@ export const usePDFStore = create<PDFStore>()(
                     set(state => ({
                         pages: newPages.map((p, i) => ({ ...p, pageNumber: i + 1 }))
                     }));
+                    saveToHistory();
                 },
 
                 setScale: (scale) => set({ scale }),
@@ -918,7 +942,6 @@ export const usePDFStore = create<PDFStore>()(
                 }),
 
                 duplicateObject: (pageId, objectId) => {
-                    get().saveToHistory();
                     set(state => ({
                         pages: state.pages.map(p => {
                             if (p.id !== pageId) return p;
@@ -933,10 +956,10 @@ export const usePDFStore = create<PDFStore>()(
                             return { ...p, objects: [...p.objects, newObj], isEdited: true };
                         })
                     }));
+                    get().saveToHistory();
                 },
 
                 reorderObject: (pageId, objectId, direction) => {
-                    get().saveToHistory();
                     set(state => ({
                         pages: state.pages.map(p => {
                             if (p.id !== pageId) return p;
@@ -949,11 +972,11 @@ export const usePDFStore = create<PDFStore>()(
                             return { ...p, objects: newObjects, isEdited: true };
                         })
                     }));
+                    get().saveToHistory();
                 },
 
                 groupObjects: (pageId, objectIds) => {
                     if (objectIds.length < 2) return;
-                    get().saveToHistory();
                     const newGroupId = `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                     set(state => ({
                         pages: state.pages.map(p => {
@@ -969,10 +992,10 @@ export const usePDFStore = create<PDFStore>()(
                         selectedObjectIds: objectIds,
                         isMultiSelection: true
                     }));
+                    get().saveToHistory();
                 },
 
                 ungroupObjects: (pageId, objectIds) => {
-                    get().saveToHistory();
                     set(state => ({
                         pages: state.pages.map(p => {
                             if (p.id !== pageId) return p;
@@ -985,10 +1008,10 @@ export const usePDFStore = create<PDFStore>()(
                             };
                         })
                     }));
+                    get().saveToHistory();
                 },
 
                 rotatePage: (pageId, direction) => {
-                    get().saveToHistory();
                     set(state => ({
                         pages: state.pages.map(p => {
                             if (p.id !== pageId) return p;
@@ -999,10 +1022,10 @@ export const usePDFStore = create<PDFStore>()(
                             return { ...p, rotation: newRotation, isEdited: true };
                         })
                     }));
+                    get().saveToHistory();
                 },
 
                 flipPage: (pageId, direction) => {
-                    get().saveToHistory();
                     set(state => ({
                         pages: state.pages.map(p => {
                             if (p.id !== pageId) return p;
@@ -1013,11 +1036,11 @@ export const usePDFStore = create<PDFStore>()(
                             }
                         })
                     }));
+                    get().saveToHistory();
                 },
 
                 applyStructureToAllPages: (type, structure) => {
                     if (!structure) return;
-                    get().saveToHistory();
                     set(state => ({
                         pages: state.pages.map(p => {
                             const newStructure = { ...(p.structure || {}) };
@@ -1032,6 +1055,49 @@ export const usePDFStore = create<PDFStore>()(
                             return { ...p, structure: newStructure, isEdited: true };
                         })
                     }));
+                    get().saveToHistory();
+                },
+
+                // Native Text Edit Actions
+                updateNativeTextEdit: (pageId, editId, edit) => {
+                    set(state => ({
+                        pages: state.pages.map(p =>
+                            p.id === pageId
+                                ? {
+                                    ...p,
+                                    nativeTextEdits: {
+                                        ...(p.nativeTextEdits || {}),
+                                        [editId]: edit
+                                    },
+                                    isEdited: true
+                                }
+                                : p
+                        )
+                    }));
+                    get().saveToHistory();
+                },
+
+                deleteNativeTextEdit: (pageId, editId) => {
+                    set(state => ({
+                        pages: state.pages.map(p => {
+                            if (p.id !== pageId) return p;
+                            const newEdits = { ...(p.nativeTextEdits || {}) };
+                            delete newEdits[editId];
+                            return { ...p, nativeTextEdits: newEdits, isEdited: true };
+                        })
+                    }));
+                    get().saveToHistory();
+                },
+
+                clearNativeTextEdits: (pageId) => {
+                    set(state => ({
+                        pages: state.pages.map(p =>
+                            p.id === pageId
+                                ? { ...p, nativeTextEdits: {}, isEdited: true }
+                                : p
+                        )
+                    }));
+                    get().saveToHistory();
                 },
             })
         ),

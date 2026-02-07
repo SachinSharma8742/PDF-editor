@@ -173,7 +173,7 @@ export const Toolbar: React.FC = () => {
 
                 </div>
 
-                {/* 3. Text Editing Mode - Opens Studio */}
+                {/* 3. Page Orientation */}
 
 
                 <div className={clsx("flex items-center gap-1 pr-2 mr-2 border-r border-gray-200 dark:border-white/10", !hasPages && "opacity-40 pointer-events-none")}>
@@ -193,37 +193,39 @@ export const Toolbar: React.FC = () => {
                     </button>
 
                 </div>
-                <div className="flex items-center gap-1 pr-2 mr-2 border-r border-gray-200 dark:border-white/10">
-
-                    <button
-                        onClick={() => {
-                            // Directly use pdfStore - no editor initialization needed
-                            const page = pages.find(p => p.pageNumber === currentPage);
-                            if (page) {
-                                useEditorStore.getState().openNativeTextStudio(page.id);
-                            } else {
-                                alert("Please load a PDF first.");
-                            }
-                        }}
-                        className="p-2 rounded-xl text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-all duration-200 relative group"
-                    >
-                        <Type size={18} strokeWidth={2} />
-                    </button>
-
-                </div>
-
-                {/* 5. System Controls */}
+                {/* 4. Primary Actions */}
                 <div className="flex items-center gap-2 pl-1">
                     {hasPages && (
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => {
+                                    const page = pages.find(p => p.pageNumber === currentPage);
+                                    if (page) {
+                                        useEditorStore.getState().openNativeTextStudio(page.id);
+                                    }
+                                }}
+                                className="p-2.5 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-105 transition-all active:scale-95 border border-indigo-400/30"
+                                title="Edit Text"
+                            >
+                                <Type size={18} strokeWidth={2.5} />
+                            </button>
 
-                        <button
-                            onClick={() => { const page = pages.find(p => p.pageNumber === currentPage); if (page) useEditorStore.getState().initEditor(page); }}
-                            className="p-2.5 mr-1 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-105 transition-all active:scale-95 border border-indigo-400/30"
-                        >
-                            <Pencil size={18} strokeWidth={2.5} />
-                        </button>
+                            <div className="h-6 w-px bg-gray-200 dark:bg-white/10 mx-1" />
 
+                            <button
+                                onClick={() => {
+                                    const page = pages.find(p => p.pageNumber === currentPage);
+                                    if (page) useEditorStore.getState().initEditor(page);
+                                }}
+                                className="p-2.5 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-105 transition-all active:scale-95 border border-indigo-400/30"
+                                title="Annotate PDF"
+                            >
+                                <Pencil size={18} strokeWidth={2.5} />
+                            </button>
+                        </div>
                     )}
+
+                    {/* 5. System Controls */}
 
                     <div className="flex items-center bg-gray-100 dark:bg-zinc-800 rounded-lg p-0.5 border border-transparent dark:border-white/5">
                         <button onClick={() => setScale(Math.max(0.1, scale - 0.1))} className="p-1 hover:bg-white dark:hover:bg-zinc-700 rounded-md text-gray-500 dark:text-zinc-400 transition-all"><Minus size={12} /></button>

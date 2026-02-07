@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { useEditorStore } from '../../../store/editorStore';
-import { Type, ALargeSmall, Baseline, Palette, AlignLeft, AlignCenter, AlignRight, Check, X } from 'lucide-react';
+import { Type, ALargeSmall, Baseline, Palette, AlignLeft, AlignCenter, AlignRight, Check, X, FileText } from 'lucide-react';
+import { CollapsibleSection } from './properties/CollapsibleSection';
 
 export const NativeTextProperties: React.FC = () => {
     const { activeNativeTextItem, setActiveNativeTextItem, editingMode, updateNativeTextEdit } = useEditorStore();
     const [localText, setLocalText] = useState('');
     const [localFontSize, setLocalFontSize] = useState(16);
+    const [localColor, setLocalColor] = useState('#000000');
 
     useEffect(() => {
         if (activeNativeTextItem) {
             setLocalText(activeNativeTextItem.text);
             setLocalFontSize(activeNativeTextItem.fontSize);
+            setLocalColor(activeNativeTextItem.color || '#000000');
         }
     }, [activeNativeTextItem?.id]); // Only reset when ID changes, not on every store update
 
@@ -48,6 +51,22 @@ export const NativeTextProperties: React.FC = () => {
         updateNativeTextEdit(activeNativeTextItem.id, updated);
     };
 
+    const handleColorChange = (color: string) => {
+        setLocalColor(color);
+        const updated = {
+            ...activeNativeTextItem,
+            color: color
+        };
+        setActiveNativeTextItem(updated);
+        updateNativeTextEdit(activeNativeTextItem.id, updated);
+    };
+
+    // Preset colors for quick selection (11 colors + custom picker = 12 = 2 rows)
+    const presetColors = [
+        '#000000', '#ffffff', '#374151', '#ef4444', '#f97316', '#eab308',
+        '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899'
+    ];
+
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
             <div className="flex items-center gap-2 pb-4 border-b border-gray-200 dark:border-white/10">
@@ -57,23 +76,30 @@ export const NativeTextProperties: React.FC = () => {
             </div>
 
             {/* Content Edit */}
-            <div className="space-y-2">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Content</label>
+            <CollapsibleSection
+                title="Content"
+                icon={<FileText size={12} />}
+                defaultOpen={true}
+                storageKey="native_text_content"
+            >
                 <textarea
                     value={localText}
                     onChange={(e) => handleTextChange(e.target.value)}
-                    className="w-full h-32 px-3 py-2 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none transition-all border border-gray-300"
+                    className="w-full h-32 px-3 py-2 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none transition-all border border-gray-300 mt-2"
                     style={{ backgroundColor: '#ffffff', color: '#000000' }}
                     placeholder="Enter text content..."
                 />
-            </div>
+            </CollapsibleSection>
 
             {/* Typography */}
-            <div className="space-y-4">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Typography</label>
-
+            <CollapsibleSection
+                title="Typography"
+                icon={<Type size={12} />}
+                defaultOpen={true}
+                storageKey="native_text_typography"
+            >
                 {/* Font Size */}
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 mt-2">
                     <div className="p-2 bg-gray-100 dark:bg-white/5 rounded-lg text-gray-500">
                         <ALargeSmall size={16} />
                     </div>
@@ -86,9 +112,65 @@ export const NativeTextProperties: React.FC = () => {
                             className="w-full h-1 bg-gray-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
                         />
                     </div>
-                    <span className="w-8 text-right text-xs font-mono dark:text-gray-300">{Math.round(localFontSize)}px</span>
+                    <span className="w-12 text-right text-xs font-mono dark:text-gray-300">
+                        {typeof localFontSize === 'number'
+                            ? Number(localFontSize).toFixed(2).replace(/\.00$/, '')
+                            : localFontSize}px
+                    </span>
                 </div>
-            </div>
+
+                {/* Text Color */}
+                <div className="mt-4 pt-4 border-t border-white/5">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                            <Palette size={14} className="text-gray-500" />
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Text Color</span>
+                        </div>
+                        {/* Current color preview */}
+                        <div className="flex items-center gap-2">
+                            <div
+                                className="w-6 h-6 rounded-md shadow-inner border border-white/10"
+                                style={{ backgroundColor: localColor }}
+                            />
+                            <span className="text-[10px] font-mono text-zinc-500 uppercase">
+                                {localColor}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Color Grid */}
+                    <div className="grid grid-cols-6 gap-1.5 p-2 bg-black/20 rounded-xl">
+                        {presetColors.map((color) => (
+                            <button
+                                key={color}
+                                onClick={() => handleColorChange(color)}
+                                className={`aspect-square rounded-lg transition-all duration-150 hover:scale-105 active:scale-95 ${localColor === color
+                                    ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-zinc-900 shadow-lg'
+                                    : 'hover:ring-1 hover:ring-white/30'
+                                    }`}
+                                style={{
+                                    backgroundColor: color,
+                                    boxShadow: localColor === color ? `0 4px 12px ${color}40` : undefined
+                                }}
+                                title={color}
+                            />
+                        ))}
+                        {/* Custom color picker */}
+                        <label
+                            className="aspect-square rounded-lg bg-gradient-to-br from-red-500 via-green-500 to-blue-500 cursor-pointer hover:scale-105 active:scale-95 transition-all duration-150 relative overflow-hidden flex items-center justify-center"
+                            title="Custom color"
+                        >
+                            <span className="text-white text-lg font-bold drop-shadow-md">+</span>
+                            <input
+                                type="color"
+                                value={localColor}
+                                onChange={(e) => handleColorChange(e.target.value)}
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                        </label>
+                    </div>
+                </div>
+            </CollapsibleSection>
 
             {/* Info Box */}
             <div className="p-3 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/20 rounded-xl">

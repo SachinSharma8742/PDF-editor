@@ -5,7 +5,7 @@ import {
     ArrowUpToLine, ArrowDownToLine, AlignVerticalJustifyCenter,
     Trash2, Layers, Copy, Group, Ungroup,
     Type, Image as ImageIcon, Box, PenTool,
-    Zap, PaintBucket, LayoutTemplate, Scaling
+    Zap, PaintBucket, LayoutTemplate, Scaling, Wand2
 } from 'lucide-react';
 import type { PDFObject } from '../../../store/pdfStore';
 import { ActionButton, SimpleInput, Slider, ColorGrid } from './properties/PropertyComponents';
@@ -249,10 +249,18 @@ export const EditorProperties: React.FC = () => {
                                         <ImageIcon size={10} /> <span>Image Tools</span>
                                     </div>
                                     <ActionButton
-                                        label={useEditorStore.getState().isCropping ? "Done Cropping" : "Crop Image"}
-                                        icon={<Box size={13} />}
-                                        onClick={() => useEditorStore.getState().setCropping(!useEditorStore.getState().isCropping)}
-                                        className={useEditorStore.getState().isCropping ? "bg-blue-600 text-white" : ""}
+                                        label="Image Studio"
+                                        icon={<Wand2 size={13} />}
+                                        onClick={() => {
+                                            if (firstObj.src) {
+                                                useEditorStore.getState().openImageStudio(
+                                                    firstObj.originalSrc || firstObj.src,
+                                                    firstObj.id,
+                                                    firstObj.editParams
+                                                );
+                                            }
+                                        }}
+                                        className="bg-blue-600 text-white"
                                     />
                                 </div>
                             )}

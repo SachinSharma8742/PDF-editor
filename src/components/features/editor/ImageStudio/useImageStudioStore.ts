@@ -18,6 +18,7 @@ export interface ImageEditParams {
     flipX: boolean;
     flipY: boolean;
     crop: { x: number; y: number; width: number; height: number } | null;
+    cropShape?: 'rect' | 'circle' | 'heart';
 }
 
 export const DEFAULT_EDIT_PARAMS: ImageEditParams = {
@@ -37,7 +38,8 @@ export const DEFAULT_EDIT_PARAMS: ImageEditParams = {
     rotation: 0,
     flipX: false,
     flipY: false,
-    crop: null
+    crop: null,
+    cropShape: 'rect'
 };
 
 interface ImageStudioStore {

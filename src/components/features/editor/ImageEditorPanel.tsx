@@ -6,6 +6,7 @@ import {
     Palette, Circle, Square
 } from 'lucide-react';
 import clsx from 'clsx';
+import { CollapsibleSection } from './properties/CollapsibleSection';
 
 export const ImageEditorPanel: React.FC = () => {
     const { selectedObjectIds, updateObject, currentPage, isCropping, setCropping } = useEditorStore();
@@ -44,8 +45,11 @@ export const ImageEditorPanel: React.FC = () => {
             </div>
 
             {/* Quick Actions / Transforms */}
-            <div className="space-y-4">
-                <SectionLabel label="Transforms" icon={<RotateCw size={12} />} />
+            <CollapsibleSection
+                title="Transforms"
+                icon={<RotateCw size={12} />}
+                storageKey="image_transforms"
+            >
                 <div className="grid grid-cols-2 gap-2">
                     <button
                         onClick={() => updateObject(selectedObj.id, { flipX: !selectedObj.flipX })}
@@ -72,56 +76,63 @@ export const ImageEditorPanel: React.FC = () => {
                         <span className="text-[10px] font-bold uppercase">Flip Y</span>
                     </button>
                 </div>
-            </div>
+            </CollapsibleSection>
 
             {/* Adjustment Sliders */}
-            <div className="space-y-6">
-                <SectionLabel label="Adjustments" icon={<SlidersIcon size={12} />} />
+            <CollapsibleSection
+                title="Adjustments"
+                icon={<SlidersIcon size={12} />}
+                storageKey="image_adjustments"
+            >
+                <div className="space-y-6 pt-2">
+                    <FilterSlider
+                        label="Brightness"
+                        icon={<Sun size={14} />}
+                        value={selectedObj.brightness ?? 0}
+                        min={-1} max={1} step={0.05}
+                        onChange={(v: number) => updateObject(selectedObj.id, { brightness: v })}
+                    />
 
-                <FilterSlider
-                    label="Brightness"
-                    icon={<Sun size={14} />}
-                    value={selectedObj.brightness ?? 0}
-                    min={-1} max={1} step={0.05}
-                    onChange={(v: number) => updateObject(selectedObj.id, { brightness: v })}
-                />
+                    <FilterSlider
+                        label="Contrast"
+                        icon={<Contrast size={14} />}
+                        value={selectedObj.contrast ?? 0}
+                        min={-100} max={100} step={5}
+                        onChange={(v: number) => updateObject(selectedObj.id, { contrast: v })}
+                    />
 
-                <FilterSlider
-                    label="Contrast"
-                    icon={<Contrast size={14} />}
-                    value={selectedObj.contrast ?? 0}
-                    min={-100} max={100} step={5}
-                    onChange={(v: number) => updateObject(selectedObj.id, { contrast: v })}
-                />
+                    <FilterSlider
+                        label="Saturation"
+                        icon={<Droplet size={14} />}
+                        value={selectedObj.saturation ?? 0}
+                        min={-2} max={10} step={0.1}
+                        onChange={(v: number) => updateObject(selectedObj.id, { saturation: v })}
+                    />
 
-                <FilterSlider
-                    label="Saturation"
-                    icon={<Droplet size={14} />}
-                    value={selectedObj.saturation ?? 0}
-                    min={-2} max={10} step={0.1}
-                    onChange={(v: number) => updateObject(selectedObj.id, { saturation: v })}
-                />
+                    <FilterSlider
+                        label="Blur"
+                        icon={<Ghost size={14} />}
+                        value={selectedObj.blurRadius ?? 0}
+                        min={0} max={40} step={1}
+                        onChange={(v: number) => updateObject(selectedObj.id, { blurRadius: v })}
+                    />
 
-                <FilterSlider
-                    label="Blur"
-                    icon={<Ghost size={14} />}
-                    value={selectedObj.blurRadius ?? 0}
-                    min={0} max={40} step={1}
-                    onChange={(v: number) => updateObject(selectedObj.id, { blurRadius: v })}
-                />
-
-                <FilterSlider
-                    label="Noise"
-                    icon={<SparklesIcon size={14} />}
-                    value={selectedObj.noise ?? 0}
-                    min={0} max={4} step={0.1}
-                    onChange={(v: number) => updateObject(selectedObj.id, { noise: v })}
-                />
-            </div>
+                    <FilterSlider
+                        label="Noise"
+                        icon={<SparklesIcon size={14} />}
+                        value={selectedObj.noise ?? 0}
+                        min={0} max={4} step={0.1}
+                        onChange={(v: number) => updateObject(selectedObj.id, { noise: v })}
+                    />
+                </div>
+            </CollapsibleSection>
 
             {/* Effects / Toggles */}
-            <div className="space-y-4">
-                <SectionLabel label="Effects" icon={<Layers size={12} />} />
+            <CollapsibleSection
+                title="Effects"
+                icon={<Layers size={12} />}
+                storageKey="image_effects"
+            >
                 <div className="grid grid-cols-2 gap-2">
                     <EffectToggle
                         label="Grayscale"
@@ -139,50 +150,55 @@ export const ImageEditorPanel: React.FC = () => {
                         onClick={() => updateObject(selectedObj.id, { sepia: selectedObj.sepia === 1 ? 0 : 1 })}
                     />
                 </div>
-            </div>
+            </CollapsibleSection>
 
             {/* Styling */}
-            <div className="space-y-6">
-                <SectionLabel label="Styling" icon={<Palette size={12} />} />
-
-                <FilterSlider
-                    label="Opacity"
-                    icon={<Droplet size={14} />}
-                    value={selectedObj.opacity ?? 1}
-                    min={0} max={1} step={0.05}
-                    onChange={(v: number) => updateObject(selectedObj.id, { opacity: v })}
-                />
-
-                <FilterSlider
-                    label="Corner Radius"
-                    icon={<Circle size={14} />}
-                    value={selectedObj.cornerRadius ?? 0}
-                    min={0} max={100} step={1}
-                    onChange={(v: number) => updateObject(selectedObj.id, { cornerRadius: v })}
-                />
-
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between text-zinc-400">
-                        <div className="flex items-center gap-2 text-[10px] font-medium uppercase">
-                            <Square size={14} /> <span>Border</span>
-                        </div>
-                        <span className="text-[10px] font-mono">{selectedObj.strokeWidth || 0}px</span>
-                    </div>
-                    <input
-                        type="range"
-                        min={0} max={20} step={1}
-                        value={selectedObj.strokeWidth || 0}
-                        onChange={(e) => updateObject(selectedObj.id, { strokeWidth: Number(e.target.value), stroke: selectedObj.stroke || '#000000' })}
-                        className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            <CollapsibleSection
+                title="Styling"
+                icon={<Palette size={12} />}
+                storageKey="image_styling"
+            >
+                <div className="space-y-6 pt-2">
+                    <FilterSlider
+                        label="Opacity"
+                        icon={<Droplet size={14} />}
+                        value={selectedObj.opacity ?? 1}
+                        min={0} max={1} step={0.05}
+                        onChange={(v: number) => updateObject(selectedObj.id, { opacity: v })}
                     />
+
+                    <FilterSlider
+                        label="Corner Radius"
+                        icon={<Circle size={14} />}
+                        value={selectedObj.cornerRadius ?? 0}
+                        min={0} max={100} step={1}
+                        onChange={(v: number) => updateObject(selectedObj.id, { cornerRadius: v })}
+                    />
+
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between text-zinc-400">
+                            <div className="flex items-center gap-2 text-[10px] font-medium uppercase">
+                                <Square size={14} /> <span>Border</span>
+                            </div>
+                            <span className="text-[10px] font-mono">{selectedObj.strokeWidth || 0}px</span>
+                        </div>
+                        <input
+                            type="range"
+                            min={0} max={20} step={1}
+                            value={selectedObj.strokeWidth || 0}
+                            onChange={(e) => updateObject(selectedObj.id, { strokeWidth: Number(e.target.value), stroke: selectedObj.stroke || '#000000' })}
+                            className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        />
+                    </div>
                 </div>
-            </div>
+            </CollapsibleSection>
 
             {/* Shadow */}
-            <div className="space-y-6">
-                <SectionLabel label="Shadow" icon={<Layers size={12} />} />
-                <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Enable Shadow</span>
+            <CollapsibleSection
+                title="Shadow"
+                icon={<Layers size={12} />}
+                storageKey="image_shadow"
+                action={
                     <button
                         onClick={() => {
                             if (selectedObj.shadowOpacity) {
@@ -209,10 +225,10 @@ export const ImageEditorPanel: React.FC = () => {
                             selectedObj.shadowOpacity ? "left-5" : "left-1"
                         )} />
                     </button>
-                </div>
-
+                }
+            >
                 {selectedObj.shadowOpacity ? (
-                    <>
+                    <div className="space-y-6 pt-2">
                         <FilterSlider
                             label="Blur"
                             icon={<Ghost size={14} />}
@@ -234,9 +250,13 @@ export const ImageEditorPanel: React.FC = () => {
                             min={0} max={1} step={0.05}
                             onChange={(v: number) => updateObject(selectedObj.id, { shadowOpacity: v })}
                         />
-                    </>
-                ) : null}
-            </div>
+                    </div>
+                ) : (
+                    <div className="text-xs text-zinc-500 italic py-2">
+                        Shadow is disabled. Turn it on to adjust settings.
+                    </div>
+                )}
+            </CollapsibleSection>
 
             {/* Crop */}
             <div className="pt-4 border-t border-white/5">

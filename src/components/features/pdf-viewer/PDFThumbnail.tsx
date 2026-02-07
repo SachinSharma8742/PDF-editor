@@ -168,12 +168,16 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
         const cacheKey = ThumbnailCache.getKey(fileName || 'untitled', pageState.originalPageIndex || 0, width);
         let isCancelled = false;
 
+        // Set rendering true immediately to show spinner while loading
+        setRendering(true);
+
         const render = async () => {
             // Check Cache First
             const cachedBlob = await ThumbnailCache.get(cacheKey);
             if (cachedBlob && !isCancelled) {
                 const url = URL.createObjectURL(cachedBlob);
                 setImageSrc(url);
+                setRendering(false); // Clear spinner once cache is loaded
 
                 // We still need dimensions to set up annotation layer
                 const img = new Image();
@@ -190,8 +194,7 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
                 return;
             }
 
-            // Render fresh
-            setRendering(true);
+            // Render fresh (rendering already true)
             try {
                 const page = await pdfDocument.getPage(pageState.originalPageIndex);
                 if (isCancelled) return;

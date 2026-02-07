@@ -146,42 +146,73 @@ const URLImage = ({ object, opacity, ...props }: any) => {
     ]);
 
     return (
-        <KonvaImage
-            ref={imageRef}
-            image={img}
-            opacity={opacity}
-            scaleX={object.flipX ? -1 : 1}
-            scaleY={object.flipY ? -1 : 1}
-            skewX={object.skewX || 0}
-            skewY={object.skewY || 0}
-            offsetX={object.flipX ? object.width : 0}
-            offsetY={object.flipY ? object.height : 0}
-            crop={object.crop}
-
-            // Styling
-            cornerRadius={object.cornerRadius || 0}
-            stroke={object.stroke}
-            strokeWidth={object.strokeWidth}
-
-            // Advanced Crop Shape (Masking)
-            clipFunc={object.cropShape === 'circle' ? (ctx: any) => {
+        <Group
+            x={props.x}
+            y={props.y}
+            width={props.width}
+            height={props.height}
+            // Apply clip to the Group
+            clipFunc={(!object.cropShape || object.cropShape === 'rect') ? undefined : (ctx: any) => {
+                const shape = object.cropShape;
                 const w = object.width || 0;
                 const h = object.height || 0;
-                // Draw Ellipse
-                ctx.beginPath();
-                ctx.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-                ctx.closePath();
-            } : undefined}
 
-            // Shadow
-            shadowColor={object.shadowColor}
-            shadowBlur={object.shadowBlur}
-            shadowOffsetX={object.shadowOffsetX}
-            shadowOffsetY={object.shadowOffsetY}
-            shadowOpacity={object.shadowOpacity}
+                if (shape === 'circle') {
+                    ctx.beginPath();
+                    ctx.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+                    ctx.closePath();
+                } else if (shape === 'heart') {
+                    const cx = 0;
+                    const cy = 0;
+                    const cw = w;
+                    const ch = h;
 
-            {...props}
-        />
+                    ctx.beginPath();
+                    ctx.moveTo(cx + cw / 2, cy + ch);
+                    ctx.bezierCurveTo(cx, cy + ch * 0.6, cx, cy, cx + cw / 2, cy + ch * 0.3);
+                    ctx.bezierCurveTo(cx + cw, cy, cx + cw, cy + ch * 0.6, cx + cw / 2, cy + ch);
+                    ctx.closePath();
+                }
+            }}
+        >
+            <KonvaImage
+                ref={imageRef}
+                image={img}
+                opacity={opacity}
+                // Reset position relative to Group
+                x={0}
+                y={0}
+                width={props.width}
+                height={props.height}
+
+                scaleX={object.flipX ? -1 : 1}
+                scaleY={object.flipY ? -1 : 1}
+                skewX={object.skewX || 0}
+                skewY={object.skewY || 0}
+                offsetX={object.flipX ? object.width : 0}
+                offsetY={object.flipY ? object.height : 0}
+                crop={object.crop}
+
+                fill="transparent"
+                cornerRadius={object.cornerRadius || 0}
+                stroke={object.stroke}
+                strokeWidth={object.strokeWidth}
+
+                // Shadow (apply to image or group? Image is better for cached filters usually, 
+                // but if clipped, shadow should follow clip? 
+                // If shadow is on Image, and Image is cached, shadow is baked. 
+                // Then Group clips it. This cuts the shadow.
+                // ideally shadow should be on the Group? 
+                // But let's stick to minimal changes for transparency first.
+                shadowColor={object.shadowColor}
+                shadowBlur={object.shadowBlur}
+                shadowOffsetX={object.shadowOffsetX}
+                shadowOffsetY={object.shadowOffsetY}
+                shadowOpacity={object.shadowOpacity}
+
+                {...props}
+            />
+        </Group>
     );
 };
 

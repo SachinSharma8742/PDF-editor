@@ -12,7 +12,7 @@ interface PDFTextLayerProps {
 
 export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, viewOnly = false }) => {
     const { pdfDocument, pages } = usePDFStore();
-    const { editingMode, setActiveNativeTextItem, activeNativeTextItem, setEditingMode, pendingNativeTextEdits } = useEditorStore();
+    const { editingMode, setActiveNativeTextItem, activeNativeTextItem, setEditingMode, findReplaceState } = useEditorStore();
     const [textItems, setTextItems] = useState<any[]>([]);
     const layerRef = useRef<HTMLDivElement>(null);
 
@@ -70,8 +70,9 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
         loadText();
     }, [pdfDocument, pageNumber, pageState]);
 
-    // Get edits for this page
-    const pageEdits = Object.values(pendingNativeTextEdits).filter(edit => edit.pageId === pageState?.id);
+    // Get edits for this page from pageState
+    const nativeTextEdits = pageState?.nativeTextEdits || {};
+    const pageEdits = Object.values(nativeTextEdits);
 
     // In view-only mode, only render if there are edits to show
     if (viewOnly) {
@@ -102,11 +103,9 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                                 height: fontSize * 1.2,
                                 fontSize: fontSize,
                                 fontFamily: edit.fontFamily || 'sans-serif',
-                                color: '#000000',
+                                color: edit.color || '#000000',
                                 backgroundColor: '#ffffff',
                                 padding: '0 4px',
-                                borderRadius: '2px',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
                             }}
                         >
                             {edit.text}
@@ -148,8 +147,15 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                 const top = vy - (fontSize * 0.8);
 
                 const isSelected = activeNativeTextItem?.id === item.id;
-                const isEdited = pendingNativeTextEdits[item.id] !== undefined;
-                const activeEdit = pendingNativeTextEdits[item.id];
+                const isEdited = nativeTextEdits[item.id] !== undefined;
+                const activeEdit = nativeTextEdits[item.id];
+
+                // Check if this text item has any find/replace matches
+                const matchIndices = findReplaceState.matches
+                    .map((m, idx) => m.id === item.id ? idx : -1)
+                    .filter(idx => idx !== -1);
+                const hasMatch = matchIndices.length > 0;
+                const isCurrentMatch = matchIndices.includes(findReplaceState.currentMatchIndex);
 
                 // Text content to show: edited or original?
                 // If edited, we show the edited text.
@@ -164,7 +170,9 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                         className={clsx(
                             "absolute cursor-text transition-all duration-100 flex items-center whitespace-pre",
                             isSelected ? "ring-1 ring-blue-500 z-30" : "hover:bg-blue-200/20 z-10",
-                            isEdited ? "bg-white z-20" : ""
+                            isEdited ? "bg-white z-20" : "",
+                            hasMatch && !isCurrentMatch ? "bg-yellow-200/60 z-15" : "",
+                            isCurrentMatch ? "bg-orange-300/80 ring-2 ring-orange-500 z-25" : ""
                         )}
                         style={{
                             left: vx,
@@ -175,7 +183,7 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                             fontFamily: activeEdit?.fontFamily || 'sans-serif',
                             pointerEvents: 'auto',
                             transformOrigin: '0% 0%',
-                            color: isEdited ? '#000' : 'transparent', // Show text if edited
+                            color: isEdited && activeEdit?.color ? activeEdit.color : 'transparent', // Show text if edited
                             // If edited, we need to match the font size of the edit
                             ...(isEdited && activeEdit ? {
                                 fontSize: activeEdit.fontSize * item.viewportScale, // Adjusted scale? 
@@ -196,6 +204,7 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                                 height: item.height || fontScaleY,
                                 fontSize: Math.sqrt(fontScaleY * fontScaleY),
                                 fontFamily: item.fontName,
+                                color: item.color || '#000000',
                                 originalRef: item,
                                 pageId: pageState!.id
                             };

@@ -6,7 +6,7 @@ import { useImageStudioStore } from './useImageStudioStore';
 import {
     X, Image as ImageIcon, Check, RotateCcw,
     Sun, Contrast, Droplet, MoveHorizontal, MoveVertical,
-    Ghost, RotateCw, Wand2, Sliders, Crop, Maximize, Square, Sparkles, RefreshCw
+    Ghost, RotateCw, Wand2, Sliders, Crop, Maximize, Square, Sparkles, RefreshCw, Heart
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -157,9 +157,11 @@ export const ImageStudio: React.FC = () => {
             flipY: params.flipY,
             rotation: params.rotation,
             crop: params.crop || undefined,
+            cropShape: params.cropShape || 'rect', // Pass the shape!
             editParams: {
                 ...params,
-                crop: params.crop || undefined
+                crop: params.crop || undefined,
+                cropShape: params.cropShape || 'rect'
             }
         };
 
@@ -309,25 +311,57 @@ export const ImageStudio: React.FC = () => {
             case 'crop':
                 return (
                     <div className="space-y-4">
-                        <div className="grid grid-cols-3 gap-2">
-                            {[
-                                { label: 'Original', ratio: null, icon: Maximize },
-                                { label: '1:1', ratio: 1, icon: Square },
-                                { label: '16:9', ratio: 16 / 9, icon: Crop },
-                                { label: '4:3', ratio: 4 / 3, icon: Crop },
-                                { label: '3:2', ratio: 3 / 2, icon: Crop },
-                                { label: '9:16', ratio: 9 / 16, icon: Crop },
-                            ].map(p => (
-                                <button
-                                    key={p.label}
-                                    onClick={() => handleAspectRatio(p.ratio)}
-                                    className="flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl bg-zinc-800/30 hover:bg-zinc-800 border border-white/5 hover:border-white/10 text-zinc-500 hover:text-white transition-all"
-                                >
-                                    <p.icon size={14} />
-                                    <span className="text-[9px] font-bold uppercase">{p.label}</span>
-                                </button>
-                            ))}
+                        {/* Shape Selection */}
+                        <div className="space-y-2">
+                            <span className="text-[10px] font-bold uppercase text-zinc-500">Shape</span>
+                            <div className="flex gap-2">
+                                {[
+                                    { id: 'rect', label: 'Square', icon: Square },
+                                    { id: 'circle', label: 'Circle', icon: null }, // Custom circle icon
+                                    { id: 'heart', label: 'Heart', icon: Heart },
+                                ].map(shape => (
+                                    <button
+                                        key={shape.id}
+                                        onClick={() => setParam('cropShape', shape.id)}
+                                        className={clsx(
+                                            "flex-1 py-2 rounded-lg border flex items-center justify-center transition-all",
+                                            (params.cropShape === shape.id || (!params.cropShape && shape.id === 'rect'))
+                                                ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
+                                                : "bg-zinc-800/30 border-white/5 text-zinc-500 hover:text-white hover:bg-zinc-800"
+                                        )}
+                                        title={shape.label}
+                                    >
+                                        {shape.icon ? <shape.icon size={16} /> : <div className="w-4 h-4 rounded-full border-2 border-current" />}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
+
+                        {/* Aspect Ratios */}
+                        <div className="space-y-2">
+                            <span className="text-[10px] font-bold uppercase text-zinc-500">Aspect Ratio</span>
+                            <div className="grid grid-cols-3 gap-2">
+                                {[
+                                    { label: 'Original', ratio: null, icon: Maximize },
+                                    { label: '1:1', ratio: 1, icon: Square },
+                                    { label: '16:9', ratio: 16 / 9, icon: Crop },
+                                    { label: '4:3', ratio: 4 / 3, icon: Crop },
+                                    { label: '3:2', ratio: 3 / 2, icon: Crop },
+                                    { label: '9:16', ratio: 9 / 16, icon: Crop },
+                                ].map(p => (
+                                    <button
+                                        key={p.label}
+                                        onClick={() => handleAspectRatio(p.ratio)}
+                                        className="flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl bg-zinc-800/30 hover:bg-zinc-800 border border-white/5 hover:border-white/10 text-zinc-500 hover:text-white transition-all"
+                                    >
+                                        <p.icon size={14} />
+                                        <span className="text-[9px] font-bold uppercase">{p.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Manual Dimensions */}
                         <div className="flex items-center gap-2">
                             <div className="flex-1 flex items-center gap-2 bg-zinc-900 rounded-lg px-2.5 py-2 border border-white/5">
                                 <span className="text-[9px] uppercase font-bold text-zinc-500">W</span>

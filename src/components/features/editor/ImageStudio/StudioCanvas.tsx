@@ -23,11 +23,12 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
         }
     }, [img, setDimensions]);
 
-    // Calculate fit dimensions with rotation support
+    // Calculate fit dimensions with rotation support AND smart zoom for cropping
     const displayDims = useMemo(() => {
         if (!img || width === 0 || height === 0) return {
             width: 0, height: 0, scale: 1, x: 0, y: 0,
-            stageCenterX: width / 2, stageCenterY: height / 2
+            stageCenterX: width / 2, stageCenterY: height / 2,
+            offsetX: 0, offsetY: 0, smartZoomActive: false
         };
 
         // Add padding
@@ -41,24 +42,73 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
         const effectiveIW = isRotated ? img.height : img.width;
         const effectiveIH = isRotated ? img.width : img.height;
 
-        const scaleW = availW / effectiveIW;
-        const scaleH = availH / effectiveIH;
-        const scale = Math.min(scaleW, scaleH, 1);
+        // Base scale to fit full image
+        const baseScaleW = availW / effectiveIW;
+        const baseScaleH = availH / effectiveIH;
+        const baseScale = Math.min(baseScaleW, baseScaleH, 1);
+
+        // Smart Zoom: When in crop mode with a crop selection
+        let smartScale = baseScale;
+        let offsetX = 0;
+        let offsetY = 0;
+        let smartZoomActive = false;
+
+        if (activeTab === 'crop' && params.crop) {
+            const cropW = params.crop.width;
+            const cropH = params.crop.height;
+            const imageArea = img.width * img.height;
+            const cropArea = cropW * cropH;
+            const cropRatio = cropArea / imageArea;
+
+            // Only apply smart zoom if crop is less than 80% of image area
+            if (cropRatio < 0.8) {
+                smartZoomActive = true;
+
+                // Calculate scale to make the crop area fill ~70% of available space
+                const effectiveCropW = isRotated ? cropH : cropW;
+                const effectiveCropH = isRotated ? cropW : cropH;
+
+                const cropScaleW = (availW * 0.85) / effectiveCropW;
+                const cropScaleH = (availH * 0.85) / effectiveCropH;
+                const cropScale = Math.min(cropScaleW, cropScaleH);
+
+                // Limit zoom to reasonable bounds (1x to 4x of base scale)
+                const maxZoom = baseScale * 4;
+                const minZoom = baseScale;
+                smartScale = Math.max(minZoom, Math.min(cropScale, maxZoom));
+
+                // Calculate offset to center the crop area
+                // Crop center in image coordinates
+                const cropCenterX = params.crop.x + cropW / 2;
+                const cropCenterY = params.crop.y + cropH / 2;
+
+                // Image center
+                const imageCenterX = img.width / 2;
+                const imageCenterY = img.height / 2;
+
+                // Offset needed to center crop (in scaled pixels)
+                offsetX = (imageCenterX - cropCenterX) * smartScale;
+                offsetY = (imageCenterY - cropCenterY) * smartScale;
+            }
+        }
 
         // Current visual width/height
-        const visualW = img.width * scale;
-        const visualH = img.height * scale;
+        const visualW = img.width * smartScale;
+        const visualH = img.height * smartScale;
 
         return {
             width: visualW,
             height: visualH,
-            scale,
+            scale: smartScale,
             x: (width - visualW) / 2, // Top-left of unrotated image relative to stage (approx)
             y: (height - visualH) / 2,
             stageCenterX: width / 2,
             stageCenterY: height / 2,
+            offsetX,
+            offsetY,
+            smartZoomActive
         };
-    }, [img, width, height, params.rotation]);
+    }, [img, width, height, params.rotation, activeTab, params.crop]);
 
     // Apply Crop Overlay
     useEffect(() => {
@@ -144,8 +194,8 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
                 {/* Checkerboard Background for Transparency */}
                 <KonvaImage
                     image={checkerboardPattern(20)}
-                    x={displayDims.stageCenterX}
-                    y={displayDims.stageCenterY}
+                    x={displayDims.stageCenterX + displayDims.offsetX}
+                    y={displayDims.stageCenterY + displayDims.offsetY}
                     width={displayDims.width}
                     height={displayDims.height}
                     offsetX={displayDims.width / 2}
@@ -168,9 +218,9 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
                     offsetX={displayDims.width / 2}
                     offsetY={displayDims.height / 2}
 
-                    // Place at center of stage
-                    x={displayDims.stageCenterX}
-                    y={displayDims.stageCenterY}
+                    // Place at center of stage (with smart zoom offset)
+                    x={displayDims.stageCenterX + displayDims.offsetX}
+                    y={displayDims.stageCenterY + displayDims.offsetY}
 
                     scaleX={(params.flipX ? -1 : 1)}
                     scaleY={(params.flipY ? -1 : 1)}
@@ -180,8 +230,8 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
                 {activeTab === 'crop' && (
                     <>
                         <Group
-                            x={displayDims.stageCenterX}
-                            y={displayDims.stageCenterY}
+                            x={displayDims.stageCenterX + displayDims.offsetX}
+                            y={displayDims.stageCenterY + displayDims.offsetY}
                             offsetX={displayDims.width / 2}
                             offsetY={displayDims.height / 2}
                             rotation={params.rotation}
@@ -190,7 +240,52 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
                         >
                             {/* Dark Tint Overlay with Hole */}
                             <Path
-                                data={`M 0 0 H ${displayDims.width} V ${displayDims.height} H 0 Z M ${(params.crop ? params.crop.x * displayDims.scale : 0)} ${(params.crop ? params.crop.y * displayDims.scale : 0)} H ${(params.crop ? (params.crop.x + params.crop.width) * displayDims.scale : displayDims.width)} V ${(params.crop ? (params.crop.y + params.crop.height) * displayDims.scale : displayDims.height)} H ${(params.crop ? params.crop.x * displayDims.scale : 0)} Z`}
+                                data={(() => {
+                                    // Outer Rectangle (Full Image)
+                                    const outer = `M 0 0 H ${displayDims.width} V ${displayDims.height} H 0 Z`;
+
+                                    // Inner Hole (The visible crop part)
+                                    let inner = "";
+
+                                    const cx = params.crop ? params.crop.x * displayDims.scale : 0;
+                                    const cy = params.crop ? params.crop.y * displayDims.scale : 0;
+                                    const cw = params.crop ? params.crop.width * displayDims.scale : displayDims.width;
+                                    const ch = params.crop ? params.crop.height * displayDims.scale : displayDims.height;
+                                    const shape = params.cropShape || 'rect';
+
+                                    if (shape === 'circle') {
+                                        const rx = cw / 2;
+                                        const ry = ch / 2;
+                                        const centX = cx + rx;
+                                        const centY = cy + ry;
+                                        // Counter-clockwise for hole in non-zero rule,
+                                        // BUT evenodd rule is simpler: just draw the shape.
+                                        // For evenodd to work as a hole, we just draw the shape path.
+                                        // Circle path: move to right edge, arc around.
+                                        inner = `M ${centX - rx} ${centY} A ${rx} ${ry} 0 1 0 ${centX + rx} ${centY} A ${rx} ${ry} 0 1 0 ${centX - rx} ${centY}`;
+                                    } else if (shape === 'heart') {
+                                        // Approximate heart shape path normalized to crop box
+                                        const p0 = { x: cx + cw / 2, y: cy + ch };
+                                        const p1 = { x: cx, y: cy + ch * 0.4 };
+                                        const p2 = { x: cx, y: cy };
+                                        const p3 = { x: cx + cw / 2, y: cy + ch * 0.2 };
+                                        const p4 = { x: cx + cw, y: cy };
+                                        const p5 = { x: cx + cw, y: cy + ch * 0.4 };
+
+                                        // Cubic Bezier Heart
+                                        // simplified:
+                                        // M center bottom
+                                        // C (control points) top-left
+                                        inner = `M ${cx + cw / 2} ${cy + ch} ` +
+                                            `C ${cx} ${cy + ch * 0.6}, ${cx} ${cy}, ${cx + cw / 2} ${cy + ch * 0.3} ` +
+                                            `C ${cx + cw} ${cy}, ${cx + cw} ${cy + ch * 0.6}, ${cx + cw / 2} ${cy + ch} Z`;
+                                    } else {
+                                        // Rect
+                                        inner = `M ${cx} ${cy} H ${cx + cw} V ${cy + ch} H ${cx} Z`;
+                                    }
+
+                                    return `${outer} ${inner}`;
+                                })()}
                                 fill="rgba(0, 0, 0, 0.6)"
                                 fillRule="evenodd" // Important for hole
                                 listening={false} // Don't block interactions
@@ -219,7 +314,7 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
                                         const scaleX = node.scaleX();
                                         const scaleY = node.scaleY();
 
-                                        // Reset scale to 1
+                                        // Reset scale to 1 - standard Konva pattern
                                         node.scaleX(1);
                                         node.scaleY(1);
                                         node.width(node.width() * scaleX);

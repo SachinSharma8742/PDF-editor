@@ -47,10 +47,10 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     return (
         <div className={clsx("border-b border-white/5 pb-2 mb-2 last:border-0 last:mb-0 last:pb-0", className)}>
             <div
-                className="flex items-center justify-between py-2 cursor-pointer group select-none"
+                className="flex items-center justify-between py-3 px-4 cursor-pointer group select-none hover:bg-white/[0.02] transition-colors"
                 onClick={() => setIsOpen(!isOpen)}
             >
-                <div className="flex items-center gap-2 text-[10px] font-black text-zinc-500 uppercase tracking-[0.15em] group-hover:text-zinc-300 transition-colors">
+                <div className="flex items-center gap-3 text-[10px] font-black text-zinc-500 uppercase tracking-[0.15em] group-hover:text-zinc-300 transition-colors">
                     <div className={clsx("transition-transform duration-200 text-zinc-600 group-hover:text-zinc-400", isOpen ? "rotate-90" : "")}>
                         <ChevronRight size={10} strokeWidth={4} />
                     </div>
@@ -74,7 +74,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
                         transition={{ duration: 0.2, ease: "easeInOut" }}
                         className="overflow-hidden"
                     >
-                        <div className="pt-1 pb-2">
+                        <div className="pt-1 pb-4 px-4">
                             {children}
                         </div>
                     </motion.div>
