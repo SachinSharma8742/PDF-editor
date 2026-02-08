@@ -44,12 +44,15 @@ export const EditorLeftPanel: React.FC = () => {
             setActiveTab('scale');
             setIsCollapsed(false);
         } else if (hasSelection) {
-            if (selectedObj?.type === 'image') {
+            if (selectedObj?.type === 'group') {
+                setIsCollapsed(true);
+            } else if (selectedObj?.type === 'image') {
                 setActiveTab('image-editor');
+                setIsCollapsed(false);
             } else {
                 setActiveTab('properties');
+                setIsCollapsed(false);
             }
-            setIsCollapsed(false);
         } else if (editingMode === 'native-text') {
             setActiveTab('properties');
             setIsCollapsed(false);

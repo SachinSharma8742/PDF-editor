@@ -76,7 +76,13 @@ export const Toolbar: React.FC = () => {
             } else if (exportFormat === 'flattened') {
                 await saveDocumentFlattened(pagesToExport, pdfDocument, exportQuality);
             } else if (exportFormat === 'png') {
-                for (const page of pagesToExport) {
+                // For PNG, if no selection is made, default to CURRENT PAGE ONLY
+                // instead of all pages (which causes multiple downloads/popups)
+                const pagesToExportPng = (isSelectionMode && selectedPageIds.length > 0)
+                    ? pagesToExport
+                    : pages.filter(p => p.pageNumber === currentPage);
+
+                for (const page of pagesToExportPng) {
                     await exportPageAsImage(page, 'png', exportQuality, pdfDocument);
                 }
             }

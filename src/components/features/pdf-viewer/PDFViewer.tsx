@@ -15,11 +15,16 @@ export const PDFViewer: React.FC = () => {
         setCurrentPage
     } = usePDFStore();
 
+
     const observerRef = useRef<IntersectionObserver | null>(null);
+    const activeIntersections = useRef<Map<number, number>>(new Map());
 
     // Scroll Tracking Effect
     useEffect(() => {
         if (!pdfDocument || pages.length === 0) return;
+
+        // Cleanup state on re-init
+        activeIntersections.current.clear();
 
         // Cleanup previous observer
         if (observerRef.current) {
@@ -32,16 +37,14 @@ export const PDFViewer: React.FC = () => {
             rootMargin: '-25% 0px -25% 0px' // Focus on the middle 50% of the screen
         };
 
-        const activeIntersections = new Map<number, number>();
-
         observerRef.current = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 const pageNumber = parseInt(entry.target.id.replace('page-', ''));
                 if (!isNaN(pageNumber)) {
                     if (entry.isIntersecting) {
-                        activeIntersections.set(pageNumber, entry.intersectionRatio);
+                        activeIntersections.current.set(pageNumber, entry.intersectionRatio);
                     } else {
-                        activeIntersections.delete(pageNumber);
+                        activeIntersections.current.delete(pageNumber);
                     }
                 }
             });
@@ -50,7 +53,7 @@ export const PDFViewer: React.FC = () => {
             let mostVisiblePage = -1;
             let maxRatio = -1;
 
-            activeIntersections.forEach((ratio, pageNum) => {
+            activeIntersections.current.forEach((ratio, pageNum) => {
                 if (ratio > maxRatio) {
                     maxRatio = ratio;
                     mostVisiblePage = pageNum;

@@ -19,7 +19,9 @@ export const NativeTextStudio: React.FC = () => {
         clearFindReplace,
         ocrState,
         setOCROpen,
-        startOCR
+        startOCR,
+        commitNativeTextEdits,
+        updateNativeTextEdit
     } = useEditorStore();
     const { pdfDocument, pages } = usePDFStore();
     const [textItems, setTextItems] = useState<any[]>([]);
@@ -53,11 +55,23 @@ export const NativeTextStudio: React.FC = () => {
     if (!nativeTextStudio.isOpen || !nativeTextStudio.pageId) return null;
 
     const handleSave = () => {
+        commitNativeTextEdits();
         clearFindReplace();
         closeNativeTextStudio();
     };
 
     const handleClose = () => {
+        // Clear pending edits if cancelling? 
+        // Or should we keep them if they re-open?
+        // Usually cancel means discard.
+        // We need a way to clear pending edits without committing. 
+        // We can just iterate and reset? Or add a clear action?
+        // For now, let's just close. The store keeps pending edits until committed or cleared.
+        // If we want discard, we should add `clearNativeTextEdits` to editorStore. 
+        // Let's implement a quick clear by setting empty object if needed, but for now just close.
+        // Actually, let's manually clear pending edits to be safe/correct for "Cancel".
+        useEditorStore.setState({ pendingNativeTextEdits: {} });
+
         clearFindReplace();
         closeNativeTextStudio();
     };

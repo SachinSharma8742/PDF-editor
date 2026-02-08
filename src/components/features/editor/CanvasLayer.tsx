@@ -24,7 +24,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, width, height,
 
     return (
         <div
-            className="absolute inset-0 z-10 pointer-events-none"
+            className="absolute inset-0 z-30 pointer-events-none"
             style={{ cursor: 'default' }}
         >
             <Stage

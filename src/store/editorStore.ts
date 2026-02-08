@@ -37,7 +37,7 @@ export interface NativeTextItem {
     fontSize: number;
     fontFamily: string;
     color: string; // Text color (hex or rgb)
-    originalRef: any; // Raw PDF item reference for replacement logic
+    originalRef?: any; // Raw PDF item reference for replacement logic
     pageId: string;
 }
 
@@ -219,6 +219,7 @@ interface EditorStore {
 
     pendingNativeTextEdits: Record<string, NativeTextItem>;
     updateNativeTextEdit: (id: string, edit: NativeTextItem) => void;
+    commitNativeTextEdits: () => void;
 
     nativeTextStudio: {
         isOpen: boolean;
@@ -380,6 +381,21 @@ export const useEditorStore = create<EditorStore>()(
             updateNativeTextEdit: (id, edit) => set(state => ({
                 pendingNativeTextEdits: { ...state.pendingNativeTextEdits, [id]: edit }
             })),
+            commitNativeTextEdits: () => {
+                const { pendingNativeTextEdits, nativeTextStudio } = get();
+                const pageId = nativeTextStudio.pageId;
+                if (!pageId) return;
+
+                // Commit each edit to the PDF Store
+                Object.values(pendingNativeTextEdits).forEach(edit => {
+                    // Convert editor's NativeTextItem to PDFStore's NativeTextEdit if needed
+                    // They seem compatible based on earlier checks
+                    usePDFStore.getState().updateNativeTextEdit(pageId, edit.id, edit);
+                });
+
+                // Clear pending edits
+                set({ pendingNativeTextEdits: {} });
+            },
 
             nativeTextStudio: {
                 isOpen: false,
@@ -1026,19 +1042,66 @@ export const useEditorStore = create<EditorStore>()(
                 if (!currentPage || objectIds.length < 2) return;
                 saveToHistory();
 
-                const newGroupId = `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                set(state => {
-                    if (!state.currentPage) return state;
-                    return {
-                        currentPage: {
-                            ...state.currentPage,
-                            objects: state.currentPage.objects.map(obj =>
-                                objectIds.includes(obj.id) ? { ...obj, groupId: newGroupId } : obj
-                            ),
-                            isEdited: true
-                        },
-                        selectedObjectIds: objectIds // Keep selected
+                const objectsToGroup = currentPage.objects.filter(o => objectIds.includes(o.id));
+                if (objectsToGroup.length < 2) return;
+
+                // Calculate Bounding Box
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                objectsToGroup.forEach(obj => {
+                    const w = obj.width || 0;
+                    const h = obj.height || 0;
+                    if (obj.x < minX) minX = obj.x;
+                    if (obj.y < minY) minY = obj.y;
+                    if (obj.x + w > maxX) maxX = obj.x + w;
+                    if (obj.y + h > maxY) maxY = obj.y + h;
+                });
+
+                if (minX === Infinity) return;
+
+                const groupX = minX;
+                const groupY = minY;
+                const groupW = maxX - minX;
+                const groupH = maxY - minY;
+
+                console.log('[GroupObjects] Creating group:', { groupX, groupY, groupW, groupH });
+
+                const newGroupId = crypto.randomUUID();
+
+                // Create children with relative coordinates
+                const children = objectsToGroup.map(obj => {
+                    const child = {
+                        ...obj, // Use object as is, effectively cloning properties
+                        x: obj.x - groupX,
+                        y: obj.y - groupY
                     };
+                    console.log('[GroupObjects] Child:', { id: obj.id, originalX: obj.x, groupX, relativeX: child.x });
+                    return child;
+                });
+
+                const newGroup: PDFObject = {
+                    id: newGroupId,
+                    type: 'group',
+                    x: groupX,
+                    y: groupY,
+                    width: groupW,
+                    height: groupH,
+                    children: children,
+                    rotation: 0,
+                    opacity: 1
+                };
+
+                // Remove original objects and append the new group
+                // We keep items that are NOT in the group
+                const remainingObjects = currentPage.objects.filter(o => !objectIds.includes(o.id));
+                const newObjects = [...remainingObjects, newGroup];
+
+                set({
+                    currentPage: {
+                        ...currentPage,
+                        objects: newObjects,
+                        isEdited: true
+                    },
+                    selectedObjectIds: [newGroupId]
                 });
             },
 
@@ -1047,27 +1110,48 @@ export const useEditorStore = create<EditorStore>()(
                 if (!currentPage) return;
                 saveToHistory();
 
-                // Find groups involved in selection
-                const groupsToUngroup = new Set<string>();
-                currentPage.objects.forEach(obj => {
-                    if (objectIds.includes(obj.id) && obj.groupId) {
-                        groupsToUngroup.add(obj.groupId);
+                // Get selected groups
+                const groups = currentPage.objects.filter(o => objectIds.includes(o.id) && o.type === 'group');
+                if (groups.length === 0) return;
+
+                let newObjects = [...currentPage.objects];
+                const newSelectedIds: string[] = [];
+
+                groups.forEach(group => {
+                    if (!group.children || group.children.length === 0) {
+                        // Empty group, just remove
+                        newObjects = newObjects.filter(o => o.id !== group.id);
+                        return;
                     }
+
+                    // Remove the group itself
+                    newObjects = newObjects.filter(o => o.id !== group.id);
+
+                    // Restore children to the main layer
+                    group.children.forEach(child => {
+                        // Restore absolute position
+                        // Simple translation for now (assuming group rotation is 0 or handled basic)
+                        const absX = child.x + group.x;
+                        const absY = child.y + group.y;
+
+                        const restoredObj = {
+                            ...child,
+                            x: absX,
+                            y: absY,
+                            rotation: (child.rotation || 0) + (group.rotation || 0)
+                        };
+                        newObjects.push(restoredObj);
+                        newSelectedIds.push(restoredObj.id);
+                    });
                 });
 
-                if (groupsToUngroup.size === 0) return;
-
-                set(state => {
-                    if (!state.currentPage) return state;
-                    return {
-                        currentPage: {
-                            ...state.currentPage,
-                            objects: state.currentPage.objects.map(obj =>
-                                obj.groupId && groupsToUngroup.has(obj.groupId) ? { ...obj, groupId: undefined } : obj
-                            ),
-                            isEdited: true
-                        }
-                    };
+                set({
+                    currentPage: {
+                        ...currentPage,
+                        objects: newObjects,
+                        isEdited: true
+                    },
+                    selectedObjectIds: newSelectedIds
                 });
             },
 

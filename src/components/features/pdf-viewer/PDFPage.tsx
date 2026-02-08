@@ -143,6 +143,15 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                 }} />
             )}
 
+            {/* Text Edits Overlay - Shows pending edits in view mode */}
+            {dimensions && pageState.source === 'pdf' && (
+                <PDFTextLayer
+                    pageNumber={pageNumber}
+                    scale={scale}
+                    viewOnly={true}
+                />
+            )}
+
             {/* Editing Layer */}
             {dimensions && (
                 <CanvasLayer
@@ -151,15 +160,6 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                     width={dimensions.width}
                     height={dimensions.height}
                     scale={scale}
-                />
-            )}
-
-            {/* Text Edits Overlay - Shows pending edits in view mode */}
-            {dimensions && pageState.source === 'pdf' && (
-                <PDFTextLayer
-                    pageNumber={pageNumber}
-                    scale={scale}
-                    viewOnly={true}
                 />
             )}
 

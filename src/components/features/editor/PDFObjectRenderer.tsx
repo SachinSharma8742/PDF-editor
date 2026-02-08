@@ -197,6 +197,7 @@ const URLImage = ({ object, opacity, ...props }: any) => {
                 cornerRadius={object.cornerRadius || 0}
                 stroke={object.stroke}
                 strokeWidth={object.strokeWidth}
+                strokeEnabled={(object.strokeWidth ?? 0) > 0}
 
                 // Shadow (apply to image or group? Image is better for cached filters usually, 
                 // but if clipped, shadow should follow clip? 
@@ -243,6 +244,13 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
     // Debug Log
     // console.log(`[Renderer] ${object.id} (${object.type}) Opacity:`, object.opacity);
 
+    if (object.type === 'group') {
+        console.log('[PDFObjectRenderer] Rendering Group:', { id: object.id, x: object.x, y: object.y, childrenCount: object.children?.length, visible: object.visible, opacity: object.opacity });
+    }
+    if (!isSelectionEnabled) {
+        console.log('[PDFObjectRenderer] Rendering Child:', { parentGroup: true, id: object.id, type: object.type, x: object.x, y: object.y, visible: object.visible });
+    }
+
 
     // If it's a new text object, focus it immediately
     useEffect(() => {
@@ -251,6 +259,27 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
             onChange?.({ isNew: false });
         }
     }, [object.isNew, object.type, isEditing, onChange, object.id, setEditingObjectId]);
+
+    // Force Cache for Groups (Flatten to Image behavior)
+    useEffect(() => {
+        if (object.type === 'group' && groupRef.current) {
+            try {
+                // We need to wait for children to potentially load if they are images?
+                // But usually they are already loaded or in store.
+                // For now, immediate cache.
+                groupRef.current.cache({
+                    pixelRatio: 2 // High quality
+                });
+            } catch (e) {
+                console.error("Failed to cache group", e);
+            }
+        }
+        return () => {
+            if (object.type === 'group' && groupRef.current) {
+                groupRef.current.clearCache();
+            }
+        };
+    }, [object.type, object.children, object.width, object.height, object.id]);
 
     const handleObjectDblClick = () => {
         if (object.type === 'text') {
@@ -366,6 +395,20 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
 
     return (
         <Group {...containerProps} ref={groupRef}>
+
+            {/* Always add an invisible hit area for groups to catch clicks easily */}
+            {object.type === 'group' && (
+                <Rect
+                    x={0}
+                    y={0}
+                    width={width}
+                    height={height}
+                    fill="transparent"
+                    stroke={isSelected ? "#3b82f6" : "transparent"} // Optional debug border
+                    strokeWidth={1}
+                />
+            )}
+
             {object.type === 'text' && (
                 <>
                     {object.isCurved ? (
@@ -438,10 +481,11 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                 <Rect
                     {...innerProps}
                     stroke={object.stroke || 'black'}
-                    strokeWidth={object.strokeWidth || 2}
-                    fill={hexToRgba(object.fill, object.opacity)}
+                    strokeWidth={object.strokeWidth ?? 2}
+                    strokeEnabled={(object.strokeWidth ?? 2) > 0}
+                    fill={hexToRgba(object.fill, object.fillOpacity ?? 1)}
                     cornerRadius={5}
-                    opacity={1}
+                    opacity={object.opacity ?? 1}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -455,9 +499,10 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     radiusX={width / 2}
                     radiusY={height / 2}
                     stroke={object.stroke || 'black'}
-                    strokeWidth={object.strokeWidth || 2}
-                    fill={hexToRgba(object.fill, object.opacity)}
-                    opacity={1}
+                    strokeWidth={object.strokeWidth ?? 2}
+                    strokeEnabled={(object.strokeWidth ?? 2) > 0}
+                    fill={hexToRgba(object.fill, object.fillOpacity ?? 1)}
+                    opacity={object.opacity ?? 1}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -471,9 +516,10 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     radiusX={width / 2}
                     radiusY={height / 2}
                     stroke={object.stroke || 'black'}
-                    strokeWidth={object.strokeWidth || 2}
-                    fill={hexToRgba(object.fill, object.opacity)}
-                    opacity={1}
+                    strokeWidth={object.strokeWidth ?? 2}
+                    strokeEnabled={(object.strokeWidth ?? 2) > 0}
+                    fill={hexToRgba(object.fill, object.fillOpacity ?? 1)}
+                    opacity={object.opacity ?? 1}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -489,9 +535,10 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     scaleX={width / 100}
                     scaleY={height / 100}
                     stroke={object.stroke || 'black'}
-                    strokeWidth={(object.strokeWidth || 2) / (width / 100)} // Normalize stroke width
-                    fill={hexToRgba(object.fill, object.opacity)}
-                    opacity={1}
+                    strokeWidth={(object.strokeWidth ?? 2) / (width / 100)} // Normalize stroke width
+                    strokeEnabled={(object.strokeWidth ?? 2) > 0}
+                    fill={hexToRgba(object.fill, object.fillOpacity ?? 1)}
+                    opacity={object.opacity ?? 1}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -508,9 +555,10 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     scaleX={width / 100}
                     scaleY={height / 100}
                     stroke={object.stroke || 'black'}
-                    strokeWidth={object.strokeWidth || 2}
-                    fill={hexToRgba(object.fill, object.opacity)}
-                    opacity={1}
+                    strokeWidth={object.strokeWidth ?? 2}
+                    strokeEnabled={(object.strokeWidth ?? 2) > 0}
+                    fill={hexToRgba(object.fill, object.fillOpacity ?? 1)}
+                    opacity={object.opacity ?? 1}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -525,12 +573,13 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     data={
                         SHAPE_PATHS[object.type] || ""
                     }
-                    fill={hexToRgba(object.fill, object.opacity)}
+                    fill={hexToRgba(object.fill, object.fillOpacity ?? 1)}
                     stroke={object.stroke || 'black'}
-                    strokeWidth={object.strokeWidth || 2}
+                    strokeWidth={object.strokeWidth ?? 2}
+                    strokeEnabled={(object.strokeWidth ?? 2) > 0}
                     scaleX={width / 24} // Normalizing from typical SVG viewbox 24x24 or similar
                     scaleY={height / 24}
-                    opacity={1}
+                    opacity={object.opacity ?? 1}
                     shadowColor={object.shadowColor}
                     shadowBlur={object.shadowBlur}
                     shadowOffsetX={object.shadowOffsetX}
@@ -545,7 +594,8 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                 <Line
                     points={object.points}
                     stroke={object.stroke || 'black'}
-                    strokeWidth={object.strokeWidth || 2}
+                    strokeWidth={object.strokeWidth ?? 2}
+                    strokeEnabled={(object.strokeWidth ?? 2) > 0}
                     tension={object.type === 'path' ? 0.5 : 0} // Straight lines for 'line'/'arrow'
                     lineCap="round"
                     lineJoin="round"
@@ -553,8 +603,8 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     y={innerY}
                     fill="transparent"
                     opacity={object.opacity ?? 1}
-                    pointerLength={object.type === 'arrow' ? (object.strokeWidth || 2) * 3 : 0}
-                    pointerWidth={object.type === 'arrow' ? (object.strokeWidth || 2) * 3 : 0}
+                    pointerLength={object.type === 'arrow' ? (object.strokeWidth ?? 2) * 3 : 0}
+                    pointerWidth={object.type === 'arrow' ? (object.strokeWidth ?? 2) * 3 : 0}
                     dash={object.dash}
                     dashOffset={object.dashOffset}
                 />
@@ -676,6 +726,21 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     opacity={object.opacity ?? 1}
                 />
             )}
+
+            {object.type === 'group' && object.children && (
+                <>
+                    {object.children.map(child => (
+                        <PDFObjectRenderer
+                            key={child.id}
+                            object={child}
+                            isSelected={false}
+                            isSelectionEnabled={false} // Disable individual selection of children
+                            isLocked={true} // Lock children so they don't capture events independently of group
+                        />
+                    ))}
+                </>
+            )}
+
 
 
         </Group>

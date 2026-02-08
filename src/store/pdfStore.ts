@@ -26,18 +26,22 @@ export interface Comment {
 export interface PDFObject {
     id: string;
     comments?: Comment[]; // For collaboration/notes
-    type: 'text' | 'image' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path' | 'measure' | 'redaction' | 'sticky-note' | 'callout' | 'form-text' | 'form-checkbox' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble';
+    type: 'text' | 'image' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path' | 'measure' | 'redaction' | 'sticky-note' | 'callout' | 'form-text' | 'form-checkbox' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble' | 'group';
     x: number;
     y: number;
     width?: number;
     height?: number;
     rotation?: number;
 
+    // Group specific
+    children?: PDFObject[]; // For grouped objects
+
     // Style props
     fill?: string;
     stroke?: string;
     strokeWidth?: number;
     opacity?: number;
+    fillOpacity?: number;
     dash?: number[];
     dashOffset?: number;
     sides?: number; // For polygons (3=triangle, 5=pentagon, etc.)

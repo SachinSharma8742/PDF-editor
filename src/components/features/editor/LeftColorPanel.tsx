@@ -316,7 +316,7 @@ export const LeftColorPanel: React.FC<LeftColorPanelProps> = ({
                                     <div className="absolute inset-x-0 h-1 bg-zinc-800 rounded-full"></div>
                                     <input
                                         type="range"
-                                        min="0.1"
+                                        min="0"
                                         max="1"
                                         step="0.01"
                                         value={hasSelection && selectedObj ? (selectedObj.opacity ?? 1) : (currentSettings.opacity ?? 1)}

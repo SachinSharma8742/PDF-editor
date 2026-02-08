@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useEditorStore } from '../../../store/editorStore';
-import { Eye, EyeOff, Lock, Unlock, Text, Image as ImageIcon, Edit3, Square, MoreVertical, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Trash2, Copy, GripVertical } from 'lucide-react';
+import { Eye, EyeOff, Lock, Unlock, Text, Image as ImageIcon, Edit3, Square, MoreVertical, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Trash2, Copy, GripVertical, FileText, Group } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -41,6 +41,7 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
         switch (type) {
             case 'text': return <Text size={14} />;
             case 'image': return <ImageIcon size={14} />;
+            case 'group': return <Group size={14} />;
             case 'draw':
             case 'path': return <Edit3 size={14} />;
             default: return <Square size={14} />;
@@ -224,6 +225,19 @@ export const LayerPanel: React.FC = () => {
                                     onToggleVisibility={() => updateObject(obj.id, { visible: !(obj.visible !== false) })} // Toggle visible
                                 />
                             ))}
+
+                            {/* Static Page Layer */}
+                            <div className="mt-1 group relative flex items-center gap-2 p-2 px-3 text-sm border-t border-gray-100 dark:border-zinc-800/50 bg-gray-50/50 dark:bg-zinc-900/30 text-gray-500 dark:text-zinc-500">
+                                <div className="opacity-50">
+                                    <Lock size={14} />
+                                </div>
+                                <div className="text-gray-400 dark:text-zinc-600">
+                                    <FileText size={14} />
+                                </div>
+                                <span className="flex-1 truncate font-medium select-none italic opacity-80">
+                                    Page Background
+                                </span>
+                            </div>
                         </div>
                     </SortableContext>
                 </DndContext>

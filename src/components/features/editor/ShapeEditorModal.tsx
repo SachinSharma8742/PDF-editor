@@ -36,6 +36,7 @@ export const ShapeEditorModal: React.FC = () => {
         stroke: '#000000',
         strokeWidth: 2,
         opacity: 1,
+        fillOpacity: 1,
         // Shadow defaults
         shadowColor: '#000000',
         shadowBlur: 0,
@@ -61,7 +62,7 @@ export const ShapeEditorModal: React.FC = () => {
         if (mode === 'edit' && selectedObj) {
             updateObject(selectedObj.id, updates);
         } else {
-            setPreviewShape(prev => ({ ...prev, ...updates }));
+            setPreviewShape((prev: any) => ({ ...prev, ...updates }));
         }
     };
 
@@ -125,26 +126,26 @@ export const ShapeEditorModal: React.FC = () => {
                             {currentValues.type === 'rectangle' && (
                                 <rect x="10" y="10" width="80" height="80" rx="5"
                                     fill={currentValues.fill || 'transparent'}
-                                    stroke={currentValues.stroke || 'black'}
-                                    strokeWidth={currentValues.strokeWidth || 2}
+                                    stroke={(currentValues.strokeWidth === 0) ? 'transparent' : (currentValues.stroke || 'black')}
+                                    strokeWidth={currentValues.strokeWidth ?? 2}
                                     strokeOpacity={1}
-                                    fillOpacity={currentValues.opacity ?? 1}
+                                    fillOpacity={currentValues.fillOpacity ?? 1}
                                 />
                             )}
                             {currentValues.type === 'circle' && (
                                 <circle cx="50" cy="50" r="40"
                                     fill={currentValues.fill || 'transparent'}
-                                    stroke={currentValues.stroke || 'black'}
-                                    strokeWidth={currentValues.strokeWidth || 2}
-                                    fillOpacity={currentValues.opacity ?? 1}
+                                    stroke={(currentValues.strokeWidth === 0) ? 'transparent' : (currentValues.stroke || 'black')}
+                                    strokeWidth={currentValues.strokeWidth ?? 2}
+                                    fillOpacity={currentValues.fillOpacity ?? 1}
                                 />
                             )}
                             {currentValues.type === 'triangle' && (
                                 <polygon points="50,15 90,85 10,85"
                                     fill={currentValues.fill || 'transparent'}
-                                    stroke={currentValues.stroke || 'black'}
-                                    strokeWidth={currentValues.strokeWidth || 2}
-                                    fillOpacity={currentValues.opacity ?? 1}
+                                    stroke={(currentValues.strokeWidth === 0) ? 'transparent' : (currentValues.stroke || 'black')}
+                                    strokeWidth={currentValues.strokeWidth ?? 2}
+                                    fillOpacity={currentValues.fillOpacity ?? 1}
                                 />
                             )}
 
@@ -153,9 +154,9 @@ export const ShapeEditorModal: React.FC = () => {
                                 <path
                                     d={SHAPE_PATHS[currentValues.type]}
                                     fill={currentValues.fill || 'transparent'}
-                                    stroke={currentValues.stroke || 'black'}
-                                    strokeWidth={currentValues.strokeWidth || 2}
-                                    fillOpacity={currentValues.opacity ?? 1}
+                                    stroke={(currentValues.strokeWidth === 0) ? 'transparent' : (currentValues.stroke || 'black')}
+                                    strokeWidth={currentValues.strokeWidth ?? 2}
+                                    fillOpacity={currentValues.fillOpacity ?? 1}
                                     transform="scale(2) translate(12, 12)" // Approximate scaling for 24px viewbox paths to 100px viewbox
                                 // Note: Manual transform adjustment might be needed per shape if they vary widely
                                 />
@@ -226,12 +227,12 @@ export const ShapeEditorModal: React.FC = () => {
                             <div className="space-y-1">
                                 <div className="flex justify-between text-[10px] text-zinc-400">
                                     <span>Opacity</span>
-                                    <span>{Math.round((currentValues.opacity || 1) * 100)}%</span>
+                                    <span>{Math.round((currentValues.fillOpacity ?? 1) * 100)}%</span>
                                 </div>
                                 <Slider
-                                    value={currentValues.opacity ?? 1}
+                                    value={currentValues.fillOpacity ?? 1}
                                     min={0} max={1} step={0.01}
-                                    onChange={(v) => handleUpdate({ opacity: v })}
+                                    onChange={(v) => handleUpdate({ fillOpacity: v })}
                                 />
                             </div>
                         </div>

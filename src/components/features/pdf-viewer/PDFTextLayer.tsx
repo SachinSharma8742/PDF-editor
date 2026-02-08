@@ -12,7 +12,7 @@ interface PDFTextLayerProps {
 
 export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, viewOnly = false }) => {
     const { pdfDocument, pages } = usePDFStore();
-    const { editingMode, setActiveNativeTextItem, activeNativeTextItem, setEditingMode, findReplaceState } = useEditorStore();
+    const { editingMode, setActiveNativeTextItem, activeNativeTextItem, setEditingMode, findReplaceState, pendingNativeTextEdits } = useEditorStore();
     const [textItems, setTextItems] = useState<any[]>([]);
     const layerRef = useRef<HTMLDivElement>(null);
 
@@ -147,8 +147,11 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                 const top = vy - (fontSize * 0.8);
 
                 const isSelected = activeNativeTextItem?.id === item.id;
-                const isEdited = nativeTextEdits[item.id] !== undefined;
-                const activeEdit = nativeTextEdits[item.id];
+                // Check for live pending edits first, then page confirmed edits
+                const pendingEdit = pendingNativeTextEdits[item.id];
+                const pageEdit = nativeTextEdits[item.id];
+                const activeEdit = pendingEdit || pageEdit;
+                const isEdited = activeEdit !== undefined;
 
                 // Check if this text item has any find/replace matches
                 const matchIndices = findReplaceState.matches
@@ -195,20 +198,23 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                         onClick={(e) => {
                             e.stopPropagation();
                             // When clicking, we load the *current state* (edited or original)
-                            const currentData = activeEdit || {
+                            // When clicking, we load the *current state* (edited or original)
+                            const defaultData = {
                                 id: item.id,
                                 text: item.str,
                                 x: item.originalTransform[4],
                                 y: item.originalTransform[5],
                                 width: item.width,
-                                height: item.height || fontScaleY,
+                                height: item.height || fontScaleY, // Use fontScaleY as fallback for height
                                 fontSize: Math.sqrt(fontScaleY * fontScaleY),
                                 fontFamily: item.fontName,
                                 color: item.color || '#000000',
                                 originalRef: item,
                                 pageId: pageState!.id
                             };
-                            setActiveNativeTextItem(currentData);
+
+                            const dataToSet = activeEdit ? { ...defaultData, ...activeEdit, originalRef: item, pageId: pageState!.id } : defaultData;
+                            setActiveNativeTextItem(dataToSet);
                         }}
                     >
                         {isEdited && activeEdit ? activeEdit.text : item.str}

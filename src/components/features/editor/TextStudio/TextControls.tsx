@@ -1,7 +1,7 @@
 import React from 'react';
 import { SimpleInput, Slider, ColorGrid, IconButton, ToggleButton } from '../properties/PropertyComponents';
 import { Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, ArrowUp, ArrowDown, Sparkles, History } from 'lucide-react';
-import { useEditorStore, TEXT_PRESETS } from '../../../store/editorStore';
+import { useEditorStore, TEXT_PRESETS, type TextPreset, type ToolSettings } from '../../../../store/editorStore';
 import { CollapsibleSection } from '../properties/CollapsibleSection';
 
 interface TextControlsProps {
@@ -118,7 +118,7 @@ export const TextControls: React.FC<TextControlsProps> = ({ activeTab, values, o
                         defaultOpen={true}
                     >
                         <div className="grid grid-cols-2 gap-2">
-                            {TEXT_PRESETS.map(preset => (
+                            {TEXT_PRESETS.map((preset: TextPreset) => (
                                 <button
                                     key={preset.id}
                                     onClick={() => {
@@ -176,7 +176,7 @@ export const TextControls: React.FC<TextControlsProps> = ({ activeTab, values, o
                             storageKey="text_studio_recent"
                         >
                             <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-2 pt-1 px-1">
-                                {recentTextStyles.map((style, i) => (
+                                {recentTextStyles.map((style: ToolSettings, i: number) => (
                                     <button
                                         key={i}
                                         onClick={() => {
