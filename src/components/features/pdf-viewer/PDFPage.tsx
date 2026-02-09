@@ -19,6 +19,8 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [rendering, setRendering] = useState(false);
     const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+    const [bgImage, setBgImage] = useState<HTMLCanvasElement | HTMLImageElement | null>(null);
+    const bufferCanvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
 
     // Effect for PDF Rendering
     useEffect(() => {
@@ -28,47 +30,45 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
         let isCancelled = false;
 
         const renderPage = async () => {
-            // Use originalPageIndex for PDF fetching
             const indexToFetch = pageState.originalPageIndex;
-            if (!pdfDocument || !canvasRef.current || !indexToFetch) return;
+            if (!pdfDocument || indexToFetch === undefined) return;
 
             setRendering(true);
             try {
                 const page = await pdfDocument.getPage(indexToFetch);
-
                 if (isCancelled) return;
 
-                const viewport = page.getViewport({ scale });
-
-                const canvas = canvasRef.current;
-                const context = canvas.getContext('2d');
-
+                // Render at a consistent resolution for the background state
+                const viewport = page.getViewport({ scale: 2 });
+                const bufferCanvas = bufferCanvasRef.current;
+                const context = bufferCanvas.getContext('2d');
                 if (!context) return;
 
-                const outputScale = window.devicePixelRatio || 1;
-                const cssWidth = Math.floor(viewport.width);
-                const cssHeight = Math.floor(viewport.height);
-
-                canvas.width = Math.floor(viewport.width * outputScale);
-                canvas.height = Math.floor(viewport.height * outputScale);
-                canvas.style.width = cssWidth + "px";
-                canvas.style.height = cssHeight + "px";
-
-                setDimensions({ width: cssWidth, height: cssHeight });
-
-                const transform = outputScale !== 1
-                    ? [outputScale, 0, 0, outputScale, 0, 0]
-                    : undefined;
+                bufferCanvas.width = viewport.width;
+                bufferCanvas.height = viewport.height;
 
                 const renderContext = {
                     canvasContext: context,
-                    transform: transform,
                     viewport: viewport,
                 };
 
-                // Cancel previous render if any (though logic below handles it via cleanup)
                 renderTask = page.render(renderContext);
                 await renderTask.promise;
+
+                if (!isCancelled) {
+                    const finalBg = document.createElement('canvas');
+                    finalBg.width = bufferCanvas.width;
+                    finalBg.height = bufferCanvas.height;
+                    const finalCtx = finalBg.getContext('2d');
+                    finalCtx?.drawImage(bufferCanvas, 0, 0);
+                    setBgImage(finalBg);
+
+                    const baseViewport = page.getViewport({ scale: 1 });
+                    setDimensions({
+                        width: Math.floor(baseViewport.width * scale),
+                        height: Math.floor(baseViewport.height * scale)
+                    });
+                }
             } catch (error: any) {
                 if (error.name !== 'RenderingCancelledException') {
                     console.error('Error rendering page:', error);
@@ -82,11 +82,24 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
 
         return () => {
             isCancelled = true;
-            if (renderTask) {
-                renderTask.cancel();
-            }
+            if (renderTask) renderTask.cancel();
         };
-    }, [pdfDocument, pageNumber, scale, pageState]); // Depend on pageState to catch index changes
+    }, [pdfDocument, pageNumber, scale, pageState]);
+
+    // Handle image-based background
+    useEffect(() => {
+        if (pageState?.source === 'image' && pageState.content) {
+            const img = new Image();
+            img.src = pageState.content;
+            img.onload = () => {
+                setBgImage(img as any);
+                setDimensions({
+                    width: (pageState.width || img.width) * scale,
+                    height: (pageState.height || img.height) * scale
+                });
+            };
+        }
+    }, [pageState?.source, pageState?.content, scale]);
 
     // Effect for Non-PDF Dimensions
     useEffect(() => {
@@ -122,27 +135,6 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
         >
             <PageSelectionOverlay pageNumber={pageNumber} pageId={pageState.id!} />
 
-            {/* Content Layer */}
-            {pageState.source === 'pdf' && (
-                <canvas ref={canvasRef} className="block" />
-            )}
-
-            {pageState.source === 'image' && pageState.content && dimensions && (
-                <img
-                    src={pageState.content}
-                    alt={`Page ${pageNumber}`}
-                    style={{ width: dimensions.width, height: dimensions.height, display: 'block' }}
-                />
-            )}
-
-            {pageState.source === 'blank' && dimensions && (
-                <div style={{
-                    width: dimensions.width,
-                    height: dimensions.height,
-                    backgroundColor: pageState.backgroundColor || '#ffffff'
-                }} />
-            )}
-
             {/* Text Edits Overlay - Shows pending edits in view mode */}
             {dimensions && pageState.source === 'pdf' && (
                 <PDFTextLayer
@@ -152,7 +144,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                 />
             )}
 
-            {/* Editing Layer */}
+            {/* Editing/Viewing Layer - Now handles background too */}
             {dimensions && (
                 <CanvasLayer
                     pageId={pageState.id!}
@@ -160,6 +152,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                     width={dimensions.width}
                     height={dimensions.height}
                     scale={scale}
+                    bgImage={bgImage}
                 />
             )}
 

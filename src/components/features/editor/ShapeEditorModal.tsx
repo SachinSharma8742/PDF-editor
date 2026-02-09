@@ -81,6 +81,7 @@ export const ShapeEditorModal: React.FC = () => {
                 ...currentValues
             });
         }
+        useEditorStore.getState().setActiveTool('select');
         closeShapeEditor();
     };
 

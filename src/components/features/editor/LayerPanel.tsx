@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useEditorStore } from '../../../store/editorStore';
-import { Eye, EyeOff, Lock, Unlock, Text, Image as ImageIcon, Edit3, Square, MoreVertical, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Trash2, Copy, GripVertical, FileText, Group } from 'lucide-react';
+import { Eye, EyeOff, Lock, Unlock, Text, Image as ImageIcon, Edit3, Square, MoreVertical, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Trash2, Copy, GripVertical, FileText, Group, Sparkles } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -13,11 +13,12 @@ interface SortableLayerItemProps {
     object: PDFObject;
     isSelected: boolean;
     onSelect: () => void;
-    onToggleLock: () => void;
+    onToggleLock?: () => void;
     onToggleVisibility: () => void;
+    onDelete?: () => void;
 }
 
-const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelected, onSelect, onToggleLock, onToggleVisibility }) => {
+const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelected, onSelect, onToggleLock, onToggleVisibility, onDelete }) => {
     const {
         attributes,
         listeners,
@@ -44,6 +45,7 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
             case 'group': return <Group size={14} />;
             case 'draw':
             case 'path': return <Edit3 size={14} />;
+            case 'effect': return <Sparkles size={14} />;
             default: return <Square size={14} />;
         }
     };
@@ -54,9 +56,11 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
     };
 
     // Calculate generic name if text is empty
-    const displayName = object.type === 'text'
-        ? (object.text ? (object.text.length > 20 ? object.text.substring(0, 20) + '...' : object.text) : 'Text Layer')
-        : object.type.charAt(0).toUpperCase() + object.type.slice(1);
+    const displayName = object.type === 'effect'
+        ? `${object.effectType?.charAt(0).toUpperCase()}${object.effectType?.slice(1)} Adjustment`
+        : (object.type === 'text'
+            ? (object.text ? (object.text.length > 20 ? object.text.substring(0, 20) + '...' : object.text) : 'Text Layer')
+            : object.type.charAt(0).toUpperCase() + object.type.slice(1));
 
     return (
         <div
@@ -93,11 +97,12 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
                 </button>
 
                 <button
-                    onClick={(e) => { e.stopPropagation(); onToggleLock(); }}
-                    className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 ${object.isLocked ? 'text-red-500 opacity-100' : 'text-gray-400'}`}
-                    title={object.isLocked ? "Unlock" : "Lock"}
+                    onClick={(e) => { e.stopPropagation(); onToggleLock?.(); }}
+                    className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 ${(object.isLocked || object.type === 'effect') ? 'text-red-500 opacity-100' : 'text-gray-400'}`}
+                    title={object.type === 'effect' ? "Fixed Geometry" : (object.isLocked ? "Unlock" : "Lock")}
+                    disabled={object.type === 'effect' || !onToggleLock}
                 >
-                    {object.isLocked ? <Lock size={12} /> : <Unlock size={12} />}
+                    {(object.isLocked || object.type === 'effect') ? <Lock size={12} /> : <Unlock size={12} />}
                 </button>
 
                 {/* Context Menu Trigger */}
@@ -142,6 +147,9 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
                                     <Copy size={14} /> Duplicate
                                 </button>
                                 <button className="layer-menu-item text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={(e) => { e.stopPropagation(); handleAction(() => deleteObjects([object.id])); }}>
+                                    <Copy size={14} /> Duplicate
+                                </button>
+                                <button className="layer-menu-item text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={(e) => { e.stopPropagation(); handleAction(() => onDelete?.()); }}>
                                     <Trash2 size={14} /> Delete
                                 </button>
                             </div>
@@ -157,7 +165,9 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
 // --- Main Panel Component ---
 
 export const LayerPanel: React.FC = () => {
-    const { currentPage, selectedObjectIds, selectObject, updateObject, setObjects } = useEditorStore();
+    const {
+        currentPage, selectedObjectIds, selectObject, updateObject, setObjects, deleteObjects
+    } = useEditorStore();
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), // Require slight move to prevent accidental drag on click
@@ -223,6 +233,7 @@ export const LayerPanel: React.FC = () => {
                                     onSelect={() => selectObject(obj.id, false)}
                                     onToggleLock={() => updateObject(obj.id, { isLocked: !obj.isLocked })}
                                     onToggleVisibility={() => updateObject(obj.id, { visible: !(obj.visible !== false) })} // Toggle visible
+                                    onDelete={() => deleteObjects([obj.id])}
                                 />
                             ))}
 

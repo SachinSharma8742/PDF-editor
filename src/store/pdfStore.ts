@@ -4,7 +4,7 @@ import microdiff from 'microdiff';
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 import { savePDFToStorage } from '../utils/storage';
 
-export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature' | 'measure' | 'redaction' | 'form-text' | 'form-checkbox' | 'ocr' | 'sticky-note' | 'callout' | 'search' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble' | 'native-text-selection';
+export type ToolType = 'select' | 'pan' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'arrow' | 'line' | 'image' | 'stamp' | 'signature' | 'measure' | 'redaction' | 'form-text' | 'form-checkbox' | 'ocr' | 'sticky-note' | 'callout' | 'search' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble' | 'native-text-selection' | 'effects';
 export type PageSource = 'pdf' | 'image' | 'blank';
 
 // --- Core Data Models ---
@@ -26,7 +26,7 @@ export interface Comment {
 export interface PDFObject {
     id: string;
     comments?: Comment[]; // For collaboration/notes
-    type: 'text' | 'image' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path' | 'measure' | 'redaction' | 'sticky-note' | 'callout' | 'form-text' | 'form-checkbox' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble' | 'group';
+    type: 'text' | 'image' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path' | 'measure' | 'redaction' | 'sticky-note' | 'callout' | 'form-text' | 'form-checkbox' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble' | 'group' | 'effect';
     x: number;
     y: number;
     width?: number;
@@ -119,6 +119,12 @@ export interface PDFObject {
     groupId?: string; // For grouping objects
     // Image Studio specific
     originalSrc?: string; // The original raw image data for re-editing
+
+    // Adjustment Layer specific
+    effectType?: 'grayscale' | 'bw' | 'brightness' | 'contrast' | 'blur' | 'invert' | 'scanEnhance' | 'sepia' | 'tint' | 'temperature' | 'vignette';
+    effectParams?: Record<string, any>;
+    name?: string; // Custom name for the layer
+
     editParams?: {
         brightness?: number;
         contrast?: number;
@@ -174,6 +180,8 @@ export interface NativeTextEdit {
     textDecoration?: string;
     originalRef?: any;
 }
+
+// Adjustment Layers are now PDFObjects
 
 export interface PageState {
     id: string; // Unique Page ID
@@ -471,7 +479,8 @@ export const usePDFStore = create<PDFStore>()(
                     'form-text': { ...DEFAULT_SETTINGS },
                     'form-checkbox': { ...DEFAULT_SETTINGS },
                     'ocr': { ...DEFAULT_SETTINGS },
-                    'native-text-selection': { ...DEFAULT_SETTINGS }
+                    'native-text-selection': { ...DEFAULT_SETTINGS },
+                    'effects': { ...DEFAULT_SETTINGS }
                 },
 
                 selectedObjectIds: [],
@@ -944,7 +953,8 @@ export const usePDFStore = create<PDFStore>()(
                         'lightning': { ...DEFAULT_SETTINGS, color: '#eab308', size: 2 },
                         'drop': { ...DEFAULT_SETTINGS, color: '#3b82f6', size: 2 },
                         'callout-bubble': { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
-                        'native-text-selection': { ...DEFAULT_SETTINGS }
+                        'native-text-selection': { ...DEFAULT_SETTINGS },
+                        'effects': { ...DEFAULT_SETTINGS }
                     }
                 }),
 
@@ -1098,11 +1108,7 @@ export const usePDFStore = create<PDFStore>()(
 
                 clearNativeTextEdits: (pageId) => {
                     set(state => ({
-                        pages: state.pages.map(p =>
-                            p.id === pageId
-                                ? { ...p, nativeTextEdits: {}, isEdited: true }
-                                : p
-                        )
+                        pages: state.pages.map(p => p.id === pageId ? { ...p, nativeTextEdits: {}, isEdited: true } : p)
                     }));
                     get().saveToHistory();
                 },

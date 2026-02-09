@@ -5,7 +5,7 @@ import {
     MousePointerClick, Move, TypeOutline, ImagePlus,
     PenTool, Brush, EraserIcon,
     Pipette, PlusCircle, Ruler,
-    Signature, Smile,
+    Signature, Smile, Sparkles,
     Shapes
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -26,7 +26,7 @@ const useIsMobile = () => {
 };
 
 // --- Configuration ---
-type ToolGroupKey = 'essentials' | 'draw' | 'insert';
+type ToolGroupKey = 'essentials' | 'draw' | 'insert' | 'enhance';
 
 interface ToolDef {
     id: ToolType;
@@ -64,6 +64,12 @@ const TOOL_GROUPS: Record<ToolGroupKey, { groupLabel: string; groupIcon?: React.
             { id: 'stamp', icon: Smile, label: 'Stamps', shortcut: 'X' },
         ]
     },
+    enhance: {
+        groupLabel: 'Enhance',
+        tools: [
+            { id: 'effects', icon: Sparkles, label: 'Effects' },
+        ]
+    }
 };
 
 // Helper to find which group a tool belongs to
@@ -100,7 +106,8 @@ export const EditorToolbar: React.FC = () => {
     const [groupDefaults, setGroupDefaults] = useState<Record<ToolGroupKey, ToolType>>({
         essentials: 'select',
         draw: 'pen',
-        insert: 'text'
+        insert: 'text',
+        enhance: 'effects'
     });
 
     // Update group default when active tool changes
@@ -289,6 +296,17 @@ export const EditorToolbar: React.FC = () => {
                         tools={TOOL_GROUPS.draw.tools}
                         activeTool={activeTool}
                         currentDefault={groupDefaults.draw}
+                        onSelect={handleToolSelect}
+                    />
+
+                    <div className="w-8 h-px bg-white/5 mx-auto rounded-full" />
+                    <ToolGroup
+                        groupKey="enhance"
+                        groupLabel={TOOL_GROUPS.enhance.groupLabel}
+                        groupIcon={TOOL_GROUPS.enhance.groupIcon}
+                        tools={TOOL_GROUPS.enhance.tools}
+                        activeTool={activeTool}
+                        currentDefault={groupDefaults.enhance}
                         onSelect={handleToolSelect}
                     />
 

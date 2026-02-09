@@ -379,7 +379,11 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
         },
         onMouseEnter: (e: any) => {
             if (isSelectionEnabled) {
-                if (isLocked) {
+                if (object.type === 'effect') {
+                    // Professionals don't show "not-allowed" for fixed adjustment layers, 
+                    // they show "pointer" or "default" because it's still an interactive layer.
+                    e.target.getStage().container().style.cursor = 'pointer';
+                } else if (isLocked) {
                     e.target.getStage().container().style.cursor = 'not-allowed';
                 } else {
                     e.target.getStage().container().style.cursor = object.type === 'text' ? 'text' : 'move';
@@ -725,6 +729,39 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                     }}
                     opacity={object.opacity ?? 1}
                 />
+            )}
+
+            {object.type === 'effect' && (
+                <>
+                    <Rect
+                        {...innerProps}
+                        fill={isSelected ? 'rgba(59, 130, 246, 0.05)' : 'transparent'}
+                        stroke={isSelected ? "#3b82f6" : "transparent"}
+                        strokeWidth={isSelected ? 1 : 0}
+                    // This Rect acts as the selection hit area for the effect layer
+                    />
+                    {/* Professional Tag Label */}
+                    {isSelected && (
+                        <Group x={10} y={10} listening={false}>
+                            <Rect
+                                fill="#3b82f6"
+                                width={120}
+                                height={24}
+                                cornerRadius={4}
+                            />
+                            <Text
+                                text={`${object.effectType?.toUpperCase()} ADJUSTMENT`}
+                                fill="white"
+                                width={120}
+                                height={24}
+                                align="center"
+                                verticalAlign="middle"
+                                fontSize={10}
+                                fontStyle="bold"
+                            />
+                        </Group>
+                    )}
+                </>
             )}
 
             {object.type === 'group' && object.children && (

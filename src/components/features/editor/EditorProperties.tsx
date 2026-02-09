@@ -5,13 +5,14 @@ import {
     ArrowUpToLine, ArrowDownToLine, AlignVerticalJustifyCenter,
     Trash2, Layers, Copy, Group, Ungroup,
     Type, Image as ImageIcon, Box, PenTool,
-    Zap, PaintBucket, LayoutTemplate, Scaling, Wand2
+    Zap, PaintBucket, LayoutTemplate, Scaling, Wand2, Sparkles
 } from 'lucide-react';
 import type { PDFObject } from '../../../store/pdfStore';
 import { ActionButton, SimpleInput, Slider, ColorGrid } from './properties/PropertyComponents';
 import { CollapsibleSection } from './properties/CollapsibleSection';
 
 import { PagePropertyPanel } from './properties/PagePropertyPanel';
+import { EffectInspector } from './properties/EffectInspector';
 
 // Helper for mixed values
 const getCommonValue = <K extends keyof PDFObject>(objects: PDFObject[], key: K, fallback: PDFObject[K]): PDFObject[K] | 'mixed' | undefined => {
@@ -143,12 +144,13 @@ export const EditorProperties: React.FC = () => {
                             firstObj.type === 'text' ? <Type size={14} /> :
                                 firstObj.type === 'path' ? <PenTool size={14} /> :
                                     firstObj.type === 'image' ? <ImageIcon size={14} /> :
-                                        <Box size={14} />
+                                        firstObj.type === 'effect' ? <Sparkles size={14} /> :
+                                            <Box size={14} />
                         }
                     </div>
                     <div>
                         <h3 className="text-xs font-bold uppercase tracking-tight text-zinc-200">
-                            {isMulti ? `${selectedObjects.length} Selected` : firstObj.type}
+                            {isMulti ? `${selectedObjects.length} Selected` : (firstObj.type === 'effect' ? `Effect: ${firstObj.name || firstObj.effectType}` : firstObj.type)}
                         </h3>
                         <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest leading-none mt-1">Properties</p>
                     </div>
@@ -156,6 +158,11 @@ export const EditorProperties: React.FC = () => {
             </div>
 
             <div className="p-6 space-y-2">
+                {/* Effect Inspector (If applicable) */}
+                {!isMulti && firstObj.type === 'effect' && (
+                    <EffectInspector object={firstObj} />
+                )}
+
                 {/* Actions Section */}
                 <CollapsibleSection
                     title="Quick Actions"
@@ -188,7 +195,7 @@ export const EditorProperties: React.FC = () => {
                 </CollapsibleSection>
 
                 {/* Style & Content Controls */}
-                {!isShape && (
+                {!isShape && firstObj.type !== 'effect' && (
                     <CollapsibleSection
                         title="Style & Appearance"
                         icon={<PaintBucket size={12} />}

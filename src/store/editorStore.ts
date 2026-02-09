@@ -106,8 +106,11 @@ const DEFAULT_TOOL_PREFERENCES: Record<ToolType, ToolSettings> = {
     'callout-bubble': { ...DEFAULT_SETTINGS, color: '#000000', size: 2 },
     'sticky-note': { ...DEFAULT_SETTINGS, color: '#facc15' },
     'callout': { ...DEFAULT_SETTINGS, color: '#000000' },
-    'native-text-selection': { ...DEFAULT_SETTINGS }
+    'native-text-selection': { ...DEFAULT_SETTINGS },
+    'effects': { ...DEFAULT_SETTINGS }
 };
+
+// Adjustment Layers are now PDFObjects
 
 interface EditorStore {
     isActive: boolean;
@@ -607,6 +610,7 @@ export const useEditorStore = create<EditorStore>()(
             clearOCRResult: () => set(state => ({
                 ocrState: { ...state.ocrState, result: null, error: null, progress: 0 }
             })),
+
             imageStudio: {
                 isOpen: false,
                 mode: 'create',

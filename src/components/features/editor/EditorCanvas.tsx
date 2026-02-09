@@ -1,15 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Line, Transformer, Rect, Group, Text } from 'react-konva';
+import { Stage, Layer, Line, Transformer, Rect, Group, Text, Image as KonvaImage } from 'react-konva';
 import Konva from 'konva';
 import { useEditorStore } from '../../../store/editorStore';
+import { applyEffectStack } from '../../../utils/effectUtils';
 import { usePDFStore, type PDFObject } from '../../../store/pdfStore'; // Need this for the PDF Document source
 import { PDFObjectRenderer } from './PDFObjectRenderer';
+import { AdjustmentGroup } from './shared/AdjustmentGroup';
 import { ImageCropOverlay } from './ImageCropOverlay';
 import { TextEditorOverlay } from './TextEditorOverlay';
 import { Loader2 } from 'lucide-react';
 
 
 import { detectShape } from '../../../utils/shapeDetection';
+
+
 
 export const EditorCanvas: React.FC = () => {
     // Editor State
@@ -85,9 +89,9 @@ export const EditorCanvas: React.FC = () => {
     }, [currentPage?.id, pdfDocument]);
 
     // Refs
-    const canvasRef = useRef<HTMLCanvasElement>(null);
     const stageRef = useRef<Konva.Stage>(null);
     const transformerRef = useRef<Konva.Transformer>(null);
+    const bufferCanvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
     // Track Drag State for Multi-move
     const isDraggingRef = useRef(false);
     const dragStartPosRef = useRef<{ x: number, y: number } | null>(null);
@@ -101,6 +105,7 @@ export const EditorCanvas: React.FC = () => {
     // Local State
     const [rendering, setRendering] = useState(false);
     const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+    const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
 
     // Drawing State (Local to component for interactions)
     const [isDrawing, setIsDrawing] = useState(false);
@@ -174,44 +179,59 @@ export const EditorCanvas: React.FC = () => {
                 const page = await pdfDocument.getPage(indexToFetch);
                 if (isCancelled) return;
 
-                // Use the stored rotation (0, 90, 180, 270)
                 const rotation = (currentPage.rotation || 0) + (page.rotate || 0); // Combine intrinsic + user rotation
-                const viewport = page.getViewport({ scale, rotation: rotation % 360 });
-                const outputScale = window.devicePixelRatio || 1;
-                const cssWidth = Math.floor(viewport.width);
-                const cssHeight = Math.floor(viewport.height);
 
-                // Set dimensions if not set or changed (triggers re-render to mount canvas)
+                // Get base viewport at scale 1 to determine unzoomed size
+                const baseViewport = page.getViewport({ scale: 1, rotation: rotation % 360 });
+                const baseWidth = baseViewport.width;
+                const baseHeight = baseViewport.height;
+
+                const cssWidth = Math.floor(baseWidth * scale);
+                const cssHeight = Math.floor(baseHeight * scale);
+
+                // Set dimensions if not set or changed (triggers re-render to mount stage correctly)
                 if (!dimensions || dimensions.width !== cssWidth || dimensions.height !== cssHeight) {
                     setDimensions({ width: cssWidth, height: cssHeight });
-                    // We return here because we need the re-render to create the canvas with new dimensions
                     return;
                 }
 
-                // If dimensions match, canvas should exist now
-                const canvas = canvasRef.current;
-                if (!canvas) return;
+                // Use a fixed high-DPI scale for background rendering to keep it sharp
+                const RENDER_SCALE = 2;
+                const viewport = page.getViewport({ scale: RENDER_SCALE, rotation: rotation % 360 });
+                const outputScale = 1;
 
-                const context = canvas.getContext('2d');
-                if (!context) return;
-
-                canvas.width = Math.floor(viewport.width * outputScale);
-                canvas.height = Math.floor(viewport.height * outputScale);
-                canvas.style.width = cssWidth + "px";
-                canvas.style.height = cssHeight + "px";
+                // 1. Prepare Buffer Canvas (Internal PDF Render)
+                const bufferCanvas = bufferCanvasRef.current;
+                if (!bufferCanvas) return;
+                bufferCanvas.width = Math.floor(viewport.width * outputScale);
+                bufferCanvas.height = Math.floor(viewport.height * outputScale);
+                const bufferContext = bufferCanvas.getContext('2d');
+                if (!bufferContext) return;
 
                 const transform = outputScale !== 1
                     ? [outputScale, 0, 0, outputScale, 0, 0]
                     : undefined;
 
                 const renderContext = {
-                    canvasContext: context,
+                    canvasContext: bufferContext,
                     transform: transform,
                     viewport: viewport,
                 };
 
                 renderTask = page.render(renderContext);
                 await renderTask!.promise;
+
+                // Base background rendered
+                // Capture the buffer canvas as our BG source
+                const finalBg = document.createElement('canvas');
+                finalBg.width = bufferCanvas.width;
+                finalBg.height = bufferCanvas.height;
+                const finalCtx = finalBg.getContext('2d');
+                if (finalCtx) {
+                    finalCtx.drawImage(bufferCanvas, 0, 0);
+                    setBgImage(finalBg);
+                }
+
             } catch (error: unknown) {
                 if (error instanceof Error && error.name !== 'RenderingCancelledException') {
                     console.error('Error rendering page:', error);
@@ -229,6 +249,9 @@ export const EditorCanvas: React.FC = () => {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pdfDocument, currentPage?.originalPageIndex, scale, dimensions?.width, dimensions?.height, currentPage?.rotation]);
+
+
+    // Remove old applySingleEffect and applyThresholdEffect and applyScanEnhanceEffect as they are now in effectUtils
 
     // Dimensions for Non-PDF sources (e.g. Blank page)
     useEffect(() => {
@@ -538,6 +561,7 @@ export const EditorCanvas: React.FC = () => {
                         points: detected.points,
                         rotation: 0
                     });
+                    setActiveTool('select');
                     setIsDrawing(false);
                     setCurrentPath([]);
                     return;
@@ -943,17 +967,55 @@ export const EditorCanvas: React.FC = () => {
 
     // --- Page Filter Helper ---
     const getPageFilter = () => {
-        if (!currentPage.filter || currentPage.filter === 'none') return 'none';
-        const intensity = currentPage.filterIntensity ?? 0.5;
+        let filterStr = '';
 
-        switch (currentPage.filter) {
-            case 'grayscale': return `grayscale(${intensity})`;
-            case 'sepia': return `sepia(${intensity})`;
-            case 'vintage': return `sepia(${intensity * 0.8}) contrast(${1 + intensity * 0.2}) brightness(${1 - intensity * 0.1})`;
-            case 'cool': return `hue-rotate(180deg) sepia(${intensity * 0.3}) saturate(${1 - intensity * 0.2})`;
-            case 'warm': return `sepia(${intensity * 0.4}) saturate(${1 + intensity * 0.2})`;
-            default: return 'none';
+        // 1. Legacy Filter (if any remains)
+        if (currentPage.filter && currentPage.filter !== 'none') {
+            const intensity = currentPage.filterIntensity ?? 0.5;
+            switch (currentPage.filter) {
+                case 'grayscale': filterStr += `grayscale(${intensity}) `; break;
+                case 'sepia': filterStr += `sepia(${intensity}) `; break;
+                case 'vintage': filterStr += `sepia(${intensity * 0.8}) contrast(${1 + intensity * 0.2}) brightness(${1 - intensity * 0.1}) `; break;
+                case 'cool': filterStr += `hue-rotate(180deg) sepia(${intensity * 0.3}) saturate(${1 - intensity * 0.2}) `; break;
+                case 'warm': filterStr += `sepia(${intensity * 0.4}) saturate(${1 + intensity * 0.2}) `; break;
+            }
         }
+
+        // 2. New Adjustment Layers (Effect Objects)
+        if (currentPage.objects) {
+            currentPage.objects.forEach(obj => {
+                if (obj.type === 'effect' && obj.visible !== false) {
+                    const params = obj.effectParams || {};
+                    const opacity = obj.opacity ?? 1;
+
+                    switch (obj.effectType) {
+                        case 'grayscale':
+                            filterStr += `grayscale(${opacity}) `;
+                            break;
+                        case 'sepia':
+                            filterStr += `sepia(${opacity}) `;
+                            break;
+                        case 'invert':
+                            filterStr += `invert(${opacity}) `;
+                            break;
+                        case 'brightness':
+                            filterStr += `brightness(${1 + (params.value || 0) * opacity}) `;
+                            break;
+                        case 'contrast':
+                            filterStr += `contrast(${1 + (params.value || 0) * opacity}) `;
+                            break;
+                        case 'blur':
+                            filterStr += `blur(${(params.value || 0) * opacity}px) `;
+                            break;
+                        case 'vignette':
+                            // CSS filter doesn't support vignette well, but we can approximate or skip
+                            break;
+                    }
+                }
+            });
+        }
+
+        return filterStr.trim() || 'none';
     };
 
     const getTextureStyle = () => {
@@ -1001,28 +1063,7 @@ export const EditorCanvas: React.FC = () => {
                 // However, "Page Filter" usually implies altering the base document.
             }}
         >
-            {/* Background Layer: PDF Render */}
-            {currentPage.source === 'pdf' && (
-                <canvas
-                    ref={canvasRef}
-                    className="absolute inset-0 z-0 pointer-events-none transition-all duration-300"
-                    style={{
-                        width: dimensions.width,
-                        height: dimensions.height,
-                        filter: getPageFilter()
-                    }}
-                />
-            )}
-
-            {/* Texture / Color Overlay Layer (Z=5, between PDF and Objects) */}
-            <div
-                className="absolute inset-0 z-[5] pointer-events-none transition-all duration-300 mix-blend-multiply"
-                style={{
-                    backgroundColor: currentPage.overlayColor || 'transparent',
-                    opacity: currentPage.overlayOpacity ?? 1,
-                    ...getTextureStyle()
-                }}
-            />
+            {/* Background Layer and Overlays are now rendered inside the Konva Stage for stack-based adjustment layers */}
 
             {/* Watermark Layer (Z=6, on top of texture, below objects) */}
             {currentPage.watermark && currentPage.watermark.text && (
@@ -1108,12 +1149,12 @@ export const EditorCanvas: React.FC = () => {
             <div className="absolute inset-0 z-50 touch-none" style={{ touchAction: 'none' }}>
                 <Stage
                     ref={stageRef}
-                    width={dimensions.width}
-                    height={dimensions.height}
+                    width={dimensions?.width || 800}
+                    height={dimensions?.height || 1100}
                     scaleX={scale * (currentPage.flipX ? -1 : 1)}
                     scaleY={scale * (currentPage.flipY ? -1 : 1)}
-                    x={currentPage.flipX ? dimensions.width : 0}
-                    y={currentPage.flipY ? dimensions.height : 0}
+                    x={currentPage.flipX ? (dimensions?.width || 0) : 0}
+                    y={currentPage.flipY ? (dimensions?.height || 0) : 0}
                     draggable={false}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
@@ -1276,30 +1317,103 @@ export const EditorCanvas: React.FC = () => {
                             />
                         )}
 
-                        {/* 3. Objects */}
-                        {currentPage.objects.map((obj) => (
-                            <PDFObjectRenderer
-                                key={obj.id}
-                                object={{
-                                    ...obj,
-                                    // Only hide if cropping AND it's an image
-                                    visible: obj.visible !== false && !(useEditorStore.getState().isCropping && selectedObjectIds.includes(obj.id) && obj.type === 'image')
-                                } as PDFObject}
-                                isSelected={selectedObjectIds.includes(obj.id)}
-                                onSelect={(e: Konva.KonvaEventObject<MouseEvent>) => {
-                                    if (activeTool === 'eraser' && eraserMode === 'element') {
-                                        deleteObjects([obj.id]);
-                                    } else if (activeTool === 'select') {
-                                        // Handle Shift+Click for multi-select
-                                        const isMulti = e?.evt?.shiftKey === true;
-                                        selectObject(obj.id, isMulti);
-                                    }
-                                }}
-                                onChange={(updates) => updateObject(obj.id, updates)}
-                                isLocked={obj.isLocked}
-                                isSelectionEnabled={activeTool === 'select' || (activeTool === 'eraser' && eraserMode === 'element')}
-                            />
-                        ))}
+                        {/* 3. Integrated Stack-Based Rendering */}
+                        {(() => {
+                            if (!currentPage || !dimensions) return null;
+
+                            const unzoomedWidth = dimensions.width / scale;
+                            const unzoomedHeight = dimensions.height / scale;
+
+                            // Start with the background
+                            let currentStack: React.ReactNode = null;
+
+                            if (currentPage.source === 'pdf' && bgImage) {
+                                currentStack = (
+                                    <KonvaImage
+                                        key="pdf-background"
+                                        image={bgImage}
+                                        width={unzoomedWidth}
+                                        height={unzoomedHeight}
+                                        listening={false}
+                                    />
+                                );
+                            } else if (currentPage.source === 'blank') {
+                                currentStack = (
+                                    <Rect
+                                        key="blank-background"
+                                        width={unzoomedWidth}
+                                        height={unzoomedHeight}
+                                        fill={currentPage.backgroundColor || '#ffffff'}
+                                        listening={false}
+                                    />
+                                );
+                            }
+
+                            // Texture Overlay (Legacy but integrated)
+                            if (currentPage.texture && currentPage.texture !== 'none') {
+                                // For now, we'll just wrap the current stack
+                                // In a full implementation, textures could also be objects
+                            }
+
+                            // Iterate through objects and build the nested structure
+                            currentPage.objects.forEach((obj) => {
+                                const isSelected = selectedObjectIds.includes(obj.id);
+
+                                if (obj.type === 'effect') {
+                                    // Pro Refinement: Adjustment layers are always full-page and fixed
+                                    const proObject = {
+                                        ...obj,
+                                        x: 0,
+                                        y: 0,
+                                        width: unzoomedWidth,
+                                        height: unzoomedHeight,
+                                        rotation: 0,
+                                        isLocked: true // Prevent any internal move logic
+                                    };
+
+                                    // Effect Layer: Wrap the current stack
+                                    currentStack = (
+                                        <AdjustmentGroup
+                                            key={obj.id}
+                                            object={proObject}
+                                            isSelected={isSelected}
+                                            onSelect={(e) => {
+                                                if (activeTool === 'select') {
+                                                    const isMulti = e?.evt?.shiftKey === true;
+                                                    selectObject(obj.id, isMulti);
+                                                }
+                                            }}
+                                        >
+                                            {currentStack}
+                                        </AdjustmentGroup>
+                                    );
+                                } else {
+                                    // Standard Object: Group it with the current stack
+                                    currentStack = (
+                                        <Group key={obj.id}>
+                                            {currentStack}
+                                            <PDFObjectRenderer
+                                                object={obj}
+                                                isSelected={isSelected}
+                                                onSelect={(e: Konva.KonvaEventObject<MouseEvent>) => {
+                                                    if (activeTool === 'eraser' && eraserMode === 'element') {
+                                                        deleteObjects([obj.id]);
+                                                    } else if (activeTool === 'select') {
+                                                        const isMulti = e?.evt?.shiftKey === true;
+                                                        selectObject(obj.id, isMulti);
+                                                    }
+                                                }}
+                                                onChange={(updates) => updateObject(obj.id, updates)}
+                                                isLocked={obj.isLocked}
+                                                isSelectionEnabled={activeTool === 'select' || (activeTool === 'eraser' && eraserMode === 'element')}
+                                            />
+                                        </Group>
+                                    );
+                                }
+                            });
+
+                            return currentStack;
+                        })()}
 
                         {/* 3.5 Multi-Select Overlay (Draggable Empty Space) */}
                         {selectionBounds && activeTool === 'select' && (
@@ -1342,7 +1456,9 @@ export const EditorCanvas: React.FC = () => {
                                 anchorStrokeWidth={1.5}
                                 anchorSize={8}
                                 anchorCornerRadius={10}
-                                rotateEnabled={true}
+                                // Pro Refinement: Hide handles for adjustment layers
+                                rotateEnabled={!currentPage.objects.some(o => selectedObjectIds.includes(o.id) && o.type === 'effect')}
+                                enabledAnchors={currentPage.objects.some(o => selectedObjectIds.includes(o.id) && o.type === 'effect') ? [] : ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'top-center', 'bottom-center', 'middle-left', 'middle-right']}
                                 rotateAnchorOffset={30}
                                 rotateAnchorCursor="grab"
                                 keepRatio={selectedObjectIds.length === 1 ? (currentPage.objects.find(o => o.id === selectedObjectIds[0])?.lockAspectRatio ?? (currentPage.objects.find(o => o.id === selectedObjectIds[0])?.type === 'image')) : true}

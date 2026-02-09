@@ -11,6 +11,7 @@ import { CalibrationPanel } from './CalibrationPanel';
 import { LeftColorPanel } from './LeftColorPanel';
 
 import { ImageEditorPanel } from './ImageEditorPanel';
+import { EffectsPanel } from './EffectsPanel';
 import { TextPropertyPanel } from './properties/TextPropertyPanel';
 
 // Custom hook to detect mobile viewport
@@ -28,7 +29,7 @@ const useIsMobile = () => {
 };
 
 
-type TabId = 'stamps' | 'scale' | 'properties' | 'image-editor';
+type TabId = 'stamps' | 'scale' | 'properties' | 'image-editor' | 'effects';
 
 export const EditorLeftPanel: React.FC = () => {
     const isMobile = useIsMobile();
@@ -38,6 +39,10 @@ export const EditorLeftPanel: React.FC = () => {
         activeTool, toolPreferences, updateToolSettings, selectedObjectIds,
         currentPage, updateObject, recentColors, addColorToHistory, editingMode
     } = useEditorStore();
+
+    // Ref to track last tool and selection that triggered an auto-expansion
+    const lastAutoOpenedTool = React.useRef<string | null>(null);
+    const lastAutoOpenedSelection = React.useRef<string | null>(null);
 
     const hasSelection = selectedObjectIds.length > 0;
     const selectedObj = currentPage?.objects.find(o => o.id === selectedObjectIds[0]);
@@ -50,33 +55,67 @@ export const EditorLeftPanel: React.FC = () => {
     // const [userHasSelectedTab, setUserHasSelectedTab] = useState(false);
 
     React.useEffect(() => {
+        const selectedId = selectedObjectIds[0] || null;
+
+        // Auto-collapse logic (strict)
+        if (isNavigateMode) {
+            setIsCollapsed(true);
+            lastAutoOpenedTool.current = null;
+            lastAutoOpenedSelection.current = null;
+            return;
+        }
+
+        // Auto-expand logic (Smart & Respectful)
+        let targetTab: TabId | null = null;
+        let shouldAutoOpen = false;
+
+        const isDrawingTool = ['pen', 'highlighter', 'rectangle', 'circle', 'text', 'line', 'arrow', 'eraser'].includes(activeTool);
 
         if (activeTool === 'stamp') {
-            setActiveTab('stamps');
-            setIsCollapsed(false);
+            targetTab = 'stamps';
+            if (lastAutoOpenedTool.current !== 'stamp') shouldAutoOpen = true;
+            lastAutoOpenedTool.current = 'stamp';
         } else if (activeTool === 'measure') {
-            setActiveTab('scale');
-            setIsCollapsed(false);
+            targetTab = 'scale';
+            if (lastAutoOpenedTool.current !== 'measure') shouldAutoOpen = true;
+            lastAutoOpenedTool.current = 'measure';
+        } else if (activeTool === 'effects') {
+            targetTab = 'effects';
+            if (lastAutoOpenedTool.current !== 'effects') shouldAutoOpen = true;
+            lastAutoOpenedTool.current = 'effects';
         } else if (hasSelection) {
             if (selectedObj?.type === 'group') {
                 setIsCollapsed(true);
+                return;
             } else if (selectedObj?.type === 'image') {
-                setActiveTab('image-editor');
-                setIsCollapsed(false);
+                targetTab = 'image-editor';
+                // Only auto-open if this specific object hasn't triggered an open yet
+                if (lastAutoOpenedSelection.current !== selectedId) shouldAutoOpen = true;
+                lastAutoOpenedSelection.current = selectedId;
             } else {
-                setActiveTab('properties');
-                setIsCollapsed(false);
+                targetTab = 'properties';
+                if (lastAutoOpenedSelection.current !== selectedId) shouldAutoOpen = true;
+                lastAutoOpenedSelection.current = selectedId;
             }
         } else if (editingMode === 'native-text') {
-            setActiveTab('properties');
-            setIsCollapsed(false);
-        } else if ((activeTool === 'select' && !hasSelection) || activeTool === 'pan') {
-            setIsCollapsed(true);
-        } else if (['pen', 'highlighter', 'rectangle', 'circle', 'text', 'line', 'arrow', 'eraser'].includes(activeTool)) {
-            setActiveTab('properties');
-            setIsCollapsed(false);
+            targetTab = 'properties';
+            if (lastAutoOpenedTool.current !== 'native-text') shouldAutoOpen = true;
+            lastAutoOpenedTool.current = 'native-text';
+        } else if (isDrawingTool) {
+            targetTab = 'properties';
+            if (lastAutoOpenedTool.current !== activeTool) shouldAutoOpen = true;
+            lastAutoOpenedTool.current = activeTool;
         }
-    }, [activeTool, hasSelection, selectedObj?.type, activeTab, editingMode]);
+
+        if (targetTab) {
+            setActiveTab(targetTab);
+            // We ONLY set isCollapsed(false) if the user hasn't already dismissed the panel for this specific context
+            if (shouldAutoOpen) {
+                setIsCollapsed(false);
+            }
+        }
+
+    }, [activeTool, hasSelection, selectedObj?.type, selectedObjectIds, editingMode, isNavigateMode]);
 
     // Completely unmount on mobile - AFTER all hooks
     if (isMobile) return null;
@@ -85,21 +124,21 @@ export const EditorLeftPanel: React.FC = () => {
         return (
             <div
                 className={clsx(
-                    "w-5 transition-all duration-300 relative border-r border-white/5 bg-[#1e1e20] flex flex-col items-center py-4 group hidden md:flex",
-                    isNavigateMode ? "cursor-default" : "hover:bg-white/5 cursor-pointer"
+                    "w-1 md:w-2 transition-all duration-500 relative bg-[#1e1e20] border-r border-white/5 flex flex-col items-center group hidden md:flex h-full",
+                    isNavigateMode ? "cursor-default" : "hover:w-6 hover:bg-white/5 cursor-pointer"
                 )}
                 onClick={() => !isNavigateMode && setIsCollapsed(false)}
             >
                 {!isNavigateMode && (
                     <button
                         onClick={(e) => { e.stopPropagation(); setIsCollapsed(false); }}
-                        className="p-1 rounded-md text-zinc-500 hover:text-white transition-colors mt-1"
+                        className="p-1 rounded-md text-zinc-500 opacity-0 group-hover:opacity-100 transition-all mt-4"
                         title="Open Sidebar"
                     >
                         <ChevronRight size={14} />
                     </button>
                 )}
-                {!isNavigateMode && <div className="h-full w-[1px] bg-white/5 my-2 group-hover:bg-blue-500/50 transition-colors" />}
+                <div className="flex-1" />
             </div>
         );
     }
@@ -131,7 +170,7 @@ export const EditorLeftPanel: React.FC = () => {
                                                 selectedObj?.type === 'circle' ? 'Circle Properties' :
                                                     selectedObj?.type === 'image' ? 'Image Properties' :
                                                         'Properties'
-                                        ) : 'Colors & Stroke'}
+                                        ) : activeTab === 'effects' ? 'Page Effects' : 'Colors & Stroke'}
                     </h2>
                 </div>
                 <button
@@ -164,6 +203,8 @@ export const EditorLeftPanel: React.FC = () => {
                     )
                 ) : activeTab === 'image-editor' ? (
                     <ImageEditorPanel />
+                ) : activeTab === 'effects' ? (
+                    <EffectsPanel />
                 ) : (
                     <div className="px-4 py-4">
                         <div className="flex items-center justify-between mb-4 px-1">
