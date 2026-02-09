@@ -433,7 +433,9 @@ const drawNativeTextEdits = (ctx: CanvasRenderingContext2D, edits: Record<string
 
         // Text
         ctx.fillStyle = edit.color || 'black';
-        ctx.font = `${edit.fontSize}px ${edit.fontFamily || 'sans-serif'}`;
+        const fontWeight = edit.fontWeight || 'normal';
+        const fontStyle = edit.fontStyle || 'normal';
+        ctx.font = `${fontStyle} ${fontWeight} ${edit.fontSize}px ${edit.fontFamily || 'sans-serif'}`;
         // Note: Canvas coordinates are now logical. 
         // If we draw at logicalVY (baseline), we need standard baseline?
         // PDFTextLayer uses a DIV at `top`.
@@ -444,6 +446,18 @@ const drawNativeTextEdits = (ctx: CanvasRenderingContext2D, edits: Record<string
 
         ctx.textBaseline = 'top';
         ctx.fillText(edit.text, logicalVX, rectTop);
+
+        // Underline support
+        if (edit.textDecoration && edit.textDecoration.includes('underline')) {
+            const textWidth = ctx.measureText(edit.text).width;
+            const lineY = rectTop + (edit.fontSize * 1.05); // slightly below baseline
+            ctx.beginPath();
+            ctx.moveTo(logicalVX, lineY);
+            ctx.lineTo(logicalVX + textWidth, lineY);
+            ctx.strokeStyle = ctx.fillStyle;
+            ctx.lineWidth = edit.fontSize * 0.05; // scalable line width
+            ctx.stroke();
+        }
 
         ctx.restore();
     });

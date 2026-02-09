@@ -982,7 +982,7 @@ export const EditorCanvas: React.FC = () => {
     return (
         <div
             ref={editorWorkspaceRef}
-            id="editor-workspace"
+            id="editor-canvas-container"
             className="shadow-2xl relative my-10"
             style={{
                 width: dimensions.width,
@@ -990,6 +990,9 @@ export const EditorCanvas: React.FC = () => {
                 cursor: getCursorStyle(),
                 backgroundColor: pageBackgroundColor,
                 transform: `translate(${stagePosition.x}px, ${stagePosition.y}px)`,
+                touchAction: 'none', // Prevent browser from intercepting touch for scroll/zoom
+                userSelect: 'none', // Prevent text selection during drawing
+                WebkitUserSelect: 'none', // Safari support
                 // Apply global page filter to the whole container? 
                 // No, only to the PDF logic. If we apply to container, it affects annotations too!
                 // We want strict layering: PDF -> Filter -> Overlay -> Objects
@@ -1102,7 +1105,7 @@ export const EditorCanvas: React.FC = () => {
             )}
 
             {/* Editing Layer: Konva Stage */}
-            <div className="absolute inset-0 z-50">
+            <div className="absolute inset-0 z-50 touch-none" style={{ touchAction: 'none' }}>
                 <Stage
                     ref={stageRef}
                     width={dimensions.width}
@@ -1115,6 +1118,9 @@ export const EditorCanvas: React.FC = () => {
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
+                    onTouchStart={handleMouseDown}
+                    onTouchMove={handleMouseMove}
+                    onTouchEnd={handleMouseUp}
                     onDragStart={handleDragStartGlobal}
                     onDragMove={handleDragMoveGlobal}
                     onDragEnd={handleDragEndGlobal}

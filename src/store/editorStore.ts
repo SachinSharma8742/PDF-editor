@@ -37,6 +37,9 @@ export interface NativeTextItem {
     fontSize: number;
     fontFamily: string;
     color: string; // Text color (hex or rgb)
+    fontWeight?: string;
+    fontStyle?: string;
+    textDecoration?: string;
     originalRef?: any; // Raw PDF item reference for replacement logic
     pageId: string;
 }

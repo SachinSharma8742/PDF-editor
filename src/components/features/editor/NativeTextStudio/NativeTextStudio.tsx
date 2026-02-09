@@ -26,6 +26,7 @@ export const NativeTextStudio: React.FC = () => {
     const { pdfDocument, pages } = usePDFStore();
     const [textItems, setTextItems] = useState<any[]>([]);
     const canvasRef = useRef<SinglePageCanvasHandle>(null);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     const pageState = pages.find(p => p.id === nativeTextStudio.pageId);
 
@@ -94,21 +95,31 @@ export const NativeTextStudio: React.FC = () => {
         }
     };
 
+
+
     return (
         <div className="fixed inset-0 z-[100] flex flex-col bg-[#18181b] animate-in slide-in-from-bottom-5 duration-300">
             {/* Top Bar */}
-            <div className="h-14 border-b border-white/10 flex items-center justify-between px-6 bg-[#18181b] shrink-0">
+            <div className="h-14 border-b border-white/10 flex items-center justify-between px-4 md:px-6 bg-[#18181b] shrink-0">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400">
+                    {/* Mobile Sidebar Toggle */}
+                    <button
+                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                        className="md:hidden p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5"
+                    >
+                        <ScanLine size={20} className="rotate-90" />
+                    </button>
+
+                    <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400 hidden md:block">
                         <Type size={20} />
                     </div>
                     <div>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider">PDF Text Studio</h2>
-                        <p className="text-[10px] text-zinc-500">Edit native text content</p>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider hidden md:block">PDF Text Studio</h2>
+                        <h2 className="text-sm font-bold text-white uppercase tracking-wider md:hidden">Text Studio</h2>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 md:gap-2">
                     {/* Find & Replace Toggle */}
                     <button
                         onClick={toggleFindReplace}
@@ -135,20 +146,21 @@ export const NativeTextStudio: React.FC = () => {
                     >
                         <ScanLine size={18} />
                     </button>
-                    <div className="w-[1px] h-6 bg-white/10 mx-1" />
-                    <button className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
+                    <div className="w-[1px] h-6 bg-white/10 mx-1 hidden md:block" />
+                    <button className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors hidden md:block">
                         <Undo2 size={18} />
                     </button>
-                    <button className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
+                    <button className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors hidden md:block">
                         <Redo2 size={18} />
                     </button>
-                    <div className="w-[1px] h-6 bg-white/10 mx-2" />
+                    <div className="w-[1px] h-6 bg-white/10 mx-1 md:mx-2" />
                     <button
                         onClick={handleSave}
-                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2"
+                        className="px-3 py-1.5 md:px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2"
                     >
                         <Save size={14} />
-                        Save & Close
+                        <span className="hidden md:inline">Save & Close</span>
+                        <span className="md:hidden">Save</span>
                     </button>
                     <button
                         onClick={handleClose}
@@ -160,10 +172,13 @@ export const NativeTextStudio: React.FC = () => {
             </div>
 
             {/* Main Workspace */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex overflow-hidden relative">
 
-                {/* Left Properties Panel */}
-                <div className="w-80 border-r border-white/10 bg-[#1e1e20] p-4 overflow-y-auto space-y-4">
+                {/* Sidebar - Properties Panel */}
+                <div className={clsx(
+                    "bg-[#1e1e20] p-4 pt-24 md:pt-4 overflow-y-auto space-y-4 border-r border-white/10 transition-all duration-300 absolute z-20 inset-y-0 left-0 md:relative w-80 shadow-2xl md:shadow-none",
+                    isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+                )}>
                     {/* Find & Replace Panel */}
                     <FindReplacePanel textItems={textItems} />
 
@@ -174,8 +189,16 @@ export const NativeTextStudio: React.FC = () => {
                     <NativeTextProperties />
                 </div>
 
+                {/* Backdrop for mobile sidebar */}
+                {isSidebarOpen && (
+                    <div
+                        className="absolute inset-0 bg-black/50 z-10 md:hidden backdrop-blur-sm"
+                        onClick={() => setIsSidebarOpen(false)}
+                    />
+                )}
+
                 {/* Canvas Area */}
-                <div className="flex-1 overflow-hidden bg-[#09090b] relative">
+                <div className="flex-1 overflow-hidden bg-[#09090b] relative w-full z-0">
                     {/* Dot Grid Background */}
                     <div className="absolute inset-0 opacity-20 pointer-events-none"
                         style={{

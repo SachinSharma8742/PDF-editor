@@ -95,7 +95,7 @@ export const Sidebar: React.FC = () => {
     };
 
     return (
-        <div className="w-72 bg-[#18181b] border-r border-white/5 flex flex-col h-full z-30 relative select-none transition-all duration-500 font-sans shadow-2xl">
+        <div className="w-[85vw] max-w-[288px] md:w-72 bg-[#18181b] border-r border-white/5 flex flex-col h-full z-30 relative select-none transition-all duration-500 font-sans shadow-2xl">
             {/* Hidden file input for Open PDF */}
             <input
                 ref={fileInputRef}
@@ -212,6 +212,34 @@ export const Sidebar: React.FC = () => {
                                         >
                                             <HelpCircle size={14} className="text-zinc-500" />
                                             <span className="text-[11px] font-semibold">Help & Shortcuts</span>
+                                        </button>
+
+                                        <div className="border-t border-white/5 my-2" />
+
+
+                                        {/* Clear Data */}
+                                        <button
+                                            onClick={async () => {
+                                                if (confirm('Are you sure you want to clear all app data? This will reset the application to its initial state.')) {
+                                                    try {
+                                                        const { clear } = await import('idb-keyval');
+                                                        await clear();
+                                                        localStorage.clear();
+                                                        sessionStorage.clear();
+                                                        window.location.reload();
+                                                    } catch (e) {
+                                                        console.error('Failed to clear data:', e);
+                                                        // Fallback
+                                                        localStorage.clear();
+                                                        sessionStorage.clear();
+                                                        window.location.reload();
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-left group"
+                                        >
+                                            <Trash2 size={14} className="text-zinc-500 group-hover:text-red-400 decoration-red-900" />
+                                            <span className="text-[11px] font-semibold">Reset App Data</span>
                                         </button>
                                     </div>
 

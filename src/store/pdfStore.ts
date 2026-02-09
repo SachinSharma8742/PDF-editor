@@ -169,6 +169,9 @@ export interface NativeTextEdit {
     fontSize: number;
     fontFamily: string;
     color: string;
+    fontWeight?: string;
+    fontStyle?: string;
+    textDecoration?: string;
     originalRef?: any;
 }
 

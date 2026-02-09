@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useEditorStore } from '../../../store/editorStore';
-import { Type, ALargeSmall, Baseline, Palette, AlignLeft, AlignCenter, AlignRight, Check, X, FileText } from 'lucide-react';
+
+import { Type, ALargeSmall, Baseline, Palette, AlignLeft, AlignCenter, AlignRight, Check, X, FileText, Bold as BoldIcon, Italic as ItalicIcon, Underline as UnderlineIcon } from 'lucide-react';
 import { CollapsibleSection } from './properties/CollapsibleSection';
 
 export const NativeTextProperties: React.FC = () => {
@@ -8,12 +9,18 @@ export const NativeTextProperties: React.FC = () => {
     const [localText, setLocalText] = useState('');
     const [localFontSize, setLocalFontSize] = useState(16);
     const [localColor, setLocalColor] = useState('#000000');
+    const [localFontWeight, setLocalFontWeight] = useState('normal');
+    const [localFontStyle, setLocalFontStyle] = useState('normal');
+    const [localTextDecoration, setLocalTextDecoration] = useState('none');
 
     useEffect(() => {
         if (activeNativeTextItem) {
             setLocalText(activeNativeTextItem.text);
             setLocalFontSize(activeNativeTextItem.fontSize);
             setLocalColor(activeNativeTextItem.color || '#000000');
+            setLocalFontWeight(activeNativeTextItem.fontWeight || 'normal');
+            setLocalFontStyle(activeNativeTextItem.fontStyle || 'normal');
+            setLocalTextDecoration(activeNativeTextItem.textDecoration || 'none');
         }
     }, [activeNativeTextItem?.id]); // Only reset when ID changes, not on every store update
 
@@ -60,6 +67,31 @@ export const NativeTextProperties: React.FC = () => {
         setActiveNativeTextItem(updated);
         updateNativeTextEdit(activeNativeTextItem.id, updated);
     };
+
+    const toggleBold = () => {
+        const newWeight = localFontWeight === 'bold' ? 'normal' : 'bold';
+        setLocalFontWeight(newWeight);
+        const updated = { ...activeNativeTextItem, fontWeight: newWeight };
+        setActiveNativeTextItem(updated);
+        updateNativeTextEdit(activeNativeTextItem.id, updated);
+    };
+
+    const toggleItalic = () => {
+        const newStyle = localFontStyle === 'italic' ? 'normal' : 'italic';
+        setLocalFontStyle(newStyle);
+        const updated = { ...activeNativeTextItem, fontStyle: newStyle };
+        setActiveNativeTextItem(updated);
+        updateNativeTextEdit(activeNativeTextItem.id, updated);
+    };
+
+    const toggleUnderline = () => {
+        const newDeco = localTextDecoration === 'underline' ? 'none' : 'underline';
+        setLocalTextDecoration(newDeco);
+        const updated = { ...activeNativeTextItem, textDecoration: newDeco };
+        setActiveNativeTextItem(updated);
+        updateNativeTextEdit(activeNativeTextItem.id, updated);
+    };
+
 
     // Preset colors for quick selection (11 colors + custom picker = 12 = 2 rows)
     const presetColors = [
@@ -117,6 +149,42 @@ export const NativeTextProperties: React.FC = () => {
                             ? Number(localFontSize).toFixed(2).replace(/\.00$/, '')
                             : localFontSize}px
                     </span>
+                </div>
+
+                {/* Style Toggles (Bold/Italic/Underline) */}
+                <div className="flex items-center justify-between mt-4 bg-gray-100 dark:bg-white/5 p-1 rounded-lg">
+                    <button
+                        onClick={toggleBold}
+                        className={`flex-1 p-1.5 rounded-md flex items-center justify-center transition-all ${localFontWeight === 'bold'
+                                ? 'bg-white dark:bg-white/20 shadow-sm text-blue-600 dark:text-blue-400'
+                                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                            }`}
+                        title="Bold"
+                    >
+                        <BoldIcon size={16} strokeWidth={localFontWeight === 'bold' ? 3 : 2} />
+                    </button>
+                    <div className="w-px h-4 bg-gray-300 dark:bg-white/10 mx-1"></div>
+                    <button
+                        onClick={toggleItalic}
+                        className={`flex-1 p-1.5 rounded-md flex items-center justify-center transition-all ${localFontStyle === 'italic'
+                                ? 'bg-white dark:bg-white/20 shadow-sm text-blue-600 dark:text-blue-400'
+                                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                            }`}
+                        title="Italic"
+                    >
+                        <ItalicIcon size={16} />
+                    </button>
+                    <div className="w-px h-4 bg-gray-300 dark:bg-white/10 mx-1"></div>
+                    <button
+                        onClick={toggleUnderline}
+                        className={`flex-1 p-1.5 rounded-md flex items-center justify-center transition-all ${localTextDecoration === 'underline'
+                                ? 'bg-white dark:bg-white/20 shadow-sm text-blue-600 dark:text-blue-400'
+                                : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                            }`}
+                        title="Underline"
+                    >
+                        <UnderlineIcon size={16} />
+                    </button>
                 </div>
 
                 {/* Text Color */}
@@ -198,3 +266,4 @@ export const NativeTextProperties: React.FC = () => {
         </div>
     );
 };
+

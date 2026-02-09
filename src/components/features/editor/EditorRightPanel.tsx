@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings2, Layers } from 'lucide-react';
 import { EditorProperties } from './EditorProperties';
 import { LayerPanel } from './LayerPanel';
@@ -6,10 +6,28 @@ import { LayerPanel } from './LayerPanel';
 import { useEditorStore } from '../../../store/editorStore';
 import clsx from 'clsx';
 
+// Custom hook to detect mobile viewport
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
+    return isMobile;
+};
+
 type Tab = 'properties' | 'layers' | 'export';
 
 export const EditorRightPanel: React.FC = () => {
+    const isMobile = useIsMobile();
     const { activePanelTab, setActivePanelTab } = useEditorStore();
+
+    // Completely unmount on mobile
+    if (isMobile) return null;
 
     // Mapping for tabs
     const tabs = [

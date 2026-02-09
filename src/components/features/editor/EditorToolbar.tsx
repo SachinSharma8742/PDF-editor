@@ -11,6 +11,20 @@ import {
 import clsx from 'clsx';
 import { SignatureModal } from './SignatureModal';
 
+// Custom hook to detect mobile viewport
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
+    return isMobile;
+};
+
 // --- Configuration ---
 type ToolGroupKey = 'essentials' | 'draw' | 'insert';
 
@@ -71,6 +85,7 @@ const getToolIcon = (tool: ToolType): React.ElementType => {
 };
 
 export const EditorToolbar: React.FC = () => {
+    const isMobile = useIsMobile();
     const {
         activeTool, setActiveTool, addObject, toolPreferences, updateToolSettings,
         addColorToHistory, openShapeEditor, openTextStudio
@@ -96,6 +111,9 @@ export const EditorToolbar: React.FC = () => {
             setGroupDefaults(prev => ({ ...prev, [group]: activeTool }));
         }
     }, [activeTool, groupDefaults]);
+
+    // Completely unmount on mobile - AFTER all hooks
+    if (isMobile) return null;
 
     const ActiveIcon = eyedropperActive ? Pipette : getToolIcon(activeTool);
 
@@ -210,11 +228,11 @@ export const EditorToolbar: React.FC = () => {
     return (
         <div className="flex h-full relative z-50 font-sans select-none flex-shrink-0">
             {/* --- MAIN VERTICAL TOOLBAR --- */}
-            <div className="w-18 bg-[#09090b] border-r border-white/5 flex flex-col items-center py-4 gap-4 shadow-2xl z-50 flex-shrink-0">
+            <div className="hidden md:flex w-14 md:w-18 bg-[#09090b] border-r border-white/5 flex-col items-center py-3 md:py-4 gap-3 md:gap-4 shadow-2xl z-50 flex-shrink-0">
                 {/* Active Tool Indicator */}
                 {/* Active Tool Indicator */}
-                <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center mb-2 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all duration-200">
-                    {React.createElement(ActiveIcon, { size: 20 })}
+                <div className="w-9 h-9 md:w-11 md:h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center mb-2 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all duration-200">
+                    {React.createElement(ActiveIcon, { size: 18 })}
                 </div>
 
                 {/* Groups */}
@@ -235,7 +253,7 @@ export const EditorToolbar: React.FC = () => {
                         onClick={handleEyedropper}
                         title="Color Picker"
                         className={clsx(
-                            "w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 group relative mx-auto",
+                            "w-9 h-9 md:w-11 md:h-11 rounded-xl flex items-center justify-center transition-all duration-200 group relative mx-auto",
                             eyedropperActive
                                 ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/40 ring-1 ring-amber-400/50'
                                 : 'text-zinc-300 hover:bg-white/10 hover:text-white'
@@ -322,7 +340,7 @@ const ToolGroup: React.FC<{
             <button
                 onClick={() => onSelect(mainTool.id)}
                 className={clsx(
-                    "w-11 h-11 mx-auto rounded-xl flex items-center justify-center transition-all duration-200 relative",
+                    "w-9 h-9 md:w-11 md:h-11 mx-auto rounded-xl flex items-center justify-center transition-all duration-200 relative",
                     isActive
                         ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
                         : 'text-zinc-300 hover:bg-white/10 hover:text-white'

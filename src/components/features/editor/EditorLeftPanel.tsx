@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     ChevronLeft, ChevronRight,
     Library, Sparkles
@@ -13,11 +13,25 @@ import { LeftColorPanel } from './LeftColorPanel';
 import { ImageEditorPanel } from './ImageEditorPanel';
 import { TextPropertyPanel } from './properties/TextPropertyPanel';
 
+// Custom hook to detect mobile viewport
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
+    return isMobile;
+};
 
 
 type TabId = 'stamps' | 'scale' | 'properties' | 'image-editor';
 
 export const EditorLeftPanel: React.FC = () => {
+    const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>('properties');
     const [isCollapsed, setIsCollapsed] = useState(true);
     const {
@@ -64,13 +78,14 @@ export const EditorLeftPanel: React.FC = () => {
         }
     }, [activeTool, hasSelection, selectedObj?.type, activeTab, editingMode]);
 
-
+    // Completely unmount on mobile - AFTER all hooks
+    if (isMobile) return null;
 
     if (isCollapsed) {
         return (
             <div
                 className={clsx(
-                    "w-5 transition-all duration-300 relative border-r border-white/5 bg-[#1e1e20] flex flex-col items-center py-4 group",
+                    "w-5 transition-all duration-300 relative border-r border-white/5 bg-[#1e1e20] flex flex-col items-center py-4 group hidden md:flex",
                     isNavigateMode ? "cursor-default" : "hover:bg-white/5 cursor-pointer"
                 )}
                 onClick={() => !isNavigateMode && setIsCollapsed(false)}
@@ -90,7 +105,7 @@ export const EditorLeftPanel: React.FC = () => {
     }
 
     return (
-        <div className="w-72 bg-[#1e1e20] border-r border-white/5 flex flex-col h-full z-30 shadow-2xl flex-shrink-0 transition-all duration-300 relative font-sans">
+        <div className="w-64 md:w-72 bg-[#1e1e20] border-r border-white/5 flex flex-col h-full z-30 shadow-2xl flex-shrink-0 transition-all duration-300 relative font-sans fixed md:relative inset-y-0 left-0">
             {/* Header */}
             <div className={clsx(
                 "h-14 border-b border-white/5 flex items-center px-4 gap-3 justify-between transition-colors",

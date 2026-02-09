@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useEditorStore } from '../../../store/editorStore';
 import { EditorTopBar } from './EditorTopBar';
 import { EditorToolbar } from './EditorToolbar';
@@ -11,14 +11,33 @@ import { ImageStudio } from './ImageStudio/ImageStudio';
 import { TextStudio } from './TextStudio/TextStudio';
 import { ShapeEditorModal } from './ShapeEditorModal';
 import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
+import { MobileToolbar } from './MobileToolbar';
+import { MobilePropertiesPanel } from './MobilePropertiesPanel';
 
 export const EditorMode: React.FC = () => {
     const {
-        selectedObjectIds
+        selectedObjectIds,
+        setActiveTool,
+        setScale,
+        scale
     } = useEditorStore();
+
+    const [isMobilePropertiesOpen, setIsMobilePropertiesOpen] = useState(false);
 
     // Use centralized hook for shortcuts
     useKeyboardShortcuts();
+
+    // Set default tool to pan on mobile
+    useEffect(() => {
+        const isMobile = window.innerWidth < 768;
+        if (isMobile) {
+            setActiveTool('pan');
+        }
+        // Ensure scale is positive (fix for negative scale display)
+        if (scale < 0.1) {
+            setScale(1);
+        }
+    }, []);
 
     // Legacy/Duplicate listeners removed in favor of useKeyboardShortcuts
     // The previous useEffect block is deleted.
@@ -70,24 +89,32 @@ export const EditorMode: React.FC = () => {
             {/* Unified Header */}
             <EditorTopBar />
 
-            {/* Main Content Area */}
+            {/* Main Content Area - Desktop */}
             <div className="flex-1 flex overflow-hidden relative">
 
-                {/* Slim Navigation Sidebar */}
+                {/* Slim Navigation Sidebar - Desktop Only */}
                 <EditorToolbar />
 
-                {/* Left Resource Panel (Stamps, OCR, etc) */}
+                {/* Left Resource Panel (Stamps, OCR, etc) - Desktop Only */}
                 <EditorLeftPanel />
 
                 {/* Primary Canvas Container - Full remaining width */}
-                <main id="editor-workspace" className="flex-1 relative overflow-auto bg-[#09090b] shadow-inner flex items-center justify-center">
+                <main id="editor-workspace" className="flex-1 relative overflow-auto bg-[#09090b] shadow-inner flex items-center justify-center touch-none">
                     <EditorCanvas />
                 </main>
 
-                {/* Unified Inspector Sidebar (Properties + Layers) */}
+                {/* Unified Inspector Sidebar (Properties + Layers) - Desktop Only */}
                 <EditorRightPanel />
-
             </div>
+
+            {/* Mobile Bottom Toolbar - Mobile Only */}
+            <MobileToolbar onPropertiesClick={() => setIsMobilePropertiesOpen(!isMobilePropertiesOpen)} />
+
+            {/* Mobile Properties Panel - Mobile Only */}
+            <MobilePropertiesPanel
+                isOpen={isMobilePropertiesOpen}
+                onClose={() => setIsMobilePropertiesOpen(false)}
+            />
 
             {/* Image Studio Overlay */}
             <ImageStudio />

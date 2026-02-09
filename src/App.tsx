@@ -8,13 +8,15 @@ import { NativeTextStudio } from './components/features/editor/NativeTextStudio/
 import { useEditorStore } from './store/editorStore';
 
 import { usePDFStore } from './store/pdfStore';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { loadPDFFromStorage } from './utils/storage';
 import { loadPDF } from './utils/pdfOps';
+import { Menu } from 'lucide-react';
 
 export default function App() {
   const { theme, setIsLoading } = usePDFStore();
   const { isActive } = useEditorStore();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     const restoreSession = async () => {
@@ -41,12 +43,12 @@ export default function App() {
   }, [setIsLoading]);
 
   return (
-    <div className={`flex flex-col h-screen w-screen overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}>
+    <div className={`flex flex-col h-screen h-[100dvh] w-screen overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}>
       {/* Background Layer for Dark Mode depth */}
       <div className="fixed inset-0 pointer-events-none z-0 opacity-0 dark:opacity-100 transition-opacity duration-700 bg-[radial-gradient(circle_at_50%_-20%,#3b82f615,transparent_50%)]" />
 
       <div className="flex flex-1 overflow-hidden relative bg-gray-50 dark:bg-[#09090b] text-gray-900 dark:text-zinc-100 transition-colors duration-500 z-10">
-        <SidebarHelpWrapper />
+        <SidebarHelpWrapper isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
         <div className="flex-1 flex flex-col relative w-full h-full bg-gray-100 dark:bg-transparent overflow-hidden transition-colors duration-500">
           {/* Surface texture in dark mode */}
@@ -54,8 +56,10 @@ export default function App() {
 
           {/* Toolbar Container - Absolute Top */}
           <div className="absolute top-0 left-0 right-0 z-50 flex justify-center pt-6 pointer-events-none">
-            <div className="pointer-events-auto">
-              <Toolbar />
+            {/* Mobile Menu Button - Removed, integrated into Toolbar */}
+
+            <div className="pointer-events-auto max-w-[95vw]">
+              <Toolbar onMenuClick={() => setIsSidebarOpen(true)} />
             </div>
             {/* Multi-Select / Context Toolbar removed as it is reported useless in Home mode */}
           </div>
@@ -79,11 +83,28 @@ export default function App() {
 }
 
 // Small helper to handle sidebar layout better
-function SidebarHelpWrapper() {
+function SidebarHelpWrapper({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   return (
-    <div className="flex-shrink-0 h-full relative z-30">
-      <Sidebar />
-    </div>
+    <>
+      {/* Mobile Overlay/Backdrop */}
+      <div
+        className={`
+        md:hidden fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm transition-opacity duration-300
+        ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
+      `}
+        onClick={onClose}
+      />
+
+      {/* Sidebar Container */}
+      <div className={`
+        fixed inset-y-0 left-0 z-[100] h-full
+        transform transition-transform duration-300 ease-in-out
+        md:relative md:translate-x-0
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <Sidebar />
+      </div>
+    </>
   );
 }
 

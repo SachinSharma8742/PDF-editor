@@ -116,6 +116,58 @@ export const PDFViewer: React.FC = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [selectedObjectIds, undo, redo, deleteObjects]);
 
+
+
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    // Auto-Fit Scale on Load
+    useEffect(() => {
+        if (!pdfDocument || pages.length === 0 || !containerRef.current) return;
+
+        const fitToWidth = () => {
+            const containerWidth = containerRef.current?.clientWidth || window.innerWidth;
+            const padding = 32; // 2rem/p-8 approx or p-4 * 2
+            const availableWidth = containerWidth - padding;
+
+            // Find the widest page to ensure everything fits
+            const maxPageWidth = Math.max(...pages.map(p => p.width));
+
+            if (maxPageWidth > 0) {
+                // Calculate scale to fit
+                const fitScale = availableWidth / maxPageWidth;
+
+                // If the natural scale (1) is too big for the screen, scale down.
+                // Or if we purely want "Fit Width" behavior, we just set it.
+                // Let's settle on: Scale down if too big, but don't scale up huge amounts automatically (capped at 1.5 or something?)
+                // Actually, standard "Fit Width" usually just sets it.
+                // User asked: "when i load an large image... scale gets overflow... automatically adjust size to fit"
+
+                // So if fitScale < 1 (needs shrinking), definitely apply it.
+                // If it fits naturally (fitScale >= 1), we might stick to 1.0 or user preference? 
+                // Let's go with: Apply fitScale if it's significantly different from 1, but maybe cap max at 1.0 for initial load if user prefers 100%.
+                // However, "Fit Width" is usually the best mobile default.
+
+                // Let's cap at 1.0 to avoid upscaling small images too much, but allow downscaling.
+                const targetScale = Math.min(fitScale, 1.0); // Don't auto-zoom in, only auto-zoom out.
+
+                // Only apply if we are significantly off (avoid micro-adjustments)
+                // And only on "first load" effectively? 
+                // We can't easily track "first load" without a ref/state. 
+                // But this effect runs on pdfDocument change, which is effectively load.
+
+                // We'll update only if the current scale is causing overflow (scale > fitScale)
+                // OR just force fit-width on load. content-overflow implies we should force fit-width.
+
+                usePDFStore.getState().setScale(targetScale * 0.95); // 0.95 safety margin
+            }
+        };
+
+        // Small delay to ensure layout is settled (sidebar, etc)
+        const timeout = setTimeout(fitToWidth, 100);
+        return () => clearTimeout(timeout);
+
+    }, [pdfDocument, pages.length]); // Run when document/pages change
+
     if (!pdfDocument && pages.length === 0) {
         return (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-zinc-600 animate-in fade-in duration-700">
@@ -132,7 +184,10 @@ export const PDFViewer: React.FC = () => {
     }
 
     return (
-        <div className="flex-1 bg-transparent flex flex-col items-center p-8 transition-all duration-300 ease-out relative">
+        <div
+            ref={containerRef}
+            className="flex-1 bg-transparent flex flex-col items-center p-4 md:p-8 transition-all duration-300 ease-out relative w-full overflow-x-hidden"
+        >
             {(pages as any[]).map((page: any) => (
                 <PDFPage key={page.pageNumber} pageNumber={page.pageNumber} />
             ))}

@@ -104,6 +104,9 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                                 fontSize: fontSize,
                                 fontFamily: edit.fontFamily || 'sans-serif',
                                 color: edit.color || '#000000',
+                                fontWeight: edit.fontWeight || 'normal',
+                                fontStyle: edit.fontStyle || 'normal',
+                                textDecoration: edit.textDecoration || 'none',
                                 backgroundColor: '#ffffff',
                                 padding: '0 4px',
                             }}
@@ -189,10 +192,10 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                             color: isEdited && activeEdit?.color ? activeEdit.color : 'transparent', // Show text if edited
                             // If edited, we need to match the font size of the edit
                             ...(isEdited && activeEdit ? {
-                                fontSize: activeEdit.fontSize * item.viewportScale, // Adjusted scale? 
-                                // activeEdit.fontSize is PDF units usually if we didn't convert it?
-                                // In NativeTextProperties we initialized it from activeNativeTextItem.fontSize which came from PDFJS height (PDF units).
-                                // So we need to scale it by viewport scale.
+                                fontSize: activeEdit.fontSize * item.viewportScale,
+                                fontWeight: activeEdit.fontWeight || 'normal',
+                                fontStyle: activeEdit.fontStyle || 'normal',
+                                textDecoration: activeEdit.textDecoration || 'none',
                             } : {})
                         }}
                         onClick={(e) => {
