@@ -390,14 +390,11 @@ export const useEditorStore = create<EditorStore>()(
             commitNativeTextEdits: () => {
                 const { pendingNativeTextEdits, nativeTextStudio } = get();
                 const pageId = nativeTextStudio.pageId;
-                if (!pageId) return;
+                if (!pageId || Object.keys(pendingNativeTextEdits).length === 0) return;
 
-                // Commit each edit to the PDF Store
-                Object.values(pendingNativeTextEdits).forEach(edit => {
-                    // Convert editor's NativeTextItem to PDFStore's NativeTextEdit if needed
-                    // They seem compatible based on earlier checks
-                    usePDFStore.getState().updateNativeTextEdit(pageId, edit.id, edit);
-                });
+                // Commit all edits at once to the PDF Store
+                const pdfStore = usePDFStore.getState();
+                pdfStore.updateNativeTextEdits(pageId, pendingNativeTextEdits);
 
                 // Clear pending edits
                 set({ pendingNativeTextEdits: {} });

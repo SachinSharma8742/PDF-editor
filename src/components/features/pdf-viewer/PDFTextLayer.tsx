@@ -52,7 +52,7 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
 
                     return {
                         ...item,
-                        id: `text-${pageNumber}-${tx[4]}-${tx[5]}`, // unique-ish id
+                        id: `text-${pageNumber}-${Number(tx[4]).toFixed(2)}-${Number(tx[5]).toFixed(2)}`, // unique-ish stable id
                         originalTransform: tx,
                         // Pre-calculate viewport coords here to simplify render loop
                         viewportCoords: viewport.convertToViewportPoint(tx[4], tx[5]),
@@ -68,7 +68,7 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
         };
 
         loadText();
-    }, [pdfDocument, pageNumber, pageState]);
+    }, [pdfDocument, pageNumber, scale, pageState]);
 
     // Get edits for this page from pageState
     const nativeTextEdits = pageState?.nativeTextEdits || {};
@@ -88,9 +88,18 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
 
                     const [fontScaleX, , , fontScaleY] = originalItem.originalTransform;
                     const [vx, vy] = originalItem.viewportCoords;
-                    const width = originalItem.width * originalItem.viewportScale;
-                    const fontSize = edit.fontSize * originalItem.viewportScale;
-                    const top = vy - (fontSize * 0.8);
+
+                    // Use the LATEST font size for positioning if we want the box to fit
+                    const currentFontSize = edit.fontSize * originalItem.viewportScale;
+                    const originalFontSize = Math.sqrt(fontScaleY * fontScaleY) * originalItem.viewportScale;
+
+                    // Width should accommodate either original or new text (approximate)
+                    const width = (edit.text.length / originalItem.str.length) * originalItem.width * originalItem.viewportScale;
+                    const minWidth = originalItem.width * originalItem.viewportScale;
+
+                    // Baseline is vy. We position div so text baseline inside matches vy.
+                    // If we use line-height: 1 and top: vy - capHeight...
+                    const top = vy - (currentFontSize * 0.8);
 
                     return (
                         <div
@@ -99,16 +108,17 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                             style={{
                                 left: vx,
                                 top: top,
-                                minWidth: width,
-                                height: fontSize * 1.2,
-                                fontSize: fontSize,
+                                minWidth: Math.max(width, minWidth),
+                                height: currentFontSize * 1.2,
+                                fontSize: currentFontSize,
                                 fontFamily: edit.fontFamily || 'sans-serif',
                                 color: edit.color || '#000000',
                                 fontWeight: edit.fontWeight || 'normal',
                                 fontStyle: edit.fontStyle || 'normal',
                                 textDecoration: edit.textDecoration || 'none',
-                                backgroundColor: '#ffffff',
+                                backgroundColor: '#ffffff', // Opaque background to redact original
                                 padding: '0 4px',
+                                lineHeight: 1,
                             }}
                         >
                             {edit.text}
@@ -156,6 +166,15 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                 const activeEdit = pendingEdit || pageEdit;
                 const isEdited = activeEdit !== undefined;
 
+                // Use LATEST font size for current state
+                const currentFontSize = isEdited && activeEdit ? activeEdit.fontSize * item.viewportScale : fontSize;
+                const topOffset = vy - (currentFontSize * 0.8);
+
+                // Adjust width if edited
+                const currentWidth = isEdited && activeEdit
+                    ? (activeEdit.text.length / item.str.length) * width
+                    : width;
+
                 // Check if this text item has any find/replace matches
                 const matchIndices = findReplaceState.matches
                     .map((m, idx) => m.id === item.id ? idx : -1)
@@ -163,39 +182,33 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
                 const hasMatch = matchIndices.length > 0;
                 const isCurrentMatch = matchIndices.includes(findReplaceState.currentMatchIndex);
 
-                // Text content to show: edited or original?
-                // If edited, we show the edited text.
-                // If selected, we might want to hide this overlay if we had an input box, 
-                // but since we edit in sidebar, we just show the selection highlight.
-                // Wait, if edited, we need to cover the underlying PDF text (Redaction Facade).
-                // So we need a background color (white).
-
                 return (
                     <div
                         key={item.id}
                         className={clsx(
-                            "absolute cursor-text transition-all duration-100 flex items-center whitespace-pre",
+                            "absolute cursor-text flex items-center whitespace-pre",
                             isSelected ? "ring-1 ring-blue-500 z-30" : "hover:bg-blue-200/20 z-10",
-                            isEdited ? "bg-white z-20" : "",
+                            isEdited ? "bg-white z-20" : "", // Tailwinds bg-white
                             hasMatch && !isCurrentMatch ? "bg-yellow-200/60 z-15" : "",
                             isCurrentMatch ? "bg-orange-300/80 ring-2 ring-orange-500 z-25" : ""
                         )}
                         style={{
                             left: vx,
-                            top: top,
-                            width: width,
-                            height: fontSize * 1.2,
-                            fontSize: fontSize,
+                            top: topOffset,
+                            minWidth: Math.max(currentWidth, width),
+                            height: currentFontSize * 1.2,
+                            fontSize: currentFontSize,
                             fontFamily: activeEdit?.fontFamily || 'sans-serif',
                             pointerEvents: 'auto',
                             transformOrigin: '0% 0%',
                             color: isEdited && activeEdit?.color ? activeEdit.color : 'transparent', // Show text if edited
+                            lineHeight: 1,
                             // If edited, we need to match the font size of the edit
                             ...(isEdited && activeEdit ? {
-                                fontSize: activeEdit.fontSize * item.viewportScale,
                                 fontWeight: activeEdit.fontWeight || 'normal',
                                 fontStyle: activeEdit.fontStyle || 'normal',
                                 textDecoration: activeEdit.textDecoration || 'none',
+                                backgroundColor: '#ffffff', // Force opaque white background
                             } : {})
                         }}
                         onClick={(e) => {

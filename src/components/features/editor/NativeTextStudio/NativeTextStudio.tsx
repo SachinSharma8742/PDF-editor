@@ -42,7 +42,7 @@ export const NativeTextStudio: React.FC = () => {
                     .filter((item: any) => item.str?.trim())
                     .map((item: any) => ({
                         ...item,
-                        id: `text-${pageState.pageNumber}-${item.transform[4]}-${item.transform[5]}`,
+                        id: `text-${pageState.pageNumber}-${Number(item.transform[4]).toFixed(2)}-${Number(item.transform[5]).toFixed(2)}`,
                         text: item.str
                     }));
                 setTextItems(items);
@@ -71,7 +71,7 @@ export const NativeTextStudio: React.FC = () => {
         // If we want discard, we should add `clearNativeTextEdits` to editorStore. 
         // Let's implement a quick clear by setting empty object if needed, but for now just close.
         // Actually, let's manually clear pending edits to be safe/correct for "Cancel".
-        useEditorStore.setState({ pendingNativeTextEdits: {} });
+        useEditorStore.setState({ pendingNativeTextEdits: {}, activeNativeTextItem: null });
 
         clearFindReplace();
         closeNativeTextStudio();

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { PDFObject } from '../../../store/pdfStore';
+import { grayscale } from 'pdf-lib';
 
 const EFFECT_PRESETS = [
     {
@@ -21,7 +22,7 @@ const EFFECT_PRESETS = [
         name: 'Black & White',
         icon: Wand2,
         effect: 'bw',
-        params: { threshold: 128 },
+        params: { grayscale: 100, contrast: 220, brughtness: 90 },
         description: 'High contrast binary monochrome'
     },
     {
