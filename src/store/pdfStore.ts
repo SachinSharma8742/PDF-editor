@@ -121,7 +121,7 @@ export interface PDFObject {
     originalSrc?: string; // The original raw image data for re-editing
 
     // Adjustment Layer specific
-    effectType?: 'grayscale' | 'bw' | 'brightness' | 'contrast' | 'blur' | 'invert' | 'scanEnhance' | 'sepia' | 'tint' | 'temperature' | 'vignette';
+    effectType?: 'adjustment';
     effectParams?: Record<string, any>;
     name?: string; // Custom name for the layer
 

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Line, Transformer, Rect, Group, Text, Image as KonvaImage } from 'react-konva';
 import Konva from 'konva';
 import { useEditorStore } from '../../../store/editorStore';
-import { applyEffectStack } from '../../../utils/effectUtils';
+
 import { usePDFStore, type PDFObject } from '../../../store/pdfStore'; // Need this for the PDF Document source
 import { PDFObjectRenderer } from './PDFObjectRenderer';
 import { AdjustmentGroup } from './shared/AdjustmentGroup';
@@ -981,39 +981,8 @@ export const EditorCanvas: React.FC = () => {
             }
         }
 
-        // 2. New Adjustment Layers (Effect Objects)
-        if (currentPage.objects) {
-            currentPage.objects.forEach(obj => {
-                if (obj.type === 'effect' && obj.visible !== false) {
-                    const params = obj.effectParams || {};
-                    const opacity = obj.opacity ?? 1;
-
-                    switch (obj.effectType) {
-                        case 'grayscale':
-                            filterStr += `grayscale(${opacity}) `;
-                            break;
-                        case 'sepia':
-                            filterStr += `sepia(${opacity}) `;
-                            break;
-                        case 'invert':
-                            filterStr += `invert(${opacity}) `;
-                            break;
-                        case 'brightness':
-                            filterStr += `brightness(${1 + (params.value || 0) * opacity}) `;
-                            break;
-                        case 'contrast':
-                            filterStr += `contrast(${1 + (params.value || 0) * opacity}) `;
-                            break;
-                        case 'blur':
-                            filterStr += `blur(${(params.value || 0) * opacity}px) `;
-                            break;
-                        case 'vignette':
-                            // CSS filter doesn't support vignette well, but we can approximate or skip
-                            break;
-                    }
-                }
-            });
-        }
+        // 2. New Adjustment Layers are handled by AdjustmentGroup via pixel manipulation.
+        // No CSS filter generation needed for effect objects.
 
         return filterStr.trim() || 'none';
     };

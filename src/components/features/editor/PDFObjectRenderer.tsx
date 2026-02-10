@@ -750,7 +750,7 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
                                 cornerRadius={4}
                             />
                             <Text
-                                text={`${object.effectType?.toUpperCase()} ADJUSTMENT`}
+                                text={`${object.name?.toUpperCase() || 'ADJUSTMENT LAYER'}`}
                                 fill="white"
                                 width={120}
                                 height={24}

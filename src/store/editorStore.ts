@@ -394,7 +394,9 @@ export const useEditorStore = create<EditorStore>()(
 
                 // Commit all edits at once to the PDF Store
                 const pdfStore = usePDFStore.getState();
-                pdfStore.updateNativeTextEdits(pageId, pendingNativeTextEdits);
+                Object.entries(pendingNativeTextEdits).forEach(([editId, edit]) => {
+                    pdfStore.updateNativeTextEdit(pageId, editId, edit);
+                });
 
                 // Clear pending edits
                 set({ pendingNativeTextEdits: {} });

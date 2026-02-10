@@ -3,7 +3,7 @@ import { PDFDocument, PDFImage } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import type { PageState, NativeTextEdit, PDFObject } from '../store/pdfStore';
 import { hexToRgba } from './colorUtils';
-import { applyEffectStack } from './effectUtils';
+import { applyAdjustmentPipeline } from './effectUtils';
 
 /**
  * Main function to save the document as a new PDF.
@@ -106,7 +106,7 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
                     // Check if there are any effect objects
                     const hasEffects = page.objects.some(obj => obj.type === 'effect' && obj.visible !== false);
 
-                    if (hasEffects && pdfjsDoc && page.source === 'pdf') {
+                    if (hasEffects && pdfjsDoc && page.source === 'pdf' && page.originalPageIndex !== undefined) {
                         const jsPage = await pdfjsDoc.getPage(page.originalPageIndex + 1);
                         const bgViewport = jsPage.getViewport({ scale });
                         const bgCanvas = document.createElement('canvas');
@@ -200,16 +200,8 @@ const drawPageAnnotationsToCanvas = async (ctx: CanvasRenderingContext2D, page: 
         for (const obj of page.objects) {
             if (obj.type === 'effect') {
                 if (obj.visible !== false) {
-                    // Apply the effect to the ENTIRE current canvas context
-                    const pageEffect = {
-                        effect: obj.effectType!,
-                        params: obj.effectParams || {},
-                        opacity: obj.opacity ?? 1,
-                        visible: true,
-                        id: obj.id,
-                        type: 'page-effect' as const
-                    };
-                    applyEffectStack(ctx, [pageEffect]);
+                    // Apply the unified adjustment pipeline to the ENTIRE current canvas context
+                    applyAdjustmentPipeline(ctx, obj.effectParams || {});
                 }
             } else {
                 await drawObjectToCanvas(ctx, obj);

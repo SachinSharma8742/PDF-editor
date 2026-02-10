@@ -150,7 +150,7 @@ export const EditorProperties: React.FC = () => {
                     </div>
                     <div>
                         <h3 className="text-xs font-bold uppercase tracking-tight text-zinc-200">
-                            {isMulti ? `${selectedObjects.length} Selected` : (firstObj.type === 'effect' ? `Effect: ${firstObj.name || firstObj.effectType}` : firstObj.type)}
+                            {isMulti ? `${selectedObjects.length} Selected` : (firstObj.type === 'effect' ? `Effect: ${firstObj.name || 'Adjustment Layer'}` : firstObj.type)}
                         </h3>
                         <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest leading-none mt-1">Properties</p>
                     </div>

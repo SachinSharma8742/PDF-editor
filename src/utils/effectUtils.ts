@@ -1,117 +1,141 @@
-import type { PageEffect } from '../store/pdfStore';
+/**
+ * Unified Adjustment Pipeline
+ * 
+ * All effects are parameter sets of a single shared pipeline:
+ * 1. Luminance Extraction (for control math)
+ * 2. Levels (Black Point / White Point)
+ * 3. Gamma (Midtone control)
+ * 4. Contrast (Global separation)
+ * 5. Optional Threshold (Binary mode)
+ * 6. Optional Invert
+ */
 
-export const applyEffectStack = (ctx: CanvasRenderingContext2D, effects: PageEffect[]) => {
-    if (!effects || effects.length === 0) return;
+export interface AdjustmentParams {
+    blackPoint: number;   // 0–255, default 0
+    whitePoint: number;   // 0–255, default 255
+    gamma: number;        // 0.1–3.0, default 1.0
+    contrast: number;     // 0.5–3.0, default 1.0
+    thresholdEnabled: boolean;
+    threshold: number;    // 0–255, default 128
+    invertEnabled: boolean;
+    grayscale: boolean;
+}
 
-    effects.forEach(effect => {
-        if (!effect.visible) return;
-        applySingleEffect(ctx, effect);
-    });
+export const DEFAULT_ADJUSTMENT_PARAMS: AdjustmentParams = {
+    blackPoint: 0,
+    whitePoint: 255,
+    gamma: 1.0,
+    contrast: 1.0,
+    thresholdEnabled: false,
+    threshold: 128,
+    invertEnabled: false,
+    grayscale: false,
 };
 
-export const applySingleEffect = (ctx: CanvasRenderingContext2D, effect: PageEffect) => {
+/**
+ * Build a lookup table (LUT) for the adjustment pipeline.
+ * This avoids per-pixel pow() calls by precomputing the curve for all 256 input values.
+ */
+const buildLUT = (params: AdjustmentParams): Uint8Array => {
+    const lut = new Uint8Array(256);
+    const { blackPoint, whitePoint, gamma, contrast, thresholdEnabled, threshold, invertEnabled } = params;
+
+    const range = Math.max(whitePoint - blackPoint, 1); // avoid division by zero
+
+    for (let i = 0; i < 256; i++) {
+        // 1. Levels: map input to 0–1 range based on black/white points
+        let level = (i - blackPoint) / range;
+        level = Math.max(0, Math.min(1, level));
+
+        // 2. Gamma: midtone adjustment (use 1/gamma for perceptual correctness)
+        // detailed validation to avoid Infinity
+        const safeGamma = Math.max(gamma, 0.01);
+        let value = Math.pow(level, 1.0 / safeGamma);
+
+        // 3. Contrast: expand/compress around midpoint
+        value = (value - 0.5) * contrast + 0.5;
+        value = Math.max(0, Math.min(1, value));
+
+        // 4. Threshold: binary mode
+        if (thresholdEnabled) {
+            value = value > (threshold / 255) ? 1 : 0;
+        }
+
+        // 5. Invert
+        if (invertEnabled) {
+            value = 1 - value;
+        }
+
+        lut[i] = Math.round(value * 255);
+    }
+
+    return lut;
+};
+
+/**
+ * Apply the adjustment pipeline to a canvas context using pixel manipulation.
+ * This is the core engine used by both live preview (via Konva custom filter) and export.
+ */
+export const applyAdjustmentPipeline = (ctx: CanvasRenderingContext2D, rawParams: Record<string, any>) => {
+    const params = resolveParams(rawParams);
+
+    // Skip if all params are at defaults (no-op)
+    if (isNoop(params)) return;
+
     const { width, height } = ctx.canvas;
-    const opacity = effect.opacity ?? 1;
-    const blendMode = effect.blendMode || 'normal';
-
-    ctx.save();
-    ctx.globalAlpha = opacity;
-    ctx.globalCompositeOperation = blendMode as GlobalCompositeOperation;
-
-    switch (effect.effect) {
-        case 'grayscale':
-            ctx.filter = `grayscale(${effect.params.intensity ?? 100}%)`;
-            ctx.drawImage(ctx.canvas, 0, 0);
-            break;
-        case 'sepia':
-            ctx.filter = `sepia(${effect.params.intensity ?? 100}%)`;
-            ctx.drawImage(ctx.canvas, 0, 0);
-            break;
-        case 'invert':
-            ctx.filter = `invert(${effect.params.intensity ?? 100}%)`;
-            ctx.drawImage(ctx.canvas, 0, 0);
-            break;
-        case 'brightness':
-            ctx.filter = `brightness(${effect.params.value ?? 100}%)`;
-            ctx.drawImage(ctx.canvas, 0, 0);
-            break;
-        case 'contrast':
-            ctx.filter = `contrast(${effect.params.value ?? 100}%)`;
-            ctx.drawImage(ctx.canvas, 0, 0);
-            break;
-        case 'blur':
-            ctx.filter = `blur(${effect.params.value ?? 0}px)`;
-            ctx.drawImage(ctx.canvas, 0, 0);
-            break;
-        case 'bw':
-            applyThresholdEffect(ctx, effect.params.threshold ?? 128);
-            break;
-        case 'scanEnhance':
-            applyScanEnhanceEffect(ctx, effect.params);
-            break;
-        case 'tint':
-            ctx.fillStyle = effect.params.color || 'transparent';
-            ctx.fillRect(0, 0, width, height);
-            break;
-        case 'temperature':
-            applyTemperatureEffect(ctx, effect.params.value ?? 0);
-            break;
-        case 'vignette':
-            applyVignetteEffect(ctx, effect.params.intensity ?? 50);
-            break;
-    }
-
-    ctx.restore();
-};
-
-const applyThresholdEffect = (ctx: CanvasRenderingContext2D, threshold: number) => {
-    const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-        const val = gray >= threshold ? 255 : 0;
-        data[i] = data[i + 1] = data[i + 2] = val;
-    }
+    const imageData = ctx.getImageData(0, 0, width, height);
+    processImageData(imageData, params);
     ctx.putImageData(imageData, 0, 0);
 };
 
-const applyScanEnhanceEffect = (ctx: CanvasRenderingContext2D, params: any) => {
-    const contrast = params.contrast ?? 1.5;
-    const brightness = params.brightness ?? 1.1;
+/**
+ * Process ImageData in-place with the adjustment pipeline.
+ * Used by both canvas export and Konva custom filter.
+ */
+export const processImageData = (imageData: ImageData, params: AdjustmentParams) => {
+    const data = imageData.data;
+    const lut = buildLUT(params);
+    const isGrayscale = params.grayscale;
 
-    ctx.filter = `grayscale(100%) contrast(${contrast * 100}%) brightness(${brightness * 100}%)`;
-    ctx.drawImage(ctx.canvas, 0, 0);
-    ctx.filter = 'none';
-};
-
-const applyTemperatureEffect = (ctx: CanvasRenderingContext2D, value: number) => {
-    // warm (positive) = more red/yellow, cool (negative) = more blue
-    const { width, height } = ctx.canvas;
-    ctx.save();
-    if (value > 0) {
-        ctx.fillStyle = `rgba(255, 165, 0, ${Math.abs(value) / 200})`; // Orange-ish for warm
-    } else {
-        ctx.fillStyle = `rgba(0, 0, 255, ${Math.abs(value) / 200})`; // Blue-ish for cool
+    for (let i = 0; i < data.length; i += 4) {
+        if (isGrayscale) {
+            // Convert to luminance first, then apply LUT
+            const L = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+            const val = lut[L];
+            data[i] = data[i + 1] = data[i + 2] = val;
+        } else {
+            // Apply LUT to each channel independently (preserves color)
+            data[i] = lut[data[i]];         // R
+            data[i + 1] = lut[data[i + 1]]; // G
+            data[i + 2] = lut[data[i + 2]]; // B
+        }
+        // Alpha channel (data[i+3]) is untouched
     }
-    ctx.globalCompositeOperation = 'overlay';
-    ctx.fillRect(0, 0, width, height);
-    ctx.restore();
 };
 
-const applyVignetteEffect = (ctx: CanvasRenderingContext2D, intensity: number) => {
-    const { width, height } = ctx.canvas;
-    const gradient = ctx.createRadialGradient(
-        width / 2, height / 2, 0,
-        width / 2, height / 2, Math.sqrt(Math.pow(width / 2, 2) + Math.pow(height / 2, 2))
-    );
+/**
+ * Resolve raw params object into typed AdjustmentParams with defaults.
+ */
+export const resolveParams = (raw: Record<string, any>): AdjustmentParams => ({
+    blackPoint: raw.blackPoint ?? DEFAULT_ADJUSTMENT_PARAMS.blackPoint,
+    whitePoint: raw.whitePoint ?? DEFAULT_ADJUSTMENT_PARAMS.whitePoint,
+    gamma: raw.gamma ?? DEFAULT_ADJUSTMENT_PARAMS.gamma,
+    contrast: raw.contrast ?? DEFAULT_ADJUSTMENT_PARAMS.contrast,
+    thresholdEnabled: raw.thresholdEnabled ?? DEFAULT_ADJUSTMENT_PARAMS.thresholdEnabled,
+    threshold: raw.threshold ?? DEFAULT_ADJUSTMENT_PARAMS.threshold,
+    invertEnabled: raw.invertEnabled ?? DEFAULT_ADJUSTMENT_PARAMS.invertEnabled,
+    grayscale: raw.grayscale ?? DEFAULT_ADJUSTMENT_PARAMS.grayscale,
+});
 
-    const alpha = intensity / 100;
-    gradient.addColorStop(0, 'rgba(0,0,0,0)');
-    gradient.addColorStop(0.6, 'rgba(0,0,0,0)');
-    gradient.addColorStop(1, `rgba(0,0,0,${alpha})`);
-
-    ctx.save();
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-    ctx.restore();
-};
+/**
+ * Check if params represent a no-op (all defaults).
+ */
+const isNoop = (params: AdjustmentParams): boolean => (
+    params.blackPoint === 0 &&
+    params.whitePoint === 255 &&
+    params.gamma === 1.0 &&
+    params.contrast === 1.0 &&
+    !params.thresholdEnabled &&
+    !params.invertEnabled &&
+    !params.grayscale
+);

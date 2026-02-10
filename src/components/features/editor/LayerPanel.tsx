@@ -57,7 +57,7 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
 
     // Calculate generic name if text is empty
     const displayName = object.type === 'effect'
-        ? `${object.effectType?.charAt(0).toUpperCase()}${object.effectType?.slice(1)} Adjustment`
+        ? (object.name || 'Adjustment Layer')
         : (object.type === 'text'
             ? (object.text ? (object.text.length > 20 ? object.text.substring(0, 20) + '...' : object.text) : 'Text Layer')
             : object.type.charAt(0).toUpperCase() + object.type.slice(1));

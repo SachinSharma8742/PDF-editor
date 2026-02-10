@@ -3,6 +3,7 @@ import { Group } from 'react-konva';
 import Konva from 'konva';
 import type { PDFObject } from '../../../../store/pdfStore';
 import { PDFObjectRenderer } from '../PDFObjectRenderer';
+import { processImageData, resolveParams } from '../../../../utils/effectUtils';
 
 interface AdjustmentGroupProps {
     object: PDFObject;
@@ -10,6 +11,17 @@ interface AdjustmentGroupProps {
     onSelect?: (e: Konva.KonvaEventObject<MouseEvent>) => void;
     children: React.ReactNode;
 }
+
+/**
+ * Custom Konva filter that applies the unified adjustment pipeline.
+ * Works on the cached ImageData of a Group node.
+ */
+const createAdjustmentFilter = (effectParams: Record<string, any>) => {
+    return function adjustmentFilter(imageData: ImageData) {
+        const params = resolveParams(effectParams || {});
+        processImageData(imageData, params);
+    };
+};
 
 export const AdjustmentGroup: React.FC<AdjustmentGroupProps> = ({ object, isSelected, onSelect, children }) => {
     const groupRef = useRef<Konva.Group>(null);
@@ -37,42 +49,11 @@ export const AdjustmentGroup: React.FC<AdjustmentGroupProps> = ({ object, isSele
         }
     }, [object.effectParams, object.opacity, object.visible, object.width, object.height, children]);
 
+    // Build the custom filter based on current params
     const filters: any[] = [];
-    const filterProps: any = {};
 
-    if (object.visible !== false) {
-        switch (object.effectType) {
-            case 'grayscale':
-                filters.push(Konva.Filters.Grayscale);
-                break;
-            case 'invert':
-                filters.push(Konva.Filters.Invert);
-                break;
-            case 'sepia':
-                filters.push(Konva.Filters.Sepia);
-                break;
-            case 'blur':
-                filters.push(Konva.Filters.Blur);
-                filterProps.blurRadius = (object.effectParams?.value || 0) / 10;
-                break;
-            case 'brightness':
-                filters.push(Konva.Filters.Brighten);
-                filterProps.brightness = ((object.effectParams?.value || 100) - 100) / 100;
-                break;
-            case 'contrast':
-                filters.push(Konva.Filters.Contrast);
-                filterProps.contrast = (object.effectParams?.value || 100) - 100;
-                break;
-            case 'bw':
-                filters.push(Konva.Filters.Threshold);
-                filterProps.threshold = (object.effectParams?.threshold || 128) / 255;
-                break;
-            case 'scanEnhance':
-                filters.push(Konva.Filters.Brighten, Konva.Filters.Contrast);
-                filterProps.brightness = ((object.effectParams?.brightness || 1) - 1);
-                filterProps.contrast = ((object.effectParams?.contrast || 1) - 1) * 100;
-                break;
-        }
+    if (object.visible !== false && object.effectParams) {
+        filters.push(createAdjustmentFilter(object.effectParams));
     }
 
     return (
@@ -80,7 +61,6 @@ export const AdjustmentGroup: React.FC<AdjustmentGroupProps> = ({ object, isSele
             <Group
                 ref={groupRef}
                 filters={filters}
-                {...filterProps}
                 opacity={object.opacity ?? 1}
             >
                 {children}
