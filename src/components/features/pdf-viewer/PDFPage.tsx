@@ -187,9 +187,9 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                 />
             )}
 
-            {/* 2. Text Edits Overlay (Redactions + New Text) - z-40 (Raised to sit above CanvasLayer) */}
+            {/* 2. Text Edits Overlay (Redactions + New Text) - z-20 (Lowered to sit below CanvasLayer z-30) */}
             {dimensions && pageState.source === 'pdf' && (
-                <div className="absolute inset-0 z-40 pointer-events-none">
+                <div className="absolute inset-0 z-20 pointer-events-none">
                     <PDFTextLayer
                         pageNumber={pageNumber}
                         scale={scale}
