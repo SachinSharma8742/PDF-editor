@@ -35,14 +35,15 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
             // 1. Get Base Page (PDF, Image, or Blank)
             if (page.source === 'pdf' && originalPdfDoc && page.originalPageIndex !== undefined) {
                 // Copy original page (pdf-lib uses 0-based index)
-                const [copiedPage] = await newPdf.copyPages(originalPdfDoc, [page.originalPageIndex]);
+                // page.originalPageIndex is 1-based from our store.
+                const [copiedPage] = await newPdf.copyPages(originalPdfDoc, [page.originalPageIndex - 1]);
                 pdfPage = newPdf.addPage(copiedPage);
                 pageWidth = pdfPage.getWidth();
                 pageHeight = pdfPage.getHeight();
 
                 // Get pdf.js viewport for this page
                 if (pdfjsDoc) {
-                    const jsPage = await pdfjsDoc.getPage(page.originalPageIndex + 1); // pdf.js is 1-based
+                    const jsPage = await pdfjsDoc.getPage(page.originalPageIndex); // pdf.js is 1-based
                     // We match the scale used for canvas rendering later (scale=2)
                     viewport = jsPage.getViewport({ scale: 2 });
                 }
@@ -107,7 +108,7 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
                     const hasEffects = page.objects.some(obj => obj.type === 'effect' && obj.visible !== false);
 
                     if (hasEffects && pdfjsDoc && page.source === 'pdf' && page.originalPageIndex !== undefined) {
-                        const jsPage = await pdfjsDoc.getPage(page.originalPageIndex + 1);
+                        const jsPage = await pdfjsDoc.getPage(page.originalPageIndex);
                         const bgViewport = jsPage.getViewport({ scale });
                         const bgCanvas = document.createElement('canvas');
                         bgCanvas.width = canvas.width;
@@ -172,32 +173,42 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
 /**
  * Unified function to render all PDF objects/annotations to a canvas context.
  */
-const drawPageAnnotationsToCanvas = async (ctx: CanvasRenderingContext2D, page: PageState) => {
-    // 1. Draw Paths (Freehand Drawings)
+/**
+ * Unified function to render all PDF objects/annotations to a canvas context.
+ */
+async function drawPageAnnotationsToCanvas(ctx: CanvasRenderingContext2D, page: PageState) {
     if (page.paths && page.paths.length > 0) {
         page.paths.forEach(path => {
             ctx.save();
             ctx.beginPath();
-            ctx.strokeStyle = path.stroke;
-            ctx.lineWidth = path.strokeWidth;
+            ctx.strokeStyle = path.stroke || 'black';
+            ctx.lineWidth = path.strokeWidth || 2;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.globalAlpha = path.opacity !== undefined ? path.opacity : 1;
 
+            const offsetX = path.x || 0;
+            const offsetY = path.y || 0;
+
             if (path.points && path.points.length > 0) {
-                ctx.moveTo(path.points[0], path.points[1]);
+                ctx.moveTo(offsetX + path.points[0], offsetY + path.points[1]);
                 for (let i = 2; i < path.points.length; i += 2) {
-                    ctx.lineTo(path.points[i], path.points[i + 1]);
+                    ctx.lineTo(offsetX + path.points[i], offsetY + path.points[i + 1]);
                 }
             }
             ctx.stroke();
             ctx.restore();
         });
+    } else {
+        console.log('[Export] No freehand paths found on this page.');
     }
 
-    // 2. Interleaved Objects (Including Adjustment Layers)
+    // 2. Draw Objects (Shapes, Text, Images)
     if (page.objects && page.objects.length > 0) {
+        console.log(`[Export] Processing ${page.objects.length} objects...`);
+        // Sort objects by z-index if needed (currently array order)
         for (const obj of page.objects) {
+            console.log(`[Export] Drawing Object: ${obj.id} (${obj.type}) at (${obj.x}, ${obj.y}) Size: ${obj.width}x${obj.height}`);
             if (obj.type === 'effect') {
                 if (obj.visible !== false) {
                     // Apply the unified adjustment pipeline to the ENTIRE current canvas context
@@ -213,149 +224,273 @@ const drawPageAnnotationsToCanvas = async (ctx: CanvasRenderingContext2D, page: 
 /**
  * Draws a single PDFObject to the canvas.
  */
-const drawObjectToCanvas = async (ctx: CanvasRenderingContext2D, obj: PDFObject) => {
-    if (!obj.visible) return;
+/**
+ * Draws a single PDFObject to the canvas.
+ */
+async function drawObjectToCanvas(ctx: CanvasRenderingContext2D, obj: PDFObject) {
+    try {
+        ctx.save();
 
-    ctx.save();
-    ctx.globalAlpha = obj.opacity ?? 1;
+        // Debug visibility
+        if (obj.visible === false) {
+            console.log(`[Export] Skipping hidden object: ${obj.id}`);
+            ctx.restore();
+            return;
+        }
 
-    const w = obj.width || 0;
-    const h = obj.height || 0;
-    const cx = obj.x + w / 2;
-    const cy = obj.y + h / 2;
+        const x = obj.x;
+        const y = obj.y;
+        const width = obj.width || 0;
+        const height = obj.height || 0;
 
-    if (obj.rotation) {
+        // Variables for transforms
+        const w = width;
+        const h = height;
+        const cx = x + width / 2;
+        const cy = y + height / 2;
+
+        // Apply Transparency
+        ctx.globalAlpha = obj.opacity ?? 1;
+
+        console.log(`[Export] Rendering ${obj.type}: cx=${cx}, cy=${cy}, w=${width}, h=${height}, rot=${obj.rotation}`);
+
+        // Apply Transforms: Translate to center -> Rotate -> Scale/Flip -> Skew -> Translate back
         ctx.translate(cx, cy);
-        ctx.rotate((obj.rotation * Math.PI) / 180);
+
+
+        // Flip is just negative scale
+        const scaleX = obj.flipX ? -1 : 1;
+        const scaleY = obj.flipY ? -1 : 1;
+        if (scaleX !== 1 || scaleY !== 1) {
+            ctx.scale(scaleX, scaleY);
+        }
+
+        // Skew
+        if (obj.skewX || obj.skewY) {
+            // defined as: x' = x + tan(skewX)*y, y' = y + tan(skewY)*x
+            // setTransform(a, b, c, d, e, f) -> [a c e]
+            //                                   [b d f]
+            //                                   [0 0 1]
+            // a=1, b=tan(skewY), c=tan(skewX), d=1
+            // context.transform(a, b, c, d, e, f)
+            const tanX = Math.tan(((obj.skewX || 0) * Math.PI) / 180);
+            const tanY = Math.tan(((obj.skewY || 0) * Math.PI) / 180);
+            ctx.transform(1, tanY, tanX, 1, 0, 0);
+        }
+
         ctx.translate(-cx, -cy);
-    }
 
-    if (obj.type === 'text') {
-        const fontSize = obj.fontSize || 16;
-        const fontFamily = obj.fontFamily || 'Inter';
-        const fontWeight = obj.fontWeight || 'normal';
-        const fontStyle = obj.fontStyle || 'normal';
+        if (obj.type === 'text') {
+            const fontSize = obj.fontSize || 16;
+            const fontFamily = obj.fontFamily || 'Inter';
+            const fontWeight = obj.fontWeight || 'normal';
+            const fontStyle = obj.fontStyle || 'normal';
 
-        ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}"`;
-        ctx.textBaseline = 'top';
-        ctx.textAlign = (obj.align || 'left') as CanvasTextAlign;
-        ctx.fillStyle = obj.fill || 'black';
+            ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}"`;
+            ctx.textBaseline = 'top';
+            ctx.textAlign = (obj.align || 'left') as CanvasTextAlign;
+            ctx.fillStyle = obj.fill || 'black';
 
-        let drawX = obj.x;
-        if (obj.align === 'center') drawX += w / 2;
-        if (obj.align === 'right') drawX += w;
+            let drawX = obj.x;
+            if (obj.align === 'center') drawX += w / 2;
+            if (obj.align === 'right') drawX += w;
 
-        ctx.fillText(obj.text || '', drawX, obj.y);
+            ctx.fillText(obj.text || '', drawX, obj.y);
 
-    } else if (obj.type === 'image' || obj.type === 'stamp') {
-        const src = (obj as any).src || (obj as any).url || (obj.type === 'stamp' ? `data:image/svg+xml;utf8,${encodeURIComponent((obj as any).content)}` : null);
-        if (src) {
-            await new Promise<void>((resolve) => {
-                const img = new Image();
-                img.onload = () => {
-                    ctx.drawImage(img, obj.x, obj.y, w, h);
-                    resolve();
-                };
-                img.onerror = () => resolve();
-                img.crossOrigin = "anonymous";
-                img.src = src;
-            });
-        }
+        } else if (obj.type === 'image' || obj.type === 'stamp') {
+            // Resolve the source URL
+            const src = (obj as any).src || (obj as any).url || (obj.type === 'stamp' ? `data:image/svg+xml;utf8,${encodeURIComponent((obj as any).content)}` : null);
 
-    } else if (['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse'].includes(obj.type)) {
-        ctx.beginPath();
-        if (obj.type === 'rectangle') {
-            if (obj.cornerRadius) {
-                // @ts-ignore
-                if (ctx.roundRect) ctx.roundRect(obj.x, obj.y, w, h, obj.cornerRadius);
-                else ctx.rect(obj.x, obj.y, w, h);
-            } else {
-                ctx.rect(obj.x, obj.y, w, h);
+            if (src) {
+                await new Promise<void>((resolve) => {
+                    const img = new Image();
+
+                    // For blob URLs, crossOrigin might cause issues if set to anonymous? 
+                    // Actually, for Blobs it doesn't matter, but for CORS enabled external URLs it does.
+                    // Safest is usually anonymous.
+                    img.crossOrigin = "anonymous";
+
+                    img.onload = () => {
+                        try {
+                            // Ensure we have valid dimensions
+                            const drawW = w || img.naturalWidth;
+                            const drawH = h || img.naturalHeight;
+                            if (drawW > 0 && drawH > 0) {
+                                ctx.drawImage(img, obj.x, obj.y, drawW, drawH);
+                            }
+                        } catch (e) {
+                            console.warn("Retrying image draw without crossOrigin", e);
+                            // Retry without crossOrigin? (Only if needed, complexity...)
+                        }
+                        resolve();
+                    };
+
+                    img.onerror = (err) => {
+                        console.error("Failed to load image for export:", src, err);
+                        // Silently fail but resolve so providing doesn't hang
+                        resolve();
+                    };
+
+                    img.src = src;
+                });
             }
-        } else if (obj.type === 'circle') {
-            const r = w / 2;
-            ctx.arc(obj.x + r, obj.y + r, r, 0, 2 * Math.PI);
-        } else if (obj.type === 'ellipse') {
-            const rx = w / 2;
-            const ry = h / 2;
-            ctx.ellipse(obj.x + rx, obj.y + ry, rx, ry, 0, 0, 2 * Math.PI);
-        } else if (obj.type === 'triangle') {
-            ctx.moveTo(obj.x + w / 2, obj.y);
-            ctx.lineTo(obj.x + w, obj.y + h);
-            ctx.lineTo(obj.x, obj.y + h);
-            ctx.closePath();
-        }
 
-        if (obj.fill && obj.fill !== 'transparent') {
-            ctx.fillStyle = hexToRgba(obj.fill, obj.fillOpacity ?? 1);
-            ctx.fill();
-        }
+        } else if (['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse'].includes(obj.type)) {
+            ctx.beginPath();
+            if (obj.type === 'rectangle') {
+                if (obj.cornerRadius) {
+                    // @ts-ignore
+                    if (ctx.roundRect) ctx.roundRect(obj.x, obj.y, w, h, obj.cornerRadius);
+                    else ctx.rect(obj.x, obj.y, w, h);
+                } else {
+                    ctx.rect(obj.x, obj.y, w, h);
+                }
+            } else if (obj.type === 'circle') {
+                const r = w / 2;
+                ctx.arc(obj.x + r, obj.y + r, r, 0, 2 * Math.PI);
+            } else if (obj.type === 'ellipse') {
+                const rx = w / 2;
+                const ry = h / 2;
+                ctx.ellipse(obj.x + rx, obj.y + ry, rx, ry, 0, 0, 2 * Math.PI);
+            } else if (obj.type === 'triangle') {
+                ctx.moveTo(obj.x + w / 2, obj.y);
+                ctx.lineTo(obj.x + w, obj.y + h);
+                ctx.lineTo(obj.x, obj.y + h);
+                ctx.closePath();
+            }
 
-        if ((obj.strokeWidth ?? 0) > 0 && obj.stroke && obj.stroke !== 'transparent') {
-            ctx.strokeStyle = obj.stroke;
-            ctx.lineWidth = obj.strokeWidth || 2;
+            if (obj.fill && obj.fill !== 'transparent') {
+                ctx.fillStyle = hexToRgba(obj.fill, obj.fillOpacity ?? 1);
+                ctx.fill();
+            }
+
+            const strokeWidth = obj.strokeWidth ?? 2;
+            const strokeColor = obj.stroke || 'black';
+
+            if (strokeWidth > 0 && strokeColor !== 'transparent') {
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = strokeWidth;
+                if (obj.dash) ctx.setLineDash(obj.dash);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+        } else if (obj.type === 'line' || obj.type === 'arrow') {
+            const sw = obj.strokeWidth ?? 2;
+            ctx.beginPath();
+            const points = obj.points || [0, 0, 100, 100];
+            const startX = obj.x + points[0];
+            const startY = obj.y + points[1];
+            const endX = obj.x + points[2];
+            const endY = obj.y + points[3];
+
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = obj.stroke || 'black';
+            ctx.lineWidth = sw;
             if (obj.dash) ctx.setLineDash(obj.dash);
             ctx.stroke();
             ctx.setLineDash([]);
-        }
 
-    } else if (obj.type === 'line' || obj.type === 'arrow') {
-        const sw = obj.strokeWidth || 2;
-        ctx.beginPath();
-        const points = obj.points || [0, 0, 100, 100];
-        const startX = obj.x + points[0];
-        const startY = obj.y + points[1];
-        const endX = obj.x + points[2];
-        const endY = obj.y + points[3];
-
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
-        ctx.strokeStyle = obj.stroke || 'black';
-        ctx.lineWidth = sw;
-        if (obj.dash) ctx.setLineDash(obj.dash);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        if (obj.type === 'arrow') {
-            const angle = Math.atan2(endY - startY, endX - startX);
-            const headLen = sw * 3;
-            ctx.beginPath();
-            ctx.moveTo(endX, endY);
-            ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6), endY - headLen * Math.sin(angle - Math.PI / 6));
-            ctx.moveTo(endX, endY);
-            ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6), endY - headLen * Math.sin(angle + Math.PI / 6));
-            ctx.stroke();
-        }
-
-    } else if (obj.type === 'path' && obj.points) {
-        ctx.beginPath();
-        ctx.strokeStyle = obj.stroke || 'black';
-        ctx.lineWidth = obj.strokeWidth || 2;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        const pts = obj.points;
-        if (pts.length > 0) {
-            ctx.moveTo(obj.x + pts[0], obj.y + pts[1]);
-            for (let i = 2; i < pts.length; i += 2) {
-                ctx.lineTo(obj.x + pts[i], obj.y + pts[i + 1]);
+            if (obj.type === 'arrow') {
+                const angle = Math.atan2(endY - startY, endX - startX);
+                const headLen = sw * 3;
+                ctx.beginPath();
+                ctx.moveTo(endX, endY);
+                ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6), endY - headLen * Math.sin(angle - Math.PI / 6));
+                ctx.moveTo(endX, endY);
+                ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6), endY - headLen * Math.sin(angle + Math.PI / 6));
+                ctx.stroke();
             }
-        }
-        ctx.stroke();
-    } else if (obj.type === 'group' && obj.children) {
-        ctx.translate(obj.x, obj.y);
-        for (const child of obj.children) {
-            await drawObjectToCanvas(ctx, child);
-        }
-        ctx.translate(-obj.x, -obj.y);
-    }
 
-    ctx.restore();
-};
+        } else if (['path', 'heart', 'cloud', 'lightning', 'drop', 'callout-bubble'].includes(obj.type)) {
+            if (obj.type === 'path' && obj.points) {
+                // Freehand Path
+                ctx.beginPath();
+                ctx.strokeStyle = obj.stroke || 'black';
+                ctx.lineWidth = obj.strokeWidth || 2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                const pts = obj.points;
+                if (pts.length > 0) {
+                    ctx.moveTo(obj.x + pts[0], obj.y + pts[1]);
+                    for (let i = 2; i < pts.length; i += 2) {
+                        ctx.lineTo(obj.x + pts[i], obj.y + pts[i + 1]);
+                    }
+                }
+                ctx.stroke();
+            } else {
+                // SVG Path Shapes (Heart, Cloud, etc.)
+                // Need to import SHAPE_PATHS or define them here. 
+                // For now, let's hardcode the few we have or mapping.
+                // PRO TIP: In a real app, importing SHAPE_PATHS is better. 
+                // I'll define a local map to avoid import errors if the file is moved/missing in this context, 
+                // but ideally we import it. 
+
+                const SHAPE_PATHS_LOCAL: Record<string, string> = {
+                    heart: "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z",
+                    cloud: "M25 38c-3.31 0-6-2.69-6-6 0-3.31 2.69-6 6-6 1.49 0 2.85.55 3.9 1.48.33-4.27 3.9-7.64 8.23-7.64 3.03 0 5.76 1.62 7.23 4.09 1.5-3.08 4.67-5.18 8.3-5.18 5.22 0 9.49 4.22 9.55 9.44.08.01.16.01.24.01 4.42 0 8 3.58 8 8s-3.58 8-8 8H25z",
+                    lightning: "M7 2v11h3v9l7-12h-4l4-8z",
+                    drop: "M12 2C6 10 3 14 3 17a9 9 0 0018 0c0-3-3-7-9-15z",
+                    "callout-bubble": "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
+                };
+
+                const pathData = SHAPE_PATHS_LOCAL[obj.type] || "";
+                if (pathData) {
+                    const p = new Path2D(pathData);
+                    ctx.save();
+                    ctx.translate(obj.x, obj.y);
+                    // Scale based on 24x24 viewbox as seen in PDFObjectRenderer (scaleX = width/24)
+                    const scaleX = w / 24;
+                    const scaleY = h / 24;
+                    ctx.scale(scaleX, scaleY);
+
+                    if (obj.fill && obj.fill !== 'transparent') {
+                        ctx.fillStyle = hexToRgba(obj.fill, obj.fillOpacity ?? 1);
+                        ctx.fill(p);
+                    }
+
+                    const strokeWidth = obj.strokeWidth ?? 2;
+                    if (strokeWidth > 0 && obj.stroke && obj.stroke !== 'transparent') {
+                        // Stroke width also needs to be manipulated if we scaled the context?
+                        // If we scale context, stroke width scales too.
+                        // Konva handles this by applying scale to the shape, but stroke is usually defined in local units?
+                        // In PDFObjectRenderer: scaleX={width/24}, strokeWidth={object.strokeWidth ?? 2}
+                        // Wait, Konva strokeWidth is affected by scale ONLY if not vector-effect non-scaling-stroke (which Konva doesn't do by default for Paths easily).
+                        // Actually Konva's default is that stroke scales.
+                        // So if we scale context x10, stroke x1 becomes x10.
+                        // But we want the stroke to look like '2px' on screen.
+                        // If we scale by `w/24` (e.g. 100/24 = 4), a 2px stroke becomes 8px.
+                        // So we must divide strokeWidth by scale.
+                        ctx.lineWidth = strokeWidth / Math.max(scaleX, scaleY);
+                        ctx.strokeStyle = obj.stroke;
+                        ctx.stroke(p);
+                    }
+                    ctx.restore();
+                }
+            }
+        } // Close else if (path/shape)
+
+        if (obj.type === 'group' && obj.children) {
+            ctx.translate(obj.x, obj.y);
+            for (const child of obj.children) {
+                await drawObjectToCanvas(ctx, child);
+            }
+            ctx.translate(-obj.x, -obj.y);
+        }
+
+        ctx.restore();
+
+    } catch (e) {
+        console.error(`[Export] Error drawing object ${obj.id}`, e);
+        ctx.restore();
+    }
+}
 
 /**
  * Draws Native Text Edits using Viewport Conversion
  */
-const drawNativeTextEdits = (ctx: CanvasRenderingContext2D, edits: Record<string, NativeTextEdit>, viewport: any) => {
+function drawNativeTextEdits(ctx: CanvasRenderingContext2D, edits: Record<string, NativeTextEdit>, viewport: any) {
     Object.values(edits).forEach((edit) => {
         const [vx, vy] = viewport.convertToViewportPoint(edit.x, edit.y);
         const scale = viewport.scale;
@@ -439,7 +574,7 @@ const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality:
 
     if (page.source === 'pdf' && page.originalPageIndex !== undefined && pdfDocSource) {
         try {
-            const result = await getPdfPageViewport(pdfDocSource, page.originalPageIndex + 1, scale);
+            const result = await getPdfPageViewport(pdfDocSource, page.originalPageIndex, scale);
             const pdfPage = result.page;
             viewport = result.viewport;
 

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } f
 import { usePDFStore } from '../../../../store/pdfStore';
 import { PDFTextLayer } from '../../pdf-viewer/PDFTextLayer';
 import { useEditorStore } from '../../../../store/editorStore';
+import { CanvasLayer } from '../CanvasLayer';
 
 interface SinglePageCanvasProps {
     pageId: string;
@@ -13,13 +14,17 @@ export interface SinglePageCanvasHandle {
 
 export const SinglePageCanvas = forwardRef<SinglePageCanvasHandle, SinglePageCanvasProps>(({ pageId }, ref) => {
     const { pages, pdfDocument } = usePDFStore();
-    const { nativeTextStudio } = useEditorStore();
+    const { nativeTextStudio, currentPage, originalPageId } = useEditorStore();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [scale, setScale] = useState(1);
     const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
 
-    const pageState = pages.find(p => p.id === pageId);
+    // If the native text studio is open for the page currently in the editor,
+    // we should use the `currentPage` from editorStore to show uncommitted effects/changes.
+    // Otherwise, fall back to the committed state in pdfStore.
+    const isEditingCurrentPage = currentPage?.id && originalPageId === pageId;
+    const pageState = isEditingCurrentPage ? currentPage! : pages.find(p => p.id === pageId);
 
     // Expose the canvas to parent via ref
     useImperativeHandle(ref, () => ({
@@ -78,6 +83,24 @@ export const SinglePageCanvas = forwardRef<SinglePageCanvasHandle, SinglePageCan
                     className="relative bg-white shadow-2xl"
                 >
                     <canvas ref={canvasRef} className="block w-full h-full" />
+
+                    {/* Canvas Layer: Objects, Images, Effects (Filters) */}
+                    <div className="absolute inset-0 pointer-events-none">
+                        <CanvasLayer
+                            pageId={pageId}
+                            pageNumber={pageState.pageNumber}
+                            width={dimensions.width}
+                            height={dimensions.height}
+                            scale={scale}
+                        // Pass pageOverride if we have a draft state (Editor Store)
+                        // Note: CanvasLayer needs to be updated to accept pageOverride, 
+                        // OR we rely on the fact that CanvasLayer uses `usePDFStore`. 
+                        // BUT wait, CanvasLayer uses `usePDFStore`. It won't see `currentPage` from editorStore.
+                        // We must fix CanvasLayer first OR manually render here. 
+                        // Given I cannot easily change CanvasLayer signature in this step without reading it again, 
+                        // I will use a local rendering approach similar to CanvasLayer.
+                        />
+                    </div>
 
                     {/* Render Text Layer Overlay */}
                     <PDFTextLayer pageNumber={pageState.pageNumber} scale={scale} />

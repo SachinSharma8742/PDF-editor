@@ -180,8 +180,7 @@ interface EditorStore {
     openContextMenu: (x: number, y: number, type: 'object' | 'page' | 'thumbnail' | 'editor-background', data?: any) => void;
     closeContextMenu: () => void;
 
-    isCropping: boolean;
-    setCropping: (isCropping: boolean) => void;
+
 
     // Canvas State (Pan)
     stagePosition: { x: number; y: number };
@@ -363,8 +362,7 @@ export const useEditorStore = create<EditorStore>()(
                 contextMenu: { isOpen: false, x: 0, y: 0, type: null, data: undefined }
             }),
 
-            isCropping: false,
-            setCropping: (isCropping) => set({ isCropping }),
+
 
             stagePosition: { x: 0, y: 0 },
             setStagePosition: (pos) => set({ stagePosition: pos }),
@@ -388,7 +386,7 @@ export const useEditorStore = create<EditorStore>()(
                 pendingNativeTextEdits: { ...state.pendingNativeTextEdits, [id]: edit }
             })),
             commitNativeTextEdits: () => {
-                const { pendingNativeTextEdits, nativeTextStudio } = get();
+                const { pendingNativeTextEdits, nativeTextStudio, currentPage, originalPageId } = get();
                 const pageId = nativeTextStudio.pageId;
                 if (!pageId || Object.keys(pendingNativeTextEdits).length === 0) return;
 
@@ -397,6 +395,25 @@ export const useEditorStore = create<EditorStore>()(
                 Object.entries(pendingNativeTextEdits).forEach(([editId, edit]) => {
                     pdfStore.updateNativeTextEdit(pageId, editId, edit);
                 });
+
+                // SYNCHRONIZATION FIX:
+                // If the Text Studio page is the one currently open in the Main Editor,
+                // we must also update the local `currentPage` state so the user sees the changes immediately
+                // without needing to close/re-open the editor.
+                if (currentPage && originalPageId === pageId) {
+                    const updatedNativeTextEdits = { ...(currentPage.nativeTextEdits || {}) };
+                    Object.entries(pendingNativeTextEdits).forEach(([editId, edit]) => {
+                        updatedNativeTextEdits[editId] = edit;
+                    });
+
+                    set({
+                        currentPage: {
+                            ...currentPage,
+                            nativeTextEdits: updatedNativeTextEdits,
+                            isEdited: true
+                        }
+                    });
+                }
 
                 // Clear pending edits
                 set({ pendingNativeTextEdits: {} });

@@ -11,6 +11,49 @@ interface PDFPageProps {
     pageNumber: number;
 }
 
+// Helper to render the background image/canvas
+const BackgroundLayer: React.FC<{
+    image: HTMLCanvasElement | HTMLImageElement | null;
+    width: number;
+    height: number;
+}> = ({ image, width, height }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container || !image) return;
+
+        container.innerHTML = '';
+        // If it's a canvas, we can append it directly if it's not used elsewhere, 
+        // OR draw it to a new canvas. 
+        // Since bufferCanvas logic creates a new 'finalBg' canvas, we can append it safely.
+        // For Image objects, we might want to clone or separate.
+
+        if (image instanceof HTMLCanvasElement) {
+            image.style.width = '100%';
+            image.style.height = '100%';
+            image.style.display = 'block';
+            container.appendChild(image);
+        } else {
+            // For HTMLImageElement
+            const img = image.cloneNode() as HTMLImageElement;
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.display = 'block';
+            container.appendChild(img);
+        }
+
+    }, [image]);
+
+    return (
+        <div
+            ref={containerRef}
+            className="absolute inset-0 z-0 pointer-events-none"
+            style={{ width, height }}
+        />
+    );
+};
+
 export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
     const { pdfDocument, scale, pages } = usePDFStore();
     const pageState = pages.find(p => p.pageNumber === pageNumber);
@@ -135,16 +178,27 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
         >
             <PageSelectionOverlay pageNumber={pageNumber} pageId={pageState.id!} />
 
-            {/* Text Edits Overlay - Shows pending edits in view mode */}
-            {dimensions && pageState.source === 'pdf' && (
-                <PDFTextLayer
-                    pageNumber={pageNumber}
-                    scale={scale}
-                    viewOnly={true}
+            {/* 1. Background Layer (Original PDF/Image) - Conditional: Only if NOT rendering in CanvasLayer */}
+            {dimensions && bgImage && !pageState.objects.some(o => o.type === 'effect') && (
+                <BackgroundLayer
+                    image={bgImage}
+                    width={dimensions.width}
+                    height={dimensions.height}
                 />
             )}
 
-            {/* Editing/Viewing Layer - Now handles background too */}
+            {/* 2. Text Edits Overlay (Redactions + New Text) - z-40 (Raised to sit above CanvasLayer) */}
+            {dimensions && pageState.source === 'pdf' && (
+                <div className="absolute inset-0 z-40 pointer-events-none">
+                    <PDFTextLayer
+                        pageNumber={pageNumber}
+                        scale={scale}
+                        viewOnly={true}
+                    />
+                </div>
+            )}
+
+            {/* 3. Objects Layer (Detailed Content + Effects) - z-30 */}
             {dimensions && (
                 <CanvasLayer
                     pageId={pageState.id!}
@@ -152,7 +206,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                     width={dimensions.width}
                     height={dimensions.height}
                     scale={scale}
-                    bgImage={bgImage}
+                    bgImage={pageState.objects.some(o => o.type === 'effect') ? bgImage : undefined}
                 />
             )}
 

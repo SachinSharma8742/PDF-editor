@@ -11,15 +11,16 @@ interface CanvasLayerProps {
     height: number;
     scale: number;
     bgImage?: HTMLCanvasElement | HTMLImageElement | null;
+    pageOverride?: any; // Allow passing a page state directly (for Editor Drafts)
 }
 
 /**
  * CanvasLayer - Purely for VIEWING objects in the Home Panel.
  * Supports adjustment layers via nested rendering.
  */
-export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, width, height, scale, bgImage }) => {
+export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, width, height, scale, bgImage, pageOverride }) => {
     const { pages } = usePDFStore();
-    const page = pages.find(p => p.id === pageId);
+    const page = pageOverride || pages.find(p => p.id === pageId);
 
     if (!page) return null;
 
@@ -57,7 +58,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, width, height,
     }
 
     // 2. Iterate through objects and build the nested structure
-    page.objects.forEach((obj) => {
+    page.objects.forEach((obj: PDFObject) => {
         if (obj.type === 'effect') {
             const proObject = {
                 ...obj,

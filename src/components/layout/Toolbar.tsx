@@ -32,10 +32,32 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
     const fileInputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const exportBtnRef = useRef<HTMLDivElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
     const [isExportOpen, setIsExportOpen] = useState(false);
     const [exportFormat, setExportFormat] = useState<'standard' | 'flattened' | 'png'>('standard');
     const [exportQuality, setExportQuality] = useState(0.8);
     const [isExporting, setIsExporting] = useState(false);
+
+    // Handle click outside to close export menu
+    React.useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (isExportOpen &&
+                exportBtnRef.current &&
+                !exportBtnRef.current.contains(event.target as Node) &&
+                dropdownRef.current &&
+                !dropdownRef.current.contains(event.target as Node)
+            ) {
+                setIsExportOpen(false);
+            }
+        };
+
+        if (isExportOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isExportOpen]);
 
     const {
         scale,
@@ -58,7 +80,8 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
         pdfDocument,
         fileName,
         isSelectionMode,
-        selectedPageIds
+        selectedPageIds,
+        originalPdfBytes
     } = usePDFStore();
 
     // Check if there are any pages
@@ -74,8 +97,7 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                 : pages;
 
             if (exportFormat === 'standard') {
-                const originalBytes = await pdfDocument?.getData();
-                await saveDocument(pagesToExport, originalBytes?.buffer || null);
+                await saveDocument(pagesToExport, originalPdfBytes);
             } else if (exportFormat === 'flattened') {
                 await saveDocumentFlattened(pagesToExport, pdfDocument, exportQuality);
             } else if (exportFormat === 'png') {
@@ -258,17 +280,21 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                     </button>
 
 
-                    {/* Export Button with Hover Dropdown */}
+                    {/* Export Button with Click Toggle */}
                     {hasPages && (
                         <>
                             <div
                                 ref={exportBtnRef}
                                 className="relative ml-2"
-                                onMouseEnter={() => setIsExportOpen(true)}
-                                onMouseLeave={() => setIsExportOpen(false)}
                             >
                                 <button
-                                    className="h-9 px-3 md:px-4 bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-gray-100 text-white dark:text-zinc-900 rounded-xl transition-all shadow-lg active:scale-95 flex items-center gap-2 group"
+                                    onClick={() => setIsExportOpen(!isExportOpen)}
+                                    className={clsx(
+                                        "h-9 px-3 md:px-4 rounded-xl transition-all shadow-lg active:scale-95 flex items-center gap-2 group",
+                                        isExportOpen
+                                            ? "bg-zinc-800 dark:bg-white text-white dark:text-zinc-900 ring-2 ring-blue-500/50"
+                                            : "bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-gray-100 text-white dark:text-zinc-900"
+                                    )}
                                 >
                                     <Download size={14} strokeWidth={2.5} />
                                     <span className="text-xs font-bold tracking-wide hidden md:inline">Export</span>
@@ -279,13 +305,12 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                             {/* Export Dropdown Menu - Portal */}
                             {isExportOpen && createPortal(
                                 <div
+                                    ref={dropdownRef}
                                     className="fixed z-[9999]"
                                     style={{
                                         top: (exportBtnRef.current?.getBoundingClientRect().bottom || 0) + 8,
                                         left: (exportBtnRef.current?.getBoundingClientRect().right || 0) - 288, // 288px = w-72
                                     }}
-                                    onMouseEnter={() => setIsExportOpen(true)}
-                                    onMouseLeave={() => setIsExportOpen(false)}
                                 >
                                     <div className="w-72 bg-zinc-900 dark:bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl shadow-black/50 p-4 space-y-4 animate-in fade-in zoom-in-95 duration-200">
                                         <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest px-1">Export Format</div>
@@ -355,8 +380,6 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                     )}
                 </div>
             </div>
-
-            {/* Removed Contextual Properties Bar - Now handled by EditorLeftPanel */}
 
             <input ref={fileInputRef} type="file" accept="application/pdf" onChange={handleFileUpload} hidden />
             <input ref={imageInputRef} type="file" accept="image/*" onChange={insertImageCorrectly} hidden />
