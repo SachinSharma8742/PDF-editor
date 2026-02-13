@@ -38,6 +38,7 @@ verification_screenshots
 # OS
 Thumbs.db
 
+
 # Lint reports and verification outputs
 lint_*.txt
 lint_*.json
