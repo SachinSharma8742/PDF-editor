@@ -5,13 +5,13 @@ import './utils/pdfWorker'; // Import worker config
 import { EditorMode } from './components/features/editor/EditorMode';
 import { ContextMenu } from './components/features/editor/ContextMenu';
 import { NativeTextStudio } from './components/features/editor/NativeTextStudio/NativeTextStudio';
+import { PrintModal } from './components/modals/PrintModal';
 import { useEditorStore } from './store/editorStore';
 
 import { usePDFStore } from './store/pdfStore';
 import { useEffect, useState } from 'react';
 import { loadPDFFromStorage } from './utils/storage';
 import { loadPDF } from './utils/pdfOps';
-import { Menu } from 'lucide-react';
 
 export default function App() {
   const { theme, setIsLoading } = usePDFStore();
@@ -76,6 +76,7 @@ export default function App() {
 
       {/* Native Text Studio - Rendered at app level so it works without editor init */}
       <NativeTextStudio />
+      <PrintModal />
 
       <ContextMenu />
     </div>

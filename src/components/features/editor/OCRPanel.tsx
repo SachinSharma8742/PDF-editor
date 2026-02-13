@@ -1,18 +1,52 @@
 import React, { useState } from 'react';
 import { createWorker } from 'tesseract.js';
 import { useEditorStore } from '../../../store/editorStore';
-import { usePDFStore } from '../../../store/pdfStore';
-import { Loader2, ScanText, Copy, Check, FileText, EyeOff, Type, Ruler, Library } from 'lucide-react';
+import { usePDFStore, type PDFObject } from '../../../store/pdfStore';
+import { Loader2, ScanText, Copy, Check, EyeOff, Type, Ruler, Library } from 'lucide-react';
 import { Button } from '../../ui/Button';
+
+interface OCRWord {
+    text: string;
+    bbox: {
+        x0: number;
+        y0: number;
+        x1: number;
+        y1: number;
+    };
+}
+
+interface OCRLine {
+    text: string;
+    bbox: {
+        x0: number;
+        y0: number;
+        x1: number;
+        y1: number;
+    };
+}
+
+interface OCRResultData {
+    text: string;
+    words: OCRWord[];
+    lines: OCRLine[];
+    scaleFactor: number;
+}
+
+// Helper interface for Tesseract result to avoid 'Page' type conflict
+interface TesseractPage {
+    text: string;
+    words: OCRWord[];
+    lines: OCRLine[];
+}
 
 export const OCRPanel: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [progress, setProgress] = useState(0);
     const [status, setStatus] = useState<string>('');
-    const [resultData, setResultData] = useState<any>(null); // Store full Tesseract data
+    const [resultData, setResultData] = useState<OCRResultData | null>(null); // Store full Tesseract data
     const [copied, setCopied] = useState(false);
 
-    const { currentPage, addObject, updateObject } = useEditorStore();
+    const { currentPage, addObject } = useEditorStore();
     const { pdfDocument } = usePDFStore();
 
     const handleOCR = async () => {
@@ -61,7 +95,7 @@ export const OCRPanel: React.FC = () => {
 
             // 2. Run Tesseract
             const worker = await createWorker('eng', 1, {
-                logger: (m: any) => {
+                logger: (m: { status: string; progress: number }) => {
                     if (m.status === 'recognizing text') {
                         setProgress(Math.round(m.progress * 100));
                         setStatus(`Recognizing text... ${Math.round(m.progress * 100)}%`);
@@ -72,10 +106,23 @@ export const OCRPanel: React.FC = () => {
             });
 
             const { data } = await worker.recognize(imageData);
+            const tesseractData = data as unknown as TesseractPage;
 
-            // Store the raw data (words, lines, etc.)
-            // We need to attach the scale factor so we can convert back later
-            setResultData({ ...data, scaleFactor: OC_SCALE });
+            // Map to our interface to ensure type safety
+            const structuredData: OCRResultData = {
+                text: tesseractData.text,
+                words: tesseractData.words.map((w) => ({
+                    text: w.text,
+                    bbox: w.bbox
+                })),
+                lines: tesseractData.lines.map((l) => ({
+                    text: l.text,
+                    bbox: l.bbox
+                })),
+                scaleFactor: OC_SCALE
+            };
+
+            setResultData(structuredData);
 
             await worker.terminate();
             setStatus('OCR Complete!');
@@ -96,7 +143,7 @@ export const OCRPanel: React.FC = () => {
         // We scaled image by scaleFactor.
         const scale = 1 / resultData.scaleFactor;
 
-        resultData.words.forEach((word: any) => {
+        resultData.words.forEach((word) => {
             if (!word.text || word.text.trim().length === 0) return;
 
             const { bbox } = word;
@@ -133,7 +180,7 @@ export const OCRPanel: React.FC = () => {
         // For now, let's inject "Lines" to keep it editable but structured.
         // Tesseract provides 'lines'.
 
-        resultData.lines.forEach((line: any) => {
+        resultData.lines.forEach((line) => {
             if (!line.text || line.text.trim().length === 0) return;
 
             const { bbox } = line;
@@ -152,7 +199,7 @@ export const OCRPanel: React.FC = () => {
                 text: line.text.trim(),
                 fontSize: height * 0.8, // Slightly larger for readability
                 fontFamily: 'Inter',
-                opacity: 1,
+                opacity: 1, // Visible by default
                 rotation: 0,
                 fill: '#000000'
             });
@@ -177,7 +224,7 @@ export const OCRPanel: React.FC = () => {
         try {
             const { pages, updatePage } = usePDFStore.getState();
             const worker = await createWorker('eng', 1, {
-                logger: (m: any) => {
+                logger: (m: { status: string; progress: number }) => {
                     if (m.status === 'recognizing text') {
                         // This is per-page progress, harder to track global percentage accurately without math
                         // Just show status
@@ -216,11 +263,11 @@ export const OCRPanel: React.FC = () => {
                 // 3. Auto-insert Invisible Layer (Batch Mode always does this?)
                 // Let's create the objects directly
                 const scale = 1 / OC_SCALE;
-                const newObjects: any[] = [];
+                const newObjects: PDFObject[] = [];
 
-                (data as any).words.forEach((word: any) => {
+                (data as unknown as TesseractPage).words.forEach((word) => {
                     if (!word.text || word.text.trim().length === 0) return;
-                    const { bbox } = word;
+                    const bbox = word.bbox;
                     newObjects.push({
                         id: crypto.randomUUID(),
                         type: 'text',
@@ -267,7 +314,7 @@ export const OCRPanel: React.FC = () => {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
         // Find content bounds
-        resultData.lines.forEach((line: any) => {
+        resultData.lines.forEach((line) => {
             const { bbox } = line;
             if (bbox.x0 < minX) minX = bbox.x0;
             if (bbox.y0 < minY) minY = bbox.y0;
@@ -289,7 +336,7 @@ export const OCRPanel: React.FC = () => {
                 fill: 'rgba(239, 68, 68, 0.1)',
                 rotation: 0
             };
-            // @ts-ignore
+            // @ts-expect-error - addObject expects a specific union type, but rect matches the shape
             addObject(rect);
             setStatus('Content area detected');
         }
@@ -390,12 +437,6 @@ export const OCRPanel: React.FC = () => {
                         </Button>
                     </div>
 
-                    <div className="text-[10px] text-zinc-600 border-t border-white/5 pt-2 mt-2">
-                        Preview:
-                    </div>
-                    <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 max-h-[200px] overflow-y-auto custom-scrollbar text-xs text-zinc-400 font-mono leading-relaxed whitespace-pre-wrap select-text">
-                        {resultData.text}
-                    </div>
                 </div>
             )}
         </div>

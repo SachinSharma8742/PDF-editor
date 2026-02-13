@@ -122,7 +122,7 @@ export interface PDFObject {
 
     // Adjustment Layer specific
     effectType?: 'adjustment';
-    effectParams?: Record<string, any>;
+    effectParams?: Record<string, unknown>;
     name?: string; // Custom name for the layer
 
     editParams?: {
@@ -178,7 +178,7 @@ export interface NativeTextEdit {
     fontWeight?: string;
     fontStyle?: string;
     textDecoration?: string;
-    originalRef?: any;
+    originalRef?: unknown;
 }
 
 // Adjustment Layers are now PDFObjects
@@ -262,11 +262,38 @@ export interface PageState {
     nativeTextEdits?: Record<string, NativeTextEdit>;
 }
 
+// --- Interfaces for external types ---
+
+export interface Difference {
+    type: "CREATE" | "REMOVE" | "CHANGE";
+    path: (string | number)[];
+    value?: unknown;
+    oldValue?: unknown;
+}
+
+export interface PDFViewport {
+    width: number;
+    height: number;
+    scale: number;
+    convertToViewportPoint: (x: number, y: number) => [number, number];
+}
+
+export interface PDFPageProxy {
+    getViewport: (params: { scale: number }) => PDFViewport;
+    render: (params: { canvasContext: CanvasRenderingContext2D; viewport: PDFViewport }) => { promise: Promise<void> };
+}
+
+export interface PDFDocumentProxy {
+    numPages: number;
+    getPage: (pageNumber: number) => Promise<PDFPageProxy>;
+    destroy: () => void;
+}
+
 // --- History Model (Diff Based) ---
 
 interface HistoryPatch {
-    diff: any[]; // Forward diff
-    inverse: any[]; // Backward diff
+    diff: Difference[]; // Forward diff
+    inverse: Difference[]; // Backward diff
     timestamp: number;
 }
 
@@ -292,7 +319,7 @@ interface ToolSettings {
 
 interface PDFStore {
     // Global State
-    pdfDocument: any | null;
+    pdfDocument: PDFDocumentProxy | null;
     originalPdfBytes: ArrayBuffer | null;
     pages: PageState[];
     currentPage: number;
@@ -335,8 +362,8 @@ interface PDFStore {
     setSidebarTab: (tab: 'pages' | 'export') => void;
 
     // Actions
-    setPdfDocument: (doc: any, bytes: ArrayBuffer, fileName: string) => void;
-    appendPDF: (doc: any, bytes: ArrayBuffer, addedPagesCount: number) => void;
+    setPdfDocument: (doc: PDFDocumentProxy, bytes: ArrayBuffer, fileName: string) => void;
+    appendPDF: (doc: PDFDocumentProxy, bytes: ArrayBuffer, addedPagesCount: number) => void;
     addPage: (source: PageSource, content?: string, width?: number, height?: number, backgroundColor?: string) => void;
     updatePage: (pageId: string, updates: Partial<PageState>) => void;
     reorderPages: (fromIndex: number, toIndex: number) => void;
@@ -409,10 +436,13 @@ const DEFAULT_SETTINGS: ToolSettings = {
 
 // Apply a set of microdiff patches to a target object (in-place-ish, but for Zustand we need to be careful)
 // Since we are working with State, we generally clone before diffing, so applying to Current State means applying to a Clone.
-function applyPatches(target: any, patches: any[]) {
+type Patchable = Record<string, unknown> | unknown[];
+
+function applyPatches(target: Patchable, patches: Difference[]) {
     // We iterate patches and apply them
     for (const patch of patches) {
-        let current = target;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let current: any = target;
         // Navigate path
         for (let i = 0; i < patch.path.length - 1; i++) {
             current = current[patch.path[i]];
@@ -423,7 +453,7 @@ function applyPatches(target: any, patches: any[]) {
             current[lastKey] = patch.value;
         } else if (patch.type === 'REMOVE') {
             if (Array.isArray(current)) {
-                current.splice(lastKey, 1);
+                current.splice(Number(lastKey), 1);
             } else {
                 delete current[lastKey];
             }
@@ -554,7 +584,7 @@ export const usePDFStore = create<PDFStore>()(
                 },
 
                 redo: () => {
-                    const { history, pages, lastSavedState } = get();
+                    const { history, pages } = get();
                     if (history.future.length === 0) return;
 
                     const patchToRedo = history.future[0];
@@ -730,21 +760,48 @@ export const usePDFStore = create<PDFStore>()(
                     const { selectedPageIds, pages, saveToHistory } = get();
                     if (selectedPageIds.length === 0) return;
 
-                    const selectedPages = pages.filter(p => selectedPageIds.includes(p.id));
-                    const newPages = selectedPages.map((p, i) => ({
-                        ...p,
-                        id: `page-dup-${Date.now()}-${i}`,
-                        pageNumber: pages.length + i + 1,
-                        originalPageIndex: p.originalPageIndex,
-                        paths: JSON.parse(JSON.stringify(p.paths)),
-                        objects: JSON.parse(JSON.stringify(p.objects)),
-                        isEdited: true
-                    }));
+                    // Find the index of the last selected page to insert after
+                    const lastSelectedIndex = Math.max(...pages.map((p, i) => selectedPageIds.includes(p.id) ? i : -1).filter(i => i !== -1));
 
-                    set(state => ({
-                        pages: [...state.pages, ...newPages].map((p, i) => ({ ...p, pageNumber: i + 1 })),
+                    const selectedPages = pages.filter(p => selectedPageIds.includes(p.id));
+                    const newPages = selectedPages.map((p, i) => {
+                        const newPageId = `page-dup-${Date.now()}-${i}`;
+
+                        // Deep clone and regenerate IDs for paths
+                        const newPaths = (p.paths || []).map(path => ({
+                            ...path,
+                            id: generateId()
+                        }));
+
+                        // Deep clone and regenerate IDs for objects
+                        const newObjects = (p.objects || []).map(obj => ({
+                            ...obj,
+                            id: generateId()
+                        }));
+
+                        return {
+                            ...p,
+                            id: newPageId,
+                            // pageNumber will be recalculated
+                            originalPageIndex: p.originalPageIndex,
+                            paths: newPaths,
+                            objects: newObjects,
+                            isEdited: true
+                        };
+                    });
+
+                    // Insert new pages after the last selected page
+                    const updatedPages = [...pages];
+                    if (lastSelectedIndex !== -1) {
+                        updatedPages.splice(lastSelectedIndex + 1, 0, ...newPages);
+                    } else {
+                        updatedPages.push(...newPages);
+                    }
+
+                    set({
+                        pages: updatedPages.map((p, i) => ({ ...p, pageNumber: i + 1 })),
                         selectedPageIds: newPages.map(p => p.id)
-                    }));
+                    });
                     saveToHistory();
                 },
 
@@ -768,9 +825,9 @@ export const usePDFStore = create<PDFStore>()(
                     const newPages = [...pages];
                     newPages.splice(index + 1, 0, newPage);
 
-                    set(state => ({
+                    set({
                         pages: newPages.map((p, i) => ({ ...p, pageNumber: i + 1 }))
-                    }));
+                    });
                     saveToHistory();
                 },
 

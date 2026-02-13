@@ -40,8 +40,20 @@ export interface NativeTextItem {
     fontWeight?: string;
     fontStyle?: string;
     textDecoration?: string;
-    originalRef?: any; // Raw PDF item reference for replacement logic
+    originalRef?: unknown; // Raw PDF item reference for replacement logic
     pageId: string;
+}
+
+interface PDFTextItem {
+    str: string;
+    dir?: string;
+    width?: number;
+    height?: number;
+    transform?: number[];
+    originalTransform?: number[]; // Custom augmentation if exists
+    fontName?: string;
+    color?: string;
+    hasEOL?: boolean;
 }
 
 export interface TextPreset {
@@ -126,6 +138,13 @@ interface EditorStore {
     recentTextStyles: ToolSettings[]; // Track last used text styles
     previewStyle: ToolSettings | null; // For hover previews
 
+    printModal: {
+        isOpen: boolean;
+        pageIds: string[] | null; // null means all pages
+    };
+    openPrintModal: (pageIds?: string[] | null) => void;
+    closePrintModal: () => void;
+
     history: EditorHistory;
 
     // Actions
@@ -175,9 +194,9 @@ interface EditorStore {
         x: number;
         y: number;
         type: 'object' | 'page' | 'thumbnail' | 'editor-background' | null;
-        data?: any;
+        data?: unknown;
     };
-    openContextMenu: (x: number, y: number, type: 'object' | 'page' | 'thumbnail' | 'editor-background', data?: any) => void;
+    openContextMenu: (x: number, y: number, type: 'object' | 'page' | 'thumbnail' | 'editor-background', data?: unknown) => void;
     closeContextMenu: () => void;
 
 
@@ -210,9 +229,9 @@ interface EditorStore {
         mode: 'create' | 'edit';
         initialImageSrc: string | null; // The raw source
         targetObjectId: string | null; // If editing existing
-        initialEditParams: any | null;
+        initialEditParams: Record<string, unknown> | null;
     };
-    openImageStudio: (src: string, objectId?: string, currentParams?: any) => void;
+    openImageStudio: (src: string, objectId?: string, currentParams?: Record<string, unknown>) => void;
     closeImageStudio: () => void;
 
     // --- Native PDF Text Editing ---
@@ -261,14 +280,14 @@ interface EditorStore {
         searchTerm: string;
         replaceTerm: string;
         caseSensitive: boolean;
-        matches: { id: string; text: string; startIndex: number; endIndex: number; originalItem: any }[];
+        matches: { id: string; text: string; startIndex: number; endIndex: number; originalItem: PDFTextItem | NativeTextItem }[];
         currentMatchIndex: number;
     };
     setFindReplaceOpen: (isOpen: boolean) => void;
     setSearchTerm: (term: string) => void;
     setReplaceTerm: (term: string) => void;
     toggleCaseSensitive: () => void;
-    findMatches: (textItems: any[]) => void;
+    findMatches: (textItems: (PDFTextItem | NativeTextItem)[]) => void;
     navigateMatch: (direction: 'next' | 'prev') => void;
     replaceCurrentMatch: () => void;
     replaceAllMatches: () => void;
@@ -280,11 +299,27 @@ interface EditorStore {
         isProcessing: boolean;
         progress: number;
         result: string | null;
+        confidence: number | null;
         error: string | null;
     };
     setOCROpen: (isOpen: boolean) => void;
-    startOCR: (imageSource: string | HTMLCanvasElement) => Promise<void>;
+    startOCR: (imageSource: string | HTMLCanvasElement, language?: string) => Promise<void>;
     clearOCRResult: () => void;
+
+    // Translation State
+    translationState: TranslationState;
+    setTranslationLanguage: (lang: string) => void;
+    toggleTranslationView: (enabled: boolean) => void;
+    translateOCRText: (text: string, targetLang: string) => Promise<void>;
+    clearTranslation: () => void;
+}
+
+export interface TranslationState {
+    enabled: boolean;
+    translatedText: string | null;
+    targetLanguage: string;
+    isTranslating: boolean;
+    error: string | null;
 }
 
 const deepClone = <T>(obj: T): T => {
@@ -312,6 +347,17 @@ export const useEditorStore = create<EditorStore>()(
             ],
             clipboard: [],
             previewStyle: null,
+
+            printModal: {
+                isOpen: false,
+                pageIds: null
+            },
+            openPrintModal: (pageIds = null) => set(() => ({
+                printModal: { isOpen: true, pageIds }
+            })),
+            closePrintModal: () => set(state => ({
+                printModal: { ...state.printModal, isOpen: false, pageIds: null }
+            })),
 
             history: { past: [], future: [] },
 
@@ -458,15 +504,16 @@ export const useEditorStore = create<EditorStore>()(
                 if (!searchTerm.trim()) {
                     return { findReplaceState: { ...state.findReplaceState, matches: [], currentMatchIndex: -1 } };
                 }
-                const matches: { id: string; text: string; startIndex: number; endIndex: number; originalItem: any }[] = [];
-                textItems.forEach(item => {
-                    const text = item.str || item.text || '';
+                const matches: { id: string; text: string; startIndex: number; endIndex: number; originalItem: PDFTextItem | NativeTextItem }[] = [];
+                textItems.forEach((item: PDFTextItem | NativeTextItem, index: number) => {
+                    const text = 'str' in item ? item.str : (item as NativeTextItem).text || '';
+                    const itemId = 'id' in item ? item.id : `pdf-text-${index}`;
                     const searchIn = caseSensitive ? text : text.toLowerCase();
                     const searchFor = caseSensitive ? searchTerm : searchTerm.toLowerCase();
                     let idx = searchIn.indexOf(searchFor);
                     while (idx !== -1) {
                         matches.push({
-                            id: item.id,
+                            id: itemId,
                             text,
                             startIndex: idx,
                             endIndex: idx + searchTerm.length,
@@ -504,7 +551,7 @@ export const useEditorStore = create<EditorStore>()(
                 const newText = currentText.substring(0, match.startIndex) + replaceTerm + currentText.substring(match.endIndex);
 
                 // Get original item properties for proper positioning/styling
-                const origItem = match.originalItem;
+                const origItem = match.originalItem as (PDFTextItem & NativeTextItem);
                 const tx = origItem?.originalTransform || origItem?.transform || [1, 0, 0, 1, 0, 0];
                 const fontScaleY = Math.abs(tx[3]) || 12;
 
@@ -553,7 +600,7 @@ export const useEditorStore = create<EditorStore>()(
                     });
 
                     // Get original item properties from first match
-                    const origItem = itemMatches[0].originalItem;
+                    const origItem = itemMatches[0].originalItem as (PDFTextItem & NativeTextItem);
                     const tx = origItem?.originalTransform || origItem?.transform || [1, 0, 0, 1, 0, 0];
                     const fontScaleY = Math.abs(tx[3]) || 12;
 
@@ -575,7 +622,7 @@ export const useEditorStore = create<EditorStore>()(
                 });
                 set({ pendingNativeTextEdits: newEdits, findReplaceState: { ...state.findReplaceState, matches: [], currentMatchIndex: -1 } });
             },
-            clearFindReplace: () => set(state => ({
+            clearFindReplace: () => set(() => ({
                 findReplaceState: {
                     isOpen: false,
                     searchTerm: '',
@@ -586,25 +633,26 @@ export const useEditorStore = create<EditorStore>()(
                 }
             })),
 
-            // OCR Implementation
+            // OCR State
             ocrState: {
                 isOpen: false,
                 isProcessing: false,
                 progress: 0,
                 result: null,
+                confidence: null,
                 error: null
             },
             setOCROpen: (isOpen) => set(state => ({
                 ocrState: { ...state.ocrState, isOpen }
             })),
-            startOCR: async (imageSource) => {
+            startOCR: async (imageSource, language = 'eng') => {
                 set(state => ({
-                    ocrState: { ...state.ocrState, isProcessing: true, progress: 0, result: null, error: null }
+                    ocrState: { ...state.ocrState, isProcessing: true, progress: 0, result: null, confidence: null, error: null }
                 }));
                 try {
                     const Tesseract = await import('tesseract.js');
-                    const worker = await Tesseract.createWorker('eng', 1, {
-                        logger: (m: any) => {
+                    const worker = await Tesseract.createWorker(language, 1, {
+                        logger: (m: { status: string; progress: number }) => {
                             if (m.status === 'recognizing text') {
                                 set(state => ({
                                     ocrState: { ...state.ocrState, progress: Math.round(m.progress * 100) }
@@ -612,19 +660,99 @@ export const useEditorStore = create<EditorStore>()(
                             }
                         }
                     });
-                    const { data: { text } } = await worker.recognize(imageSource);
+                    const { data: { text, confidence } } = await worker.recognize(imageSource);
                     await worker.terminate();
                     set(state => ({
-                        ocrState: { ...state.ocrState, isProcessing: false, progress: 100, result: text }
+                        ocrState: { ...state.ocrState, isProcessing: false, progress: 100, result: text, confidence: confidence }
                     }));
-                } catch (error: any) {
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'OCR failed';
                     set(state => ({
-                        ocrState: { ...state.ocrState, isProcessing: false, error: error.message || 'OCR failed' }
+                        ocrState: { ...state.ocrState, isProcessing: false, error: errorMessage }
                     }));
                 }
             },
             clearOCRResult: () => set(state => ({
-                ocrState: { ...state.ocrState, result: null, error: null, progress: 0 }
+                ocrState: { ...state.ocrState, result: null, error: null, progress: 0 },
+                // Clear validation as well when clearing OCR
+                translationState: {
+                    enabled: false,
+                    translatedText: null,
+                    targetLanguage: 'es', // Default to something common like Spanish, or keep user pref
+                    isTranslating: false,
+                    error: null
+                }
+            })),
+
+            // Translation Implementation
+            translationState: {
+                enabled: false,
+                translatedText: null,
+                targetLanguage: 'es',
+                isTranslating: false,
+                error: null
+            },
+            setTranslationLanguage: (lang) => set(state => ({
+                translationState: { ...state.translationState, targetLanguage: lang }
+            })),
+            toggleTranslationView: (enabled) => set(state => ({
+                translationState: { ...state.translationState, enabled }
+            })),
+            translateOCRText: async (text, targetLang) => {
+                if (!text || !text.trim()) return;
+
+                set(state => ({
+                    translationState: { ...state.translationState, isTranslating: true, error: null, targetLanguage: targetLang, enabled: true }
+                }));
+
+                try {
+                    // Utility to chunk text to avoid URL length limits (approx 2000 chars safe limit)
+                    const chunkText = (str: string, size: number) => {
+                        const numChunks = Math.ceil(str.length / size);
+                        const chunks = new Array(numChunks);
+                        for (let i = 0, o = 0; i < numChunks; ++i, o += size) {
+                            chunks[i] = str.substr(o, size);
+                        }
+                        return chunks;
+                    };
+
+                    const chunks = chunkText(text, 1000); // Conservative chunk size
+                    const results: string[] = [];
+
+                    for (const chunk of chunks) {
+                        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(chunk)}`;
+                        const response = await fetch(url);
+                        if (!response.ok) throw new Error('Translation network error');
+                        const data = await response.json();
+                        // Google Translate API returns [[["translated", "original", ...], ...], ...]
+                        // We need to join the translated segments
+                        const translatedChunk = data[0].map((item: [string, string]) => item[0]).join('');
+                        results.push(translatedChunk);
+                    }
+
+                    const finalTranslation = results.join('');
+
+                    set(state => ({
+                        translationState: {
+                            ...state.translationState,
+                            isTranslating: false,
+                            translatedText: finalTranslation
+                        }
+                    }));
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'Translation failed';
+                    set(state => ({
+                        translationState: { ...state.translationState, isTranslating: false, error: errorMessage }
+                    }));
+                }
+            },
+            clearTranslation: () => set(state => ({
+                translationState: {
+                    ...state.translationState,
+                    translatedText: null,
+                    error: null,
+                    isTranslating: false
+                }
             })),
 
             imageStudio: {

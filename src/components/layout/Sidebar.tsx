@@ -1,16 +1,19 @@
+
 import React, { useState } from 'react';
 import { usePDFStore } from '../../store/pdfStore';
 import {
-    FileText, Plus, Upload, Trash2,
-    Settings, X, BoxSelect, Download, Copy,
-    RefreshCw, FolderOpen, Info, HelpCircle
+    Plus, Upload, Trash2,
+    Settings, BoxSelect, Download, Copy,
+    RefreshCw, FolderOpen, Info, HelpCircle, Printer
 } from 'lucide-react';
 import { AddPageModal } from '../../components/features/page-operations/AddPageModal';
+import { useEditorStore } from '../../store/editorStore';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortablePageItem } from './SortablePageItem';
 import { loadPDF } from '../../utils/pdfOps';
+import { saveDocument } from '../../utils/exportUtils';
 import clsx from 'clsx';
 
 export const Sidebar: React.FC = () => {
@@ -32,7 +35,7 @@ export const Sidebar: React.FC = () => {
         duplicateSelectedPages,
         reorderPages,
         fileName,
-        pdfDocument,
+        originalPdfBytes,
         reset
     } = usePDFStore();
 
@@ -48,7 +51,7 @@ export const Sidebar: React.FC = () => {
             togglePageSelection(pageId);
         } else {
             setCurrentPage(pageNumber);
-            document.getElementById(`page-${pageNumber}`)?.scrollIntoView({ behavior: 'smooth' });
+            document.getElementById(`page - ${pageNumber} `)?.scrollIntoView({ behavior: 'smooth' });
         }
     };
 
@@ -294,33 +297,50 @@ export const Sidebar: React.FC = () => {
                     </div>
 
                     {/* Action Buttons Row */}
-                    <div className="flex items-center gap-2 p-3">
+                    {/* Action Buttons Row - Grid Layout */}
+                    <div className="grid grid-cols-2 gap-2 p-3">
                         <button
                             onClick={deleteSelectedPages}
                             disabled={selectedPageIds.length === 0}
-                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-red-500/20 text-zinc-400 hover:text-red-400 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all border border-white/5 hover:border-red-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-white/5 hover:border-red-500/20 disabled:opacity-30 disabled:cursor-not-allowed group"
                         >
-                            <Trash2 size={14} />
+                            <Trash2 size={14} className="group-hover:scale-110 transition-transform" />
                             Delete
                         </button>
                         <button
-                            onClick={() => {
-                                // Export selected pages - trigger via toolbar export
-                                setIsSelectionMode(false);
-                                // The export button in toolbar already respects selectedPageIds
+                            onClick={async () => {
+                                // Export selected pages
+                                if (selectedPageIds.length > 0) {
+                                    const selectedPages = pages.filter(p => selectedPageIds.includes(p.id));
+                                    await saveDocument(selectedPages, originalPdfBytes);
+                                    setIsSelectionMode(false);
+                                    deselectAllPages();
+                                }
                             }}
                             disabled={selectedPageIds.length === 0}
-                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-blue-500/20 text-zinc-400 hover:text-blue-400 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all border border-white/5 hover:border-blue-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-blue-500/10 text-zinc-400 hover:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-white/5 hover:border-blue-500/20 disabled:opacity-30 disabled:cursor-not-allowed group"
                         >
-                            <Download size={14} />
+                            <Download size={14} className="group-hover:scale-110 transition-transform" />
                             Export
+                        </button>
+                        <button
+                            onClick={() => {
+                                // Open Print Modal with selected pages
+                                useEditorStore.getState().openPrintModal(selectedPageIds);
+                            }}
+                            disabled={selectedPageIds.length === 0}
+                            className="flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-teal-500/10 text-zinc-400 hover:text-teal-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-white/5 hover:border-teal-500/20 disabled:opacity-30 disabled:cursor-not-allowed group"
+                            title="Print Selected Pages"
+                        >
+                            <Printer size={14} className="group-hover:scale-110 transition-transform" />
+                            Print
                         </button>
                         <button
                             onClick={duplicateSelectedPages}
                             disabled={selectedPageIds.length === 0}
-                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-zinc-600/30 text-zinc-400 hover:text-zinc-200 text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all border border-white/5 hover:border-white/20 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-purple-500/10 text-zinc-400 hover:text-purple-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-white/5 hover:border-purple-500/20 disabled:opacity-30 disabled:cursor-not-allowed group"
                         >
-                            <Copy size={14} />
+                            <Copy size={14} className="group-hover:scale-110 transition-transform" />
                             Clone
                         </button>
                     </div>
@@ -348,7 +368,7 @@ export const Sidebar: React.FC = () => {
                                     isCurrent={currentPage === page.pageNumber}
                                     isSelectionMode={isSelectionMode}
                                     onClick={() => handlePageClick(page.id, page.pageNumber)}
-                                    onToggleSelection={(e: any) => {
+                                    onToggleSelection={(e: React.MouseEvent) => {
                                         e.stopPropagation();
                                         togglePageSelection(page.id);
                                     }}

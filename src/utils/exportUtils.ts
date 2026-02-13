@@ -1,8 +1,9 @@
 
-import { PDFDocument, PDFImage } from 'pdf-lib';
+import { PDFDocument, PDFImage, PDFPage } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
-import type { PageState, NativeTextEdit, PDFObject } from '../store/pdfStore';
+import type { PageState, NativeTextEdit, PDFObject, PDFDocumentProxy, PDFViewport } from '../store/pdfStore';
 import { hexToRgba } from './colorUtils';
+
 import { applyAdjustmentPipeline } from './effectUtils';
 
 /**
@@ -14,7 +15,7 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
     try {
         const newPdf = await PDFDocument.create();
         let originalPdfDoc: PDFDocument | null = null;
-        let pdfjsDoc: any = null;
+        let pdfjsDoc: PDFDocumentProxy | null = null;
 
         if (originalPdfBytes) {
             // Clone the buffer to prevent detachment issues
@@ -27,10 +28,10 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
         }
 
         for (const page of pages) {
-            let pdfPage: any;
+            let pdfPage: PDFPage;
             let pageWidth = 595;
             let pageHeight = 842;
-            let viewport: any = null;
+            let viewport: PDFViewport | null = null;
 
             // 1. Get Base Page (PDF, Image, or Blank)
             if (page.source === 'pdf' && originalPdfDoc && page.originalPageIndex !== undefined) {
@@ -71,6 +72,8 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
                 });
 
                 viewport = {
+                    width: pageWidth,
+                    height: pageHeight,
                     convertToViewportPoint: (x: number, y: number) => [x * 2, y * 2], // Simple scale=2
                     scale: 2
                 };
@@ -82,6 +85,8 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
                 pdfPage = newPdf.addPage([pageWidth, pageHeight]);
 
                 viewport = {
+                    width: pageWidth,
+                    height: pageHeight,
                     convertToViewportPoint: (x: number, y: number) => [x * 2, y * 2],
                     scale: 2
                 };
@@ -155,7 +160,7 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
 
         // Save and Download
         const pdfBytes = await newPdf.save();
-        const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
+        const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
 
         const a = document.createElement('a');
@@ -299,7 +304,9 @@ async function drawObjectToCanvas(ctx: CanvasRenderingContext2D, obj: PDFObject)
 
         } else if (obj.type === 'image' || obj.type === 'stamp') {
             // Resolve the source URL
-            const src = (obj as any).src || (obj as any).url || (obj.type === 'stamp' ? `data:image/svg+xml;utf8,${encodeURIComponent((obj as any).content)}` : null);
+            const src = (obj as { src?: string; url?: string; content?: string }).src ||
+                (obj as { url?: string }).url ||
+                (obj.type === 'stamp' ? `data:image/svg+xml;utf8,${encodeURIComponent((obj as { content?: string }).content || '')}` : null);
 
             if (src) {
                 await new Promise<void>((resolve) => {
@@ -339,9 +346,11 @@ async function drawObjectToCanvas(ctx: CanvasRenderingContext2D, obj: PDFObject)
             ctx.beginPath();
             if (obj.type === 'rectangle') {
                 if (obj.cornerRadius) {
-                    // @ts-ignore
-                    if (ctx.roundRect) ctx.roundRect(obj.x, obj.y, w, h, obj.cornerRadius);
-                    else ctx.rect(obj.x, obj.y, w, h);
+                    if ('roundRect' in ctx) {
+                        ctx.roundRect(obj.x, obj.y, w, h, obj.cornerRadius);
+                    } else {
+                        (ctx as CanvasRenderingContext2D).rect(obj.x, obj.y, w, h);
+                    }
                 } else {
                     ctx.rect(obj.x, obj.y, w, h);
                 }
@@ -490,7 +499,7 @@ async function drawObjectToCanvas(ctx: CanvasRenderingContext2D, obj: PDFObject)
 /**
  * Draws Native Text Edits using Viewport Conversion
  */
-function drawNativeTextEdits(ctx: CanvasRenderingContext2D, edits: Record<string, NativeTextEdit>, viewport: any) {
+function drawNativeTextEdits(ctx: CanvasRenderingContext2D, edits: Record<string, NativeTextEdit>, viewport: PDFViewport) {
     Object.values(edits).forEach((edit) => {
         const [vx, vy] = viewport.convertToViewportPoint(edit.x, edit.y);
         const scale = viewport.scale;
@@ -525,7 +534,7 @@ function drawNativeTextEdits(ctx: CanvasRenderingContext2D, edits: Record<string
     });
 };
 
-export const saveDocumentFlattened = async (pages: PageState[], pdfDocSource: any, quality: number) => {
+export const saveDocumentFlattened = async (pages: PageState[], pdfDocSource: PDFDocumentProxy | null, quality: number) => {
     const newPdf = await PDFDocument.create();
 
     for (const pageState of pages) {
@@ -545,10 +554,10 @@ export const saveDocumentFlattened = async (pages: PageState[], pdfDocSource: an
     }
 
     const pdfBytes = await newPdf.save();
-    downloadFile(new Blob([pdfBytes as any], { type: 'application/pdf' }), `flattened_export_${Date.now()}.pdf`);
+    downloadFile(new Blob([pdfBytes as BlobPart], { type: 'application/pdf' }), `flattened_export_${Date.now()}.pdf`);
 };
 
-export const exportPageAsImage = async (page: PageState, format: 'png' | 'jpg', quality: number, pdfDocSource: any) => {
+export const exportPageAsImage = async (page: PageState, format: 'png' | 'jpg', quality: number, pdfDocSource: PDFDocumentProxy | null) => {
     const { blob } = await renderPageToBlob(page, format, quality, pdfDocSource);
     if (blob) {
         downloadFile(blob, `page-${page.pageNumber}.${format}`);
@@ -564,13 +573,14 @@ const downloadFile = (blob: Blob, filename: string) => {
     URL.revokeObjectURL(url);
 };
 
-const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality: number, pdfDocSource: any): Promise<{ blob: Blob | null }> => {
+// Exported for PrintModal previews
+export const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality: number, pdfDocSource: PDFDocumentProxy | null): Promise<{ blob: Blob | null }> => {
     const scale = 2; // High DPI export
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return { blob: null };
 
-    let viewport: any = null;
+    let viewport: PDFViewport | null = null;
 
     if (page.source === 'pdf' && page.originalPageIndex !== undefined && pdfDocSource) {
         try {
@@ -609,6 +619,8 @@ const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality:
         });
 
         viewport = {
+            width: canvas.width / scale,
+            height: canvas.height / scale,
             convertToViewportPoint: (x: number, y: number) => [x * scale, y * scale],
             scale: scale
         };
@@ -619,6 +631,8 @@ const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality:
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         viewport = {
+            width: canvas.width / scale,
+            height: canvas.height / scale,
             convertToViewportPoint: (x: number, y: number) => [x * scale, y * scale],
             scale: scale
         };
@@ -643,8 +657,124 @@ const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality:
     });
 };
 
-const getPdfPageViewport = async (pdfDoc: any, pageNum: number, scale: number) => {
+const getPdfPageViewport = async (pdfDoc: PDFDocumentProxy, pageNum: number, scale: number) => {
     const page = await pdfDoc.getPage(pageNum);
     const viewport = page.getViewport({ scale });
     return { page, viewport };
+};
+
+export const printBlobs = async (blobUrls: string[]) => {
+    if (blobUrls.length === 0) return;
+
+    try {
+        // Create a hidden iframe for printing
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+
+        const doc = iframe.contentWindow?.document;
+        if (!doc) {
+            document.body.removeChild(iframe);
+            throw new Error("Could not create print iframe");
+        }
+
+        // Add basic print styles
+        // FIX: Added margin: 0 to @page and body to prevent extra blank pages.
+        // FIX: Removed margin from images and ensured block display.
+        doc.write(`
+            <html>
+                <head>
+                    <title>Print Document</title>
+                    <style>
+                        @media print {
+                            @page { margin: 0; size: auto; }
+                            body { margin: 0; padding: 0; }
+                            img { 
+                                max-width: 100%; 
+                                height: auto; 
+                                display: block; 
+                                page-break-after: always; 
+                                page-break-inside: avoid;
+                            }
+                            img:last-child { page-break-after: auto; }
+                            /* Hide header/footer if possible using size: auto, varies by browser */
+                        }
+                        body { 
+                            margin: 0; 
+                            padding: 0; 
+                            display: flex; 
+                            flex-direction: column; 
+                            align-items: center; 
+                            background: white; 
+                        }
+                        img { 
+                            display: block;
+                            max-width: 100%;
+                        }
+                    </style>
+                </head>
+                <body>
+        `);
+
+        blobUrls.forEach(url => {
+            doc.write(`<img src="${url}" />`);
+        });
+
+        doc.write(`
+                <script>
+                    window.onload = () => {
+                        window.focus();
+                        setTimeout(() => {
+                            window.print();
+                        }, 500);
+                    };
+                </script>
+                </body>
+            </html>
+        `);
+        doc.close();
+
+        // Cleanup
+        setTimeout(() => {
+            if (document.body.contains(iframe)) {
+                document.body.removeChild(iframe);
+            }
+            // Revoke URLs is caller's responsibility usually, but if we created them here we would.
+            // Since we receive URLs, we assume caller manages them OR we don't touch them.
+            // However, typical pattern handling:
+            // logic moved to caller or utility that generated them.
+        }, 5000);
+
+    } catch (e) {
+        console.error("Print failed", e);
+        alert("Failed to print.");
+    }
+};
+
+/**
+ * @deprecated Use openPrintModal from editorStore to trigger the UI instead.
+ * Keeping this for backward compatibility or direct calls if needed.
+ */
+export const printPages = async (pages: PageState[], pdfDocSource: PDFDocumentProxy | null) => {
+    const objectUrls: string[] = [];
+    try {
+        for (const page of pages) {
+            const { blob } = await renderPageToBlob(page, 'png', 1.0, pdfDocSource);
+            if (blob) {
+                const url = URL.createObjectURL(blob);
+                objectUrls.push(url);
+            }
+        }
+        await printBlobs(objectUrls);
+    } finally {
+        // Cleanup generated URLs locally since we created them
+        setTimeout(() => {
+            objectUrls.forEach(url => URL.revokeObjectURL(url));
+        }, 10000);
+    }
 };

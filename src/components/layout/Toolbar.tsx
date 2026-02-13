@@ -1,32 +1,34 @@
+
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePDFStore } from '../../store/pdfStore';
 import {
-    MousePointer2,
-    Hand,
-    Minus,
-    Plus,
+    Download,
+    ChevronDown,
+    Image as ImageIcon,
+    Type,
     Undo2,
     Redo2,
-    Pencil,
-    Sun,
-    Moon,
+    MousePointer2,
+    Hand,
     RotateCw,
-    FlipHorizontal,
-    FlipVertical,
-    Download,
+    Printer,
+    Menu,
     Layers,
     Lock,
-    Image as ImageIcon,
-    ChevronDown,
-    Type,
-    Menu
+    Minus,
+    Plus,
+    Sun,
+    Moon,
+    FlipHorizontal,
+    FlipVertical,
+    Pencil
 } from 'lucide-react';
 import { loadPDF } from '../../utils/pdfOps';
 import { saveDocument, saveDocumentFlattened, exportPageAsImage } from '../../utils/exportUtils';
 import { useEditorStore } from '../../store/editorStore';
 import clsx from 'clsx';
-import { Tooltip } from '../ui/Tooltip';
+
 
 export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -34,7 +36,7 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
     const exportBtnRef = useRef<HTMLDivElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [isExportOpen, setIsExportOpen] = useState(false);
-    const [exportFormat, setExportFormat] = useState<'standard' | 'flattened' | 'png'>('standard');
+    const [exportFormat, setExportFormat] = useState<'standard' | 'flattened' | 'png' | 'print'>('standard');
     const [exportQuality, setExportQuality] = useState(0.8);
     const [isExporting, setIsExporting] = useState(false);
 
@@ -78,7 +80,6 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
         theme,
         toggleTheme,
         pdfDocument,
-        fileName,
         isSelectionMode,
         selectedPageIds,
         originalPdfBytes
@@ -110,6 +111,12 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                 for (const page of pagesToExportPng) {
                     await exportPageAsImage(page, 'png', exportQuality, pdfDocument);
                 }
+            } else if (exportFormat === 'print') {
+                // Updated to use the new Print Modal
+                const pageIdsToPrint = (isSelectionMode && selectedPageIds.length > 0)
+                    ? selectedPageIds
+                    : null; // null means all pages
+                useEditorStore.getState().openPrintModal(pageIdsToPrint);
             }
             setIsExportOpen(false);
         } catch (e) {
@@ -153,7 +160,7 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
             img.onload = () => {
                 const targetWidth = 200;
                 const targetHeight = (img.height / img.width) * targetWidth;
-                const currentPageId = pages.find(p => p.pageNumber === currentPage)?.id || `page-${currentPage}`;
+                const currentPageId = pages.find(p => p.pageNumber === currentPage)?.id || `page - ${currentPage} `;
                 if (currentPageId) {
                     addObject(currentPageId, {
                         id: crypto.randomUUID(),
@@ -316,33 +323,38 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                                         <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest px-1">Export Format</div>
 
                                         <div className="space-y-2">
-                                            {[
-                                                { id: 'standard', icon: Layers, label: 'Standard PDF', desc: 'Vector layers & editable' },
-                                                { id: 'flattened', icon: Lock, label: 'Flattened PDF', desc: 'Single image layer' },
-                                                { id: 'png', icon: ImageIcon, label: 'PNG Images', desc: 'High-res per page' }
-                                            ].map(f => (
-                                                <button
-                                                    key={f.id}
-                                                    onClick={() => setExportFormat(f.id as any)}
-                                                    className={clsx(
-                                                        "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left group",
-                                                        exportFormat === f.id
-                                                            ? "bg-blue-600/20 border-blue-500/50 text-blue-400"
-                                                            : "bg-white/[0.02] border-white/5 text-zinc-400 hover:bg-white/[0.05] hover:text-white"
-                                                    )}
-                                                >
-                                                    <div className={clsx(
-                                                        "p-2 rounded-lg border transition-colors",
-                                                        exportFormat === f.id ? "bg-blue-600 border-blue-400 text-white" : "bg-black/20 border-white/5 text-zinc-500"
-                                                    )}>
-                                                        <f.icon size={14} />
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-[10px] font-black uppercase tracking-wide leading-none mb-0.5">{f.label}</div>
-                                                        <div className="text-[9px] opacity-60">{f.desc}</div>
-                                                    </div>
-                                                </button>
-                                            ))}
+                                            {(['standard', 'flattened', 'png', 'print'] as const).map(id => {
+                                                const f = {
+                                                    standard: { icon: Layers, label: 'Standard PDF', desc: 'Vector layers & editable' },
+                                                    flattened: { icon: Lock, label: 'Flattened PDF', desc: 'Single image layer' },
+                                                    png: { icon: ImageIcon, label: 'PNG Images', desc: 'High-res per page' },
+                                                    print: { icon: Printer, label: 'Print', desc: 'Native print dialog' }
+                                                }[id];
+
+                                                return (
+                                                    <button
+                                                        key={id}
+                                                        onClick={() => setExportFormat(id)}
+                                                        className={clsx(
+                                                            "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left group",
+                                                            exportFormat === id
+                                                                ? "bg-blue-600/20 border-blue-500/50 text-blue-400"
+                                                                : "bg-white/[0.02] border-white/5 text-zinc-400 hover:bg-white/[0.05] hover:text-white"
+                                                        )}
+                                                    >
+                                                        <div className={clsx(
+                                                            "p-2 rounded-lg border transition-colors",
+                                                            exportFormat === id ? "bg-blue-600 border-blue-400 text-white" : "bg-black/20 border-white/5 text-zinc-500"
+                                                        )}>
+                                                            <f.icon size={14} />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[10px] font-black uppercase tracking-wide leading-none mb-0.5">{f.label}</div>
+                                                            <div className="text-[9px] opacity-60">{f.desc}</div>
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
 
                                         {exportFormat !== 'standard' && (
