@@ -2,13 +2,25 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useEditorStore } from '../../../../store/editorStore';
 import { usePDFStore } from '../../../../store/pdfStore';
 import { StudioCanvas } from './StudioCanvas';
-import { useImageStudioStore } from './useImageStudioStore';
+import { useImageStudioStore, type ImageEditParams } from './useImageStudioStore';
 import { removeBackground, refineMask } from '../../../../utils/backgroundRemoval';
+import { smartCrop } from '../../../../utils/smartCrop';
+import { deskew } from '../../../../utils/deskew';
+import { backgroundCleanup } from '../../../../utils/backgroundCleanup';
+import { colorEnhance } from '../../../../utils/colorEnhance';
+import { detectSubject } from '../../../../utils/subjectDetection';
+import { upscaleImage } from '../../../../utils/imageUpscale';
+import { autoCleanupDocument } from '../../../../utils/documentCleanup';
+import { detectLayout } from '../../../../utils/layoutDetection';
+import { detectOCRRegions } from '../../../../utils/ocrRegionAssist';
+import { segmentPage } from '../../../../utils/pageSegmentation';
+import type { StudioRegion } from './StudioCanvas';
 import {
     X, Image as ImageIcon, Check, RotateCcw,
     Sun, Contrast, Droplet, MoveHorizontal, MoveVertical,
     Ghost, RotateCw, Wand2, Sliders, Crop, Maximize, Square, Sparkles, RefreshCw, Heart,
-    Eraser, Loader2
+    Eraser, Loader2, Scan, AlignVerticalSpaceAround, Focus, ArrowUpCircle, FileText, LayoutTemplate,
+    TextSelect, Rows // Icons for new tools
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -75,10 +87,26 @@ export const ImageStudio: React.FC = () => {
     const [bgRemovalError, setBgRemovalError] = useState<string | null>(null);
     const [isBgProcessing, setIsBgProcessing] = useState(false);
 
+    // Image preprocessing state
+    const [isSmartCropping, setIsSmartCropping] = useState(false);
+    const [isDeskewing, setIsDeskewing] = useState(false);
+    const [isCleaning, setIsCleaning] = useState(false);
+    const [isEnhancing, setIsEnhancing] = useState(false);
+    const [isDetecting, setIsDetecting] = useState(false);
+    const [isUpscaling, setIsUpscaling] = useState(false);
+    const [isDocCleaning, setIsDocCleaning] = useState(false);
+    const [isLayoutScanning, setIsLayoutScanning] = useState(false);
+    const [isOCRScanning, setIsOCRScanning] = useState(false);
+    const [isPageSegmenting, setIsPageSegmenting] = useState(false);
+
+    // Unified analysis state
+    const [analysisRegions, setAnalysisRegions] = useState<StudioRegion[]>([]);
+    const [preprocessError, setPreprocessError] = useState<string | null>(null);
+
     useEffect(() => {
         if (imageStudio.isOpen) {
             if (imageStudio.initialEditParams) {
-                setAllParams(imageStudio.initialEditParams);
+                setAllParams(imageStudio.initialEditParams as unknown as ImageEditParams);
             } else {
                 resetParams();
             }
@@ -152,6 +180,235 @@ export const ImageStudio: React.FC = () => {
         setBgRemovalProgress(null);
         setBgRemovalError(null);
     }, [setParam]);
+
+    // Smart Crop handler
+    const handleSmartCrop = useCallback(async () => {
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        if (!src || isSmartCropping) return;
+
+        setIsSmartCropping(true);
+        setPreprocessError(null);
+
+        try {
+            const croppedSrc = await smartCrop(src);
+            if (croppedSrc === src) {
+                setPreprocessError('No margins detected — image unchanged.');
+            } else {
+                setParam('backgroundMaskSrc', croppedSrc);
+            }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Smart crop failed';
+            setPreprocessError(message);
+        } finally {
+            setIsSmartCropping(false);
+        }
+    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isSmartCropping, setParam]);
+
+    // Auto Deskew handler
+    const handleDeskew = useCallback(async () => {
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        if (!src || isDeskewing) return;
+
+        setIsDeskewing(true);
+        setPreprocessError(null);
+
+        try {
+            const correctedSrc = await deskew(src);
+            if (correctedSrc === src) {
+                setPreprocessError('No skew detected — image unchanged.');
+            } else {
+                setParam('backgroundMaskSrc', correctedSrc);
+            }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Deskew failed';
+            setPreprocessError(message);
+        } finally {
+            setIsDeskewing(false);
+        }
+    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isDeskewing, setParam]);
+
+    // Background Cleanup handler
+    const handleCleanup = useCallback(async () => {
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        if (!src || isCleaning) return;
+
+        setIsCleaning(true);
+        setPreprocessError(null);
+
+        try {
+            const cleanedSrc = await backgroundCleanup(src);
+            setParam('backgroundMaskSrc', cleanedSrc);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Background cleanup failed';
+            setPreprocessError(message);
+        } finally {
+            setIsCleaning(false);
+        }
+    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isCleaning, setParam]);
+
+    // Color Enhancement handler
+    const handleEnhance = useCallback(async () => {
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        if (!src || isEnhancing) return;
+
+        setIsEnhancing(true);
+        setPreprocessError(null);
+
+        try {
+            const enhancedSrc = await colorEnhance(src);
+            setParam('backgroundMaskSrc', enhancedSrc);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Color enhancement failed';
+            setPreprocessError(message);
+        } finally {
+            setIsEnhancing(false);
+        }
+    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isEnhancing, setParam]);
+
+    // Subject Detection handler
+    const handleDetectSubject = useCallback(async () => {
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        if (!src || isDetecting) return;
+
+        setIsDetecting(true);
+        setPreprocessError(null);
+
+        try {
+            const bounds = await detectSubject(src);
+            if (bounds) {
+                // Determine crop shape and update params
+                setParam('crop', {
+                    x: bounds.x,
+                    y: bounds.y,
+                    width: bounds.width,
+                    height: bounds.height
+                });
+                setActiveTab('crop'); // Switch to crop tab to show result
+            } else {
+                setPreprocessError('No dominant subject detected.');
+            }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Subject detection failed';
+            setPreprocessError(message);
+        } finally {
+            setIsDetecting(false);
+        }
+    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isDetecting, setParam, setActiveTab]);
+
+    // AI Upscale handler
+    const handleUpscale = useCallback(async () => {
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        if (!src || isUpscaling) return;
+
+        setIsUpscaling(true);
+        setPreprocessError(null);
+
+        try {
+            const upscaledSrc = await upscaleImage(src);
+            setParam('backgroundMaskSrc', upscaledSrc);
+
+            // Update dimensions to match new size
+            const img = new Image();
+            img.src = upscaledSrc;
+            await img.decode();
+            useImageStudioStore.getState().setDimensions(img.naturalWidth, img.naturalHeight);
+
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Upscale failed';
+            setPreprocessError(message);
+        } finally {
+            setIsUpscaling(false);
+        }
+    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isUpscaling, setParam]);
+
+    // Document Cleanup handler
+    const handleDocCleanup = useCallback(async () => {
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        if (!src || isDocCleaning) return;
+
+        setIsDocCleaning(true);
+        setPreprocessError(null);
+
+        try {
+            const cleanedSrc = await autoCleanupDocument(src);
+            setParam('backgroundMaskSrc', cleanedSrc);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Cleanup failed';
+            setPreprocessError(message);
+        } finally {
+            setIsDocCleaning(false);
+        }
+    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isDocCleaning, setParam]);
+
+    // Layout Detection handler
+    const handleLayoutDetection = useCallback(async () => {
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        if (!src || isLayoutScanning) return;
+
+        setIsLayoutScanning(true);
+        setPreprocessError(null);
+        setAnalysisRegions([]);
+
+        try {
+            const regions: any = await detectLayout(src);
+            // Map LayoutRegion to StudioRegion if needed, or rely on compatible structure
+            setAnalysisRegions(regions);
+            if (regions.length === 0) {
+                setPreprocessError('No layout regions detected.');
+            }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Layout scan failed';
+            setPreprocessError(message);
+        } finally {
+            setIsLayoutScanning(false);
+        }
+    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isLayoutScanning]);
+
+    // OCR Region Assist handler
+    const handleOCRRegions = useCallback(async () => {
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        if (!src || isOCRScanning) return;
+
+        setIsOCRScanning(true);
+        setPreprocessError(null);
+        setAnalysisRegions([]); // Clear others
+
+        try {
+            const regions: any = await detectOCRRegions(src);
+            setAnalysisRegions(regions);
+            if (regions.length === 0) setPreprocessError('No text regions detected.');
+        } catch (err) {
+            setPreprocessError(err instanceof Error ? err.message : 'OCR scan failed');
+        } finally {
+            setIsOCRScanning(false);
+        }
+    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isOCRScanning]);
+
+    // Page Segmentation handler
+    const handlePageSegmentation = useCallback(async () => {
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        if (!src || isPageSegmenting) return;
+
+        setIsPageSegmenting(true);
+        setPreprocessError(null);
+        setAnalysisRegions([]);
+
+        try {
+            const regions: any = await segmentPage(src);
+            setAnalysisRegions(regions);
+            if (regions.length === 0) setPreprocessError('No segments detected.');
+        } catch (err) {
+            setPreprocessError(err instanceof Error ? err.message : 'Segmentation failed');
+        } finally {
+            setIsPageSegmenting(false);
+        }
+    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isPageSegmenting]);
+
+    // Clear regions when tab changes or image changes
+    useEffect(() => {
+        setAnalysisRegions([]);
+    }, [activeTab, imageStudio.initialImageSrc]);
+
 
     if (!imageStudio.isOpen || !imageStudio.initialImageSrc) return null;
 
@@ -367,6 +624,249 @@ export const ImageStudio: React.FC = () => {
                             <MoveVertical size={18} />
                             <span className="text-xs font-semibold">Flip Vertical</span>
                             {params.flipY && <Check size={14} className="ml-auto" />}
+                        </button>
+
+                        {/* Divider */}
+                        <div className="border-t border-white/5 pt-3">
+                            <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">AI Tools</span>
+                        </div>
+
+                        {/* Smart Crop */}
+                        <button
+                            onClick={handleSmartCrop}
+                            disabled={isSmartCropping || isDeskewing || isCleaning || isEnhancing}
+                            className={clsx(
+                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isSmartCropping
+                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
+                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                            )}
+                        >
+                            {isSmartCropping ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <Scan size={18} />
+                            )}
+                            <span className="text-xs font-semibold">
+                                {isSmartCropping ? 'Analyzing...' : 'Smart Crop'}
+                            </span>
+                        </button>
+
+                        {/* Auto Deskew */}
+                        <button
+                            onClick={handleDeskew}
+                            disabled={isDeskewing || isSmartCropping || isCleaning || isEnhancing}
+                            className={clsx(
+                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isDeskewing
+                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
+                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                            )}
+                        >
+                            {isDeskewing ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <AlignVerticalSpaceAround size={18} />
+                            )}
+                            <span className="text-xs font-semibold">
+                                {isDeskewing ? 'Correcting...' : 'Auto Deskew'}
+                            </span>
+                        </button>
+
+                        {preprocessError && (
+                            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                                <Wand2 size={14} className="text-amber-400 mt-0.5 shrink-0" />
+                                <span className="text-[11px] text-amber-300">{preprocessError}</span>
+                            </div>
+                        )}
+
+                        {/* Divider */}
+                        <div className="border-t border-white/5 pt-3">
+                            <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Enhance</span>
+                        </div>
+
+                        {/* Cleanup Scan */}
+                        <button
+                            onClick={handleCleanup}
+                            disabled={isCleaning || isEnhancing || isSmartCropping || isDeskewing}
+                            className={clsx(
+                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isCleaning
+                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
+                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                            )}
+                        >
+                            {isCleaning ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <Eraser size={18} />
+                            )}
+                            <span className="text-xs font-semibold">
+                                {isCleaning ? 'Cleaning...' : 'Cleanup Scan'}
+                            </span>
+                        </button>
+
+                        {/* Auto Enhance */}
+                        <button
+                            onClick={handleEnhance}
+                            disabled={isEnhancing || isCleaning || isSmartCropping || isDeskewing || isDetecting || isUpscaling}
+                            className={clsx(
+                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isEnhancing
+                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
+                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                            )}
+                        >
+                            {isEnhancing ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <Sparkles size={18} />
+                            )}
+                            <span className="text-xs font-semibold">
+                                {isEnhancing ? 'Enhancing...' : 'Auto Enhance'}
+                            </span>
+                        </button>
+
+                        {/* Divider */}
+                        <div className="border-t border-white/5 pt-3">
+                            <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Advanced ML</span>
+                        </div>
+
+                        {/* Detect Subject */}
+                        <button
+                            onClick={handleDetectSubject}
+                            disabled={isDetecting || isUpscaling || isCleaning || isEnhancing || isSmartCropping || isDeskewing}
+                            className={clsx(
+                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isDetecting
+                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
+                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                            )}
+                        >
+                            {isDetecting ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <Focus size={18} />
+                            )}
+                            <span className="text-xs font-semibold">
+                                {isDetecting ? 'Detecting...' : 'Detect Subject'}
+                            </span>
+                        </button>
+
+                        {/* AI Upscale */}
+                        <button
+                            onClick={handleUpscale}
+                            disabled={isUpscaling || isDetecting || isCleaning || isEnhancing || isSmartCropping || isDeskewing || isDocCleaning || isLayoutScanning}
+                            className={clsx(
+                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isUpscaling
+                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
+                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                            )}
+                        >
+                            {isUpscaling ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <ArrowUpCircle size={18} />
+                            )}
+                            <span className="text-xs font-semibold">
+                                {isUpscaling ? 'Upscaling...' : 'AI Upscale (2x)'}
+                            </span>
+                        </button>
+
+                        {/* Divider */}
+                        <div className="border-t border-white/5 pt-3">
+                            <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Document Intelligence</span>
+                        </div>
+
+                        {/* Auto Cleanup */}
+                        <button
+                            onClick={handleDocCleanup}
+                            disabled={isDocCleaning || isLayoutScanning || isUpscaling || isDetecting || isCleaning || isEnhancing}
+                            className={clsx(
+                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isDocCleaning
+                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
+                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                            )}
+                        >
+                            {isDocCleaning ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <FileText size={18} />
+                            )}
+                            <span className="text-xs font-semibold">
+                                {isDocCleaning ? 'Cleaning...' : 'Auto Doc Cleanup'}
+                            </span>
+                        </button>
+
+                        {/* Detect Layout */}
+                        <button
+                            onClick={handleLayoutDetection}
+                            disabled={isLayoutScanning || isDocCleaning || isUpscaling || isDetecting || isCleaning || isOCRScanning || isPageSegmenting}
+                            className={clsx(
+                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isLayoutScanning
+                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
+                                    : analysisRegions.length > 0 && analysisRegions[0].type !== 'ocr' && analysisRegions[0].type !== 'header'
+                                        ? "bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20"
+                                        : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                            )}
+                        >
+                            {isLayoutScanning ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <LayoutTemplate size={18} />
+                            )}
+                            <span className="text-xs font-semibold">
+                                {isLayoutScanning ? 'Scanning...' : 'Detect Layout'}
+                            </span>
+                        </button>
+
+                        {/* OCR Regions */}
+                        <button
+                            onClick={handleOCRRegions}
+                            disabled={isOCRScanning || isLayoutScanning || isDocCleaning || isUpscaling}
+                            className={clsx(
+                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isOCRScanning
+                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
+                                    : analysisRegions.length > 0 && analysisRegions[0].type === 'ocr'
+                                        ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/20"
+                                        : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                            )}
+                        >
+                            {isOCRScanning ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <TextSelect size={18} />
+                            )}
+                            <span className="text-xs font-semibold">
+                                {isOCRScanning ? 'Scanning...' : 'Detect OCR Regions'}
+                            </span>
+                        </button>
+
+                        {/* Segment Page */}
+                        <button
+                            onClick={handlePageSegmentation}
+                            disabled={isPageSegmenting || isLayoutScanning || isDocCleaning || isUpscaling}
+                            className={clsx(
+                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                isPageSegmenting
+                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
+                                    : analysisRegions.length > 0 && (analysisRegions[0].type === 'header' || analysisRegions[0].type === 'body')
+                                        ? "bg-purple-500/10 border-purple-500/20 text-purple-400 hover:bg-purple-500/20"
+                                        : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                            )}
+                        >
+                            {isPageSegmenting ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <Rows size={18} />
+                            )}
+                            <span className="text-xs font-semibold">
+                                {isPageSegmenting ? 'Segmenting...' : 'Segment Page'}
+                            </span>
                         </button>
                     </div>
                 );
@@ -622,6 +1122,7 @@ export const ImageStudio: React.FC = () => {
                                     src={params.backgroundMaskSrc || imageStudio.initialImageSrc}
                                     width={canvasDimensions.width}
                                     height={canvasDimensions.height}
+                                    analysisRegions={analysisRegions}
                                 />
                             </div>
                         )}

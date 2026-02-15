@@ -3,14 +3,24 @@ import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Path } fro
 import Konva from 'konva';
 import useImage from 'use-image';
 import { useImageStudioStore } from './useImageStudioStore';
+// Unified region type for all analysis tools
+export interface StudioRegion {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    type: 'text' | 'image' | 'header' | 'footer' | 'body' | 'ocr';
+    confidence?: number;
+}
 
 interface StudioCanvasProps {
     src: string;
     width: number;
     height: number;
+    analysisRegions?: StudioRegion[];
 }
 
-export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }) => {
+export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, analysisRegions }) => {
     const { params, activeTab, setParam, setDimensions } = useImageStudioStore();
     const imageRef = useRef<Konva.Image>(null);
     const transformerRef = useRef<Konva.Transformer>(null);
@@ -355,8 +365,71 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height }
                         />
                     </>
                 )}
+
+                {/* Analysis Regions Overlay */}
+                {analysisRegions && analysisRegions.length > 0 && (
+                    <Group
+                        x={displayDims.stageCenterX + displayDims.offsetX}
+                        y={displayDims.stageCenterY + displayDims.offsetY}
+                        offsetX={displayDims.width / 2}
+                        offsetY={displayDims.height / 2}
+                        rotation={params.rotation}
+                        scaleX={(params.flipX ? -1 : 1)}
+                        scaleY={(params.flipY ? -1 : 1)}
+                    >
+                        {analysisRegions.map((region, i) => {
+                            let strokeColor = '#ef4444'; // default red (text)
+                            let fillColor = 'rgba(239, 68, 68, 0.1)';
+
+                            switch (region.type) {
+                                case 'image':
+                                    strokeColor = '#3b82f6'; // blue
+                                    fillColor = 'rgba(59, 130, 246, 0.1)';
+                                    break;
+                                case 'ocr':
+                                    strokeColor = '#eab308'; // yellow
+                                    fillColor = 'rgba(234, 179, 8, 0.15)';
+                                    break;
+                                case 'header':
+                                case 'footer':
+                                    strokeColor = '#a855f7'; // purple
+                                    fillColor = 'rgba(168, 85, 247, 0.1)';
+                                    break;
+                                case 'body':
+                                    strokeColor = '#22c55e'; // green
+                                    fillColor = 'rgba(34, 197, 94, 0.1)';
+                                    break;
+                            }
+
+                            return (
+                                <React.Fragment key={i}>
+                                    {/* Region Box */}
+                                    <Rect
+                                        x={region.x * displayDims.scale}
+                                        y={region.y * displayDims.scale}
+                                        width={region.width * displayDims.scale}
+                                        height={region.height * displayDims.scale}
+                                        stroke={strokeColor}
+                                        strokeWidth={2 / displayDims.scale}
+                                        fill={fillColor}
+                                        listening={false}
+                                    />
+                                    {/* Label background */}
+                                    <Rect
+                                        x={region.x * displayDims.scale}
+                                        y={(region.y * displayDims.scale) - (14 / displayDims.scale)}
+                                        width={Math.min(region.width * displayDims.scale, 80 / displayDims.scale)} // Limit width of label
+                                        height={14 / displayDims.scale}
+                                        fill={strokeColor}
+                                        listening={false}
+                                    />
+                                </React.Fragment>
+                            );
+                        })}
+                    </Group>
+                )}
             </Layer>
-        </Stage>
+        </Stage >
     );
 };
 
