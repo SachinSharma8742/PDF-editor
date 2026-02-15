@@ -14,14 +14,25 @@ function runMLTask(type: 'detect-subject' | 'upscale', imageSrc: string): Promis
             const canvas = document.createElement('canvas');
             canvas.width = img.naturalWidth;
             canvas.height = img.naturalHeight;
-            const ctx = canvas.getContext('2d')!;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error('Failed to get 2D context'));
+                return;
+            }
             ctx.drawImage(img, 0, 0);
             const imageData = ctx.getImageData(0, 0, img.naturalWidth, img.naturalHeight);
 
             // Spawn worker
             const worker = new MLWorker();
 
+            // Timeout
+            const timeoutId = setTimeout(() => {
+                worker.terminate();
+                reject(new Error('ML task timed out'));
+            }, 30000);
+
             worker.onmessage = (e: MessageEvent) => {
+                clearTimeout(timeoutId);
                 const { type: msgType, action, data, error } = e.data;
                 if (action === type) {
                     if (msgType === 'result') {
@@ -35,6 +46,7 @@ function runMLTask(type: 'detect-subject' | 'upscale', imageSrc: string): Promis
             };
 
             worker.onerror = (err) => {
+                clearTimeout(timeoutId);
                 reject(err instanceof Error ? err : new Error('Worker error'));
                 worker.terminate();
             };

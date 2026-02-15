@@ -226,8 +226,9 @@ async function executeSubjectDetection(
     }
 
     // Run ONNX inference
+    let tensor: any = null;
     try {
-        const tensor = preprocessU2Net(imageData, width, height);
+        tensor = preprocessU2Net(imageData, width, height);
         const feeds = { [session.inputNames[0]]: tensor };
         const results = await session.run(feeds);
         const output = results[session.outputNames[0]].data as Float32Array;
@@ -240,10 +241,8 @@ async function executeSubjectDetection(
         // Simple threshold & bounds check
         for (let y = 0; y < size; y++) {
             for (let x = 0; x < size; x++) {
-                const val = output[y * size + x]; // raw logic
-                // Model output is logits or sigmoid? u2net is usually sigmoid probability or raw logits.
-                // Assuming typical unet output, positive is FG.
-                if (val > 0) { // Check this threshold
+                const val = output[y * size + x];
+                if (val > 0) {
                     found = true;
                     if (x < minX) minX = x;
                     if (x > maxX) maxX = x;
@@ -252,8 +251,6 @@ async function executeSubjectDetection(
                 }
             }
         }
-
-        tensor.dispose();
 
         if (!found) return null;
 
@@ -272,6 +269,8 @@ async function executeSubjectDetection(
     } catch (e) {
         console.warn('ONNX inference failed, falling back:', e);
         return heuristicSubjectDetection(imageData, width, height);
+    } finally {
+        if (tensor) tensor.dispose();
     }
 }
 

@@ -23,16 +23,23 @@ function runMLTask(type: 'detect-subject' | 'upscale', imageSrc: string): Promis
                 const { type: msgType, action, data, width, height, error } = e.data;
                 if (action === type) {
                     if (msgType === 'result') {
-                        // For upscale, we get back raw buffer. Convert to blob/url.
-                        const outCanvas = document.createElement('canvas');
-                        outCanvas.width = width;
-                        outCanvas.height = height;
-                        const outCtx = outCanvas.getContext('2d')!;
-                        const outImgData = new ImageData(new Uint8ClampedArray(data), width, height);
-                        outCtx.putImageData(outImgData, 0, 0);
-                        resolve(outCanvas.toDataURL('image/png'));
+                        try {
+                            if (!width || !height || !data) throw new Error('Invalid worker response');
 
-                        worker.terminate();
+                            const outCanvas = document.createElement('canvas');
+                            outCanvas.width = width;
+                            outCanvas.height = height;
+                            const outCtx = outCanvas.getContext('2d');
+                            if (!outCtx) throw new Error('Failed to get output context');
+
+                            const outImgData = new ImageData(new Uint8ClampedArray(data), width, height);
+                            outCtx.putImageData(outImgData, 0, 0);
+                            resolve(outCanvas.toDataURL('image/png'));
+                        } catch (err) {
+                            reject(err instanceof Error ? err : new Error('Upscale processing failed'));
+                        } finally {
+                            worker.terminate();
+                        }
                     } else if (msgType === 'error') {
                         reject(new Error(error));
                         worker.terminate();

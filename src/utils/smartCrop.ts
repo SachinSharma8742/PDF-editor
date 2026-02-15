@@ -133,7 +133,8 @@ export async function smartCrop(
     const analysisCanvas = document.createElement('canvas');
     analysisCanvas.width = analysisW;
     analysisCanvas.height = analysisH;
-    const analysisCtx = analysisCanvas.getContext('2d')!;
+    const analysisCtx = analysisCanvas.getContext('2d');
+    if (!analysisCtx) throw new Error('Failed to get analysis context');
     analysisCtx.drawImage(img, 0, 0, analysisW, analysisH);
     const analysisData = analysisCtx.getImageData(0, 0, analysisW, analysisH);
 
@@ -173,7 +174,8 @@ export async function smartCrop(
     const outputCanvas = document.createElement('canvas');
     outputCanvas.width = cropW;
     outputCanvas.height = cropH;
-    const outputCtx = outputCanvas.getContext('2d')!;
+    const outputCtx = outputCanvas.getContext('2d');
+    if (!outputCtx) throw new Error('Failed to get output context');
     outputCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
     // --- Step 6: Return new bitmap as data URL ---

@@ -350,9 +350,10 @@ export const ImageStudio: React.FC = () => {
         setAnalysisRegions([]);
 
         try {
-            const regions: any = await detectLayout(src);
-            // Map LayoutRegion to StudioRegion if needed, or rely on compatible structure
-            setAnalysisRegions(regions);
+            const regions = await detectLayout(src);
+            // Ensure result is StudioRegion[] - detectLayout returns LayoutRegion[] which is compatible
+            // but let's be explicit if needed. The types align.
+            setAnalysisRegions(regions as StudioRegion[]);
             if (regions.length === 0) {
                 setPreprocessError('No layout regions detected.');
             }
@@ -374,8 +375,8 @@ export const ImageStudio: React.FC = () => {
         setAnalysisRegions([]); // Clear others
 
         try {
-            const regions: any = await detectOCRRegions(src);
-            setAnalysisRegions(regions);
+            const regions = await detectOCRRegions(src);
+            setAnalysisRegions(regions as StudioRegion[]);
             if (regions.length === 0) setPreprocessError('No text regions detected.');
         } catch (err) {
             setPreprocessError(err instanceof Error ? err.message : 'OCR scan failed');
@@ -394,8 +395,8 @@ export const ImageStudio: React.FC = () => {
         setAnalysisRegions([]);
 
         try {
-            const regions: any = await segmentPage(src);
-            setAnalysisRegions(regions);
+            const regions = await segmentPage(src);
+            setAnalysisRegions(regions as StudioRegion[]);
             if (regions.length === 0) setPreprocessError('No segments detected.');
         } catch (err) {
             setPreprocessError(err instanceof Error ? err.message : 'Segmentation failed');

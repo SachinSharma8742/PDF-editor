@@ -123,9 +123,11 @@ function executeLayoutDetection(
     const dh = Math.round(height * scale);
 
     const canvas = new OffscreenCanvas(dw, dh);
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Failed to get analysis context');
     const srcCanvas = new OffscreenCanvas(width, height);
-    const srcCtx = srcCanvas.getContext('2d')!;
+    const srcCtx = srcCanvas.getContext('2d');
+    if (!srcCtx) throw new Error('Failed to get source context');
     srcCtx.putImageData(new ImageData(new Uint8ClampedArray(imageData) as any, width, height), 0, 0);
     ctx.drawImage(srcCanvas, 0, 0, dw, dh);
 
@@ -205,13 +207,22 @@ function executeLayoutDetection(
                     if (cy > maxY) maxY = cy;
                     area++;
 
-                    // 4-connectivity
-                    const neighbors = [curr - 1, curr + 1, curr - dw, curr + dw];
-                    for (const n of neighbors) {
-                        if (n >= 0 && n < dw * dh && dilated[n] === 255 && visited[n] === 0) {
-                            visited[n] = 1;
-                            stack.push(n);
-                        }
+                    // 4-connectivity with strict bounds
+                    if (cx > 0) {
+                        const n = curr - 1;
+                        if (dilated[n] === 255 && visited[n] === 0) { visited[n] = 1; stack.push(n); }
+                    }
+                    if (cx < dw - 1) {
+                        const n = curr + 1;
+                        if (dilated[n] === 255 && visited[n] === 0) { visited[n] = 1; stack.push(n); }
+                    }
+                    if (cy > 0) {
+                        const n = curr - dw;
+                        if (dilated[n] === 255 && visited[n] === 0) { visited[n] = 1; stack.push(n); }
+                    }
+                    if (cy < dh - 1) {
+                        const n = curr + dw;
+                        if (dilated[n] === 255 && visited[n] === 0) { visited[n] = 1; stack.push(n); }
                     }
                 }
 

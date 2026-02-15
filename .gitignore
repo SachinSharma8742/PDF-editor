@@ -31,22 +31,29 @@ dist-ssr
 # Testing
 coverage
 
-# Local artifacts
+# Local artifacts and logs
 build_*.txt
-verification_screenshots
-
-# OS
-Thumbs.db
-
-
-# Lint reports and verification outputs
+tsc_output*.txt
+verify_*.txt
 lint_*.txt
 lint_*.json
 *_lint.json
 final_lint.json
-verify_*.txt
-verify_*.json
+verification_screenshots/
+*.log
 
-# Build outputs and logs
-build_errors.txt
-build_log.txt
+# Build outputs
+dist/
+dist-ssr/
+build/
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

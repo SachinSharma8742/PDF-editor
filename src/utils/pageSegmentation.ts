@@ -21,7 +21,12 @@ export async function segmentPage(imageSrc: string): Promise<AnalysisRegion[]> {
             const canvas = document.createElement('canvas');
             canvas.width = img.width;
             canvas.height = img.height;
-            const ctx = canvas.getContext('2d')!;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                worker.terminate();
+                reject(new Error('Failed to get 2D context'));
+                return;
+            }
             ctx.drawImage(img, 0, 0);
             const imageData = ctx.getImageData(0, 0, img.width, img.height);
 
@@ -38,7 +43,13 @@ export async function segmentPage(imageSrc: string): Promise<AnalysisRegion[]> {
             worker.terminate();
         };
 
+        const timeoutId = setTimeout(() => {
+            worker.terminate();
+            reject(new Error('Worker timed out'));
+        }, 30000); // 30s timeout
+
         worker.onmessage = (e) => {
+            clearTimeout(timeoutId);
             const { type, action, regions, message } = e.data;
             if (type === 'result' && action === 'segment-page') {
                 resolve(regions);
@@ -46,7 +57,16 @@ export async function segmentPage(imageSrc: string): Promise<AnalysisRegion[]> {
             } else if (type === 'error') {
                 reject(new Error(message));
                 worker.terminate();
+            } else {
+                reject(new Error('Unexpected worker response'));
+                worker.terminate();
             }
+        };
+
+        worker.onerror = (e) => {
+            clearTimeout(timeoutId);
+            reject(new Error(`Worker error: ${e.message}`));
+            worker.terminate();
         };
 
         img.src = imageSrc;

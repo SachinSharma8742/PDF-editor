@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useMemo } from 'react';
-import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Path } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Path, Text as KonvaText } from 'react-konva';
 import Konva from 'konva';
 import useImage from 'use-image';
 import { useImageStudioStore } from './useImageStudioStore';
@@ -414,15 +414,29 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
                                         fill={fillColor}
                                         listening={false}
                                     />
-                                    {/* Label background */}
-                                    <Rect
+                                    <Group
                                         x={region.x * displayDims.scale}
-                                        y={(region.y * displayDims.scale) - (14 / displayDims.scale)}
-                                        width={Math.min(region.width * displayDims.scale, 80 / displayDims.scale)} // Limit width of label
-                                        height={14 / displayDims.scale}
-                                        fill={strokeColor}
+                                        y={(region.y * displayDims.scale) - (14)} // Fixed height 14px (no inverse scale)
                                         listening={false}
-                                    />
+                                    >
+                                        {/* Label Background */}
+                                        <Rect
+                                            width={Math.min(region.width * displayDims.scale, 80)}
+                                            height={14}
+                                            fill={strokeColor}
+                                        />
+                                        {/* Label Text */}
+                                        <KonvaText
+                                            text={region.type.toUpperCase()}
+                                            fontSize={10}
+                                            fill="#ffffff"
+                                            padding={2}
+                                            width={Math.min(region.width * displayDims.scale, 80)}
+                                            height={14}
+                                            align="center"
+                                            verticalAlign="middle"
+                                        />
+                                    </Group>
                                 </React.Fragment>
                             );
                         })}

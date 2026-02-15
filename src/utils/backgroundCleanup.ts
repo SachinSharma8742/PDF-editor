@@ -115,7 +115,8 @@ export async function backgroundCleanup(imageSrc: string): Promise<string> {
     const canvas = document.createElement('canvas');
     canvas.width = origW;
     canvas.height = origH;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Failed to get 2D context');
     ctx.drawImage(img, 0, 0);
     const imageData = ctx.getImageData(0, 0, origW, origH);
     const data = imageData.data;

@@ -22,7 +22,11 @@ export function detectLayout(imageSrc: string): Promise<LayoutRegion[]> {
             const canvas = document.createElement('canvas');
             canvas.width = img.naturalWidth;
             canvas.height = img.naturalHeight;
-            const ctx = canvas.getContext('2d')!;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error('Failed to get 2D context'));
+                return;
+            }
             ctx.drawImage(img, 0, 0);
             const imageData = ctx.getImageData(0, 0, img.naturalWidth, img.naturalHeight);
 

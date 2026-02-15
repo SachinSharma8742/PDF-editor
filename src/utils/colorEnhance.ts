@@ -98,7 +98,8 @@ export async function colorEnhance(imageSrc: string): Promise<string> {
     const canvas = document.createElement('canvas');
     canvas.width = origW;
     canvas.height = origH;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Failed to get 2D context');
     ctx.drawImage(img, 0, 0);
     const imageData = ctx.getImageData(0, 0, origW, origH);
     const data = imageData.data;
@@ -138,9 +139,11 @@ export async function colorEnhance(imageSrc: string): Promise<string> {
     // If mean is dark, brighten; if bright, darken slightly
     // Target midpoint around 128
     const targetMean = 128;
-    const gamma = meanLum > 5
-        ? Math.log(targetMean / 255) / Math.log(meanLum / 255)
-        : 1.0;
+    // Guard against log(0) or log(1) -> divide by zero
+    let gamma = 1.0;
+    if (meanLum > 1 && Math.abs(meanLum - 255) > 1) {
+        gamma = Math.log(targetMean / 255) / Math.log(meanLum / 255);
+    }
 
     // Clamp gamma to reasonable range to avoid extreme corrections
     const clampedGamma = Math.max(0.5, Math.min(2.0, gamma));

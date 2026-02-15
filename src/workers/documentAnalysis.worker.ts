@@ -26,9 +26,11 @@ function downscaleForAnalysis(
     const dh = Math.round(height * scale);
 
     const canvas = new OffscreenCanvas(dw, dh);
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Failed to get downscale context');
     const srcCanvas = new OffscreenCanvas(width, height);
-    const srcCtx = srcCanvas.getContext('2d')!;
+    const srcCtx = srcCanvas.getContext('2d');
+    if (!srcCtx) throw new Error('Failed to get source context');
     // Cast to satisfy type checker if needed, but standard ImageData works
     srcCtx.putImageData(new ImageData(new Uint8ClampedArray(imageData) as any, width, height), 0, 0);
     ctx.drawImage(srcCanvas, 0, 0, dw, dh);
@@ -128,9 +130,19 @@ function executeOCRRegionAssist(
                 if (cy < minY) minY = cy;
                 if (cy > maxY) maxY = cy;
 
-                const nbs = [curr - 1, curr + 1, curr - dw, curr + dw];
+                // 4-connectivity with boundary checks
+                const nbs = [];
+                // Left
+                if (cx > 0) nbs.push(curr - 1);
+                // Right
+                if (cx < dw - 1) nbs.push(curr + 1);
+                // Up
+                if (cy > 0) nbs.push(curr - dw);
+                // Down
+                if (cy < dh - 1) nbs.push(curr + dw);
+
                 for (const n of nbs) {
-                    if (n >= 0 && n < dw * dh && dilated[n] === 255 && visited[n] === 0) {
+                    if (dilated[n] === 255 && visited[n] === 0) {
                         visited[n] = 1;
                         stack.push(n);
                     }
