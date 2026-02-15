@@ -1,14 +1,15 @@
 import React, { useCallback } from 'react';
 import { useEditorStore } from '../../../../store/editorStore';
-import { ScanLine, Copy, Trash2, X, Loader2, Check } from 'lucide-react';
+import { ScanLine, Copy, Trash2, X, Loader2, Check, Languages, Undo2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { SinglePageCanvasHandle } from './SinglePageCanvas';
 
 interface OCRPanelProps {
     canvasRef?: React.RefObject<SinglePageCanvasHandle | null>;
+    textItems?: Record<string, unknown>[];
 }
 
-export const OCRPanel: React.FC<OCRPanelProps> = ({ canvasRef }) => {
+export const OCRPanel: React.FC<OCRPanelProps> = ({ canvasRef, textItems = [] }) => {
     const {
         ocrState,
         startOCR,
@@ -187,14 +188,14 @@ export const OCRPanel: React.FC<OCRPanelProps> = ({ canvasRef }) => {
             {/* Translation Section */}
             {result && (
                 <div className="border-t border-white/5 pt-3 mt-3">
-                    <TranslationSection textToTranslate={result} />
+                    <TranslationSection textToTranslate={result} textItems={textItems} />
                 </div>
             )}
 
             {/* Help text */}
             {!result && !isProcessing && (
                 <p className="text-[10px] text-zinc-500 text-center">
-                    Click "Scan Page" to recognize text from images or scanned content
+                    Click &quot;Scan Page&quot; to recognize text from images or scanned content
                 </p>
             )}
         </div>
@@ -202,12 +203,14 @@ export const OCRPanel: React.FC<OCRPanelProps> = ({ canvasRef }) => {
 };
 
 // Sub-component for Translation
-const TranslationSection: React.FC<{ textToTranslate: string }> = ({ textToTranslate }) => {
+const TranslationSection: React.FC<{ textToTranslate: string; textItems: Record<string, unknown>[] }> = ({ textToTranslate, textItems }) => {
     const {
         translationState,
         setTranslationLanguage,
         translateOCRText,
-        clearTranslation
+        clearTranslation,
+        translatePage,
+        undoPageTranslation
     } = useEditorStore();
 
     // Cleanup on unmount
@@ -231,10 +234,18 @@ const TranslationSection: React.FC<{ textToTranslate: string }> = ({ textToTrans
         { code: 'ru', name: 'Russian' },
         { code: 'hi', name: 'Hindi' },
         { code: 'ar', name: 'Arabic' },
+        { code: 'en', name: 'English' },
     ];
 
     const handleTranslate = () => {
         translateOCRText(textToTranslate, translationState.targetLanguage);
+    };
+
+    const handleTranslatePage = () => {
+        translatePage(
+            textItems as unknown as Parameters<typeof translatePage>[0],
+            translationState.targetLanguage
+        );
     };
 
     const copyTranslation = () => {
@@ -243,6 +254,9 @@ const TranslationSection: React.FC<{ textToTranslate: string }> = ({ textToTrans
         setCopiedTrans(true);
         setTimeout(() => setCopiedTrans(false), 2000);
     };
+
+    const hasPageTranslation = translationState.pageTranslationEditIds.length > 0;
+    const isPageTranslating = translationState.isTranslatingPage;
 
     return (
         <div className="space-y-3">
@@ -275,7 +289,7 @@ const TranslationSection: React.FC<{ textToTranslate: string }> = ({ textToTrans
                 </button>
             </div>
 
-            {translationState.error && (
+            {translationState.error && !isPageTranslating && (
                 <div className="text-red-400 text-[10px] bg-red-400/10 p-2 rounded border border-red-400/20">
                     {translationState.error}
                 </div>
@@ -298,6 +312,72 @@ const TranslationSection: React.FC<{ textToTranslate: string }> = ({ textToTrans
                     </div>
                 </div>
             )}
+
+            {/* Translate Page - at the bottom of Translation section */}
+            <div className="border-t border-white/5 pt-3 mt-1">
+                <div className="flex items-center gap-2 mb-2">
+                    <Languages size={12} className="text-purple-400" />
+                    <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Translate Page</span>
+                </div>
+                <button
+                    onClick={handleTranslatePage}
+                    disabled={isPageTranslating || textItems.length === 0}
+                    className={clsx(
+                        "w-full py-2.5 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-2",
+                        isPageTranslating
+                            ? "bg-zinc-700 text-zinc-400 cursor-wait"
+                            : textItems.length > 0
+                                ? "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-lg shadow-purple-900/30"
+                                : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+                    )}
+                >
+                    {isPageTranslating ? (
+                        <>
+                            <Loader2 size={14} className="animate-spin" />
+                            Translating...
+                        </>
+                    ) : (
+                        <>
+                            <Languages size={14} />
+                            Translate Entire Page
+                        </>
+                    )}
+                </button>
+
+                {/* Progress */}
+                {isPageTranslating && translationState.translatingPageProgress && (
+                    <div className="flex items-center gap-2 p-2 mt-2 bg-purple-500/10 border border-purple-500/15 rounded-lg">
+                        <Loader2 size={12} className="animate-spin text-purple-400 shrink-0" />
+                        <span className="text-[10px] text-purple-200">{translationState.translatingPageProgress}</span>
+                    </div>
+                )}
+
+                {/* Page Translation Error */}
+                {translationState.error && isPageTranslating && (
+                    <div className="mt-2 p-2 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-[10px]">
+                        {translationState.error}
+                    </div>
+                )}
+
+                {/* Success + Undo */}
+                {hasPageTranslation && !isPageTranslating && (
+                    <div className="mt-2 space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <div className="flex items-center gap-2 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                            <Check size={12} className="text-emerald-400 shrink-0" />
+                            <span className="text-[10px] text-emerald-200">
+                                {translationState.pageTranslationEditIds.length} text blocks translated
+                            </span>
+                        </div>
+                        <button
+                            onClick={undoPageTranslation}
+                            className="w-full py-2 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors flex items-center justify-center gap-2 border border-white/5"
+                        >
+                            <Undo2 size={12} />
+                            Undo Translation
+                        </button>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

@@ -22,14 +22,7 @@ export const PrintModal = () => {
 
     // Generate previews when modal opens
     useEffect(() => {
-        if (!printModal.isOpen) {
-            // Cleanup URLs when closed
-            if (blobUrls.length > 0) {
-                blobUrls.forEach(url => URL.revokeObjectURL(url));
-                setBlobUrls([]);
-            }
-            return;
-        }
+        if (!printModal.isOpen) return;
 
         const generatePreviews = async () => {
             setIsLoading(true);
@@ -71,7 +64,7 @@ export const PrintModal = () => {
                     // Cleanup if unmounted
                     urls.forEach(u => URL.revokeObjectURL(u));
                 }
-            } catch (e: any) {
+            } catch (e) {
                 console.error("Preview generation failed", e);
                 setError("Failed to generate print preview.");
             } finally {
@@ -80,6 +73,13 @@ export const PrintModal = () => {
         };
 
         generatePreviews();
+
+        return () => {
+            setBlobUrls(currentUrls => {
+                currentUrls.forEach(url => URL.revokeObjectURL(url));
+                return [];
+            });
+        };
 
     }, [printModal.isOpen, printModal.pageIds, pages, pdfDocument]);
 

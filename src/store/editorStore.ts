@@ -312,6 +312,10 @@ interface EditorStore {
     toggleTranslationView: (enabled: boolean) => void;
     translateOCRText: (text: string, targetLang: string) => Promise<void>;
     clearTranslation: () => void;
+
+    // Full-Page Translation
+    translatePage: (textItems: (PDFTextItem | NativeTextItem)[], targetLang: string) => Promise<void>;
+    undoPageTranslation: () => void;
 }
 
 export interface TranslationState {
@@ -320,6 +324,10 @@ export interface TranslationState {
     targetLanguage: string;
     isTranslating: boolean;
     error: string | null;
+    // Full-page translation
+    isTranslatingPage: boolean;
+    translatingPageProgress: string | null;
+    pageTranslationEditIds: string[]; // Track which edit IDs were added by page translation
 }
 
 const deepClone = <T>(obj: T): T => {
@@ -678,9 +686,12 @@ export const useEditorStore = create<EditorStore>()(
                 translationState: {
                     enabled: false,
                     translatedText: null,
-                    targetLanguage: 'es', // Default to something common like Spanish, or keep user pref
+                    targetLanguage: state.translationState.targetLanguage,
                     isTranslating: false,
-                    error: null
+                    error: null,
+                    isTranslatingPage: false,
+                    translatingPageProgress: null,
+                    pageTranslationEditIds: state.translationState.pageTranslationEditIds
                 }
             })),
 
@@ -690,7 +701,10 @@ export const useEditorStore = create<EditorStore>()(
                 translatedText: null,
                 targetLanguage: 'es',
                 isTranslating: false,
-                error: null
+                error: null,
+                isTranslatingPage: false,
+                translatingPageProgress: null,
+                pageTranslationEditIds: []
             },
             setTranslationLanguage: (lang) => set(state => ({
                 translationState: { ...state.translationState, targetLanguage: lang }
@@ -754,6 +768,159 @@ export const useEditorStore = create<EditorStore>()(
                     isTranslating: false
                 }
             })),
+
+            // Full-Page Translation: translate every text item and create overlays
+            translatePage: async (textItems, targetLang) => {
+                if (!textItems || textItems.length === 0) return;
+                const state = get();
+                const pageId = state.nativeTextStudio.pageId;
+                if (!pageId) return;
+
+                set(s => ({
+                    translationState: {
+                        ...s.translationState,
+                        isTranslatingPage: true,
+                        translatingPageProgress: 'Preparing text...',
+                        error: null,
+                        pageTranslationEditIds: []
+                    }
+                }));
+
+                try {
+                    // 1. Collect text strings and their metadata
+                    const itemsToTranslate: { item: PDFTextItem | NativeTextItem; id: string; text: string }[] = [];
+                    textItems.forEach((item: PDFTextItem | NativeTextItem, index: number) => {
+                        const text = 'str' in item ? item.str : (item as NativeTextItem).text || '';
+                        if (!text.trim()) return;
+                        const itemId = 'id' in item ? item.id : `pdf-text-${index}`;
+                        itemsToTranslate.push({ item, id: itemId, text });
+                    });
+
+                    if (itemsToTranslate.length === 0) {
+                        set(s => ({
+                            translationState: { ...s.translationState, isTranslatingPage: false, translatingPageProgress: null, error: 'No text found on this page.' }
+                        }));
+                        return;
+                    }
+
+                    set(s => ({
+                        translationState: { ...s.translationState, translatingPageProgress: `Translating ${itemsToTranslate.length} text blocks...` }
+                    }));
+
+                    // 2. Batch translate: join all strings with a unique separator, translate in chunks, then split back
+                    const SEPARATOR = '\n|||\n';
+                    const allText = itemsToTranslate.map(i => i.text).join(SEPARATOR);
+
+                    // Chunk the combined text (conservative 1000 char chunks)
+                    const chunkText = (str: string, size: number) => {
+                        const chunks: string[] = [];
+                        let i = 0;
+                        while (i < str.length) {
+                            // Try to break at a separator boundary to avoid splitting mid-item
+                            let end = Math.min(i + size, str.length);
+                            if (end < str.length) {
+                                const sepIdx = str.lastIndexOf(SEPARATOR, end);
+                                if (sepIdx > i) end = sepIdx + SEPARATOR.length;
+                            }
+                            chunks.push(str.substring(i, end));
+                            i = end;
+                        }
+                        return chunks;
+                    };
+
+                    const chunks = chunkText(allText, 1500);
+                    const translatedChunks: string[] = [];
+
+                    for (let ci = 0; ci < chunks.length; ci++) {
+                        set(s => ({
+                            translationState: { ...s.translationState, translatingPageProgress: `Translating chunk ${ci + 1}/${chunks.length}...` }
+                        }));
+
+                        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(chunks[ci])}`;
+                        const response = await fetch(url);
+                        if (!response.ok) throw new Error('Translation network error');
+                        const data = await response.json();
+                        const translated = data[0].map((seg: [string, string]) => seg[0]).join('');
+                        translatedChunks.push(translated);
+                    }
+
+                    const fullTranslated = translatedChunks.join('');
+
+                    // 3. Split back into individual translations
+                    // The separator may have been translated differently, so we use a flexible split
+                    const translatedParts = fullTranslated.split(/\s*\|\|\|\s*/);
+
+                    set(s => ({
+                        translationState: { ...s.translationState, translatingPageProgress: 'Creating overlays...' }
+                    }));
+
+                    // 4. Create NativeTextItem overlays for each item
+                    const newEdits: Record<string, NativeTextItem> = {};
+                    const editIds: string[] = [];
+
+                    itemsToTranslate.forEach((entry, idx) => {
+                        const translatedText = translatedParts[idx]?.trim() || entry.text;
+                        const origItem = entry.item as (PDFTextItem & NativeTextItem);
+                        const tx = origItem?.originalTransform || origItem?.transform || [1, 0, 0, 1, 0, 0];
+                        const fontScaleY = Math.abs(tx[3]) || 12;
+
+                        newEdits[entry.id] = {
+                            id: entry.id,
+                            text: translatedText,
+                            x: tx[4] || 0,
+                            y: tx[5] || 0,
+                            width: origItem?.width || 100,
+                            height: origItem?.height || fontScaleY,
+                            fontSize: fontScaleY,
+                            fontFamily: origItem?.fontName || 'sans-serif',
+                            color: origItem?.color || '#000000',
+                            originalRef: origItem,
+                            pageId
+                        };
+                        editIds.push(entry.id);
+                    });
+
+                    // 5. Apply all overlays at once
+                    set(s => ({
+                        pendingNativeTextEdits: { ...s.pendingNativeTextEdits, ...newEdits },
+                        translationState: {
+                            ...s.translationState,
+                            isTranslatingPage: false,
+                            translatingPageProgress: null,
+                            pageTranslationEditIds: editIds
+                        }
+                    }));
+
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'Page translation failed';
+                    set(s => ({
+                        translationState: {
+                            ...s.translationState,
+                            isTranslatingPage: false,
+                            translatingPageProgress: null,
+                            error: errorMessage
+                        }
+                    }));
+                }
+            },
+
+            // Undo full-page translation by removing only the overlays it created
+            undoPageTranslation: () => {
+                const state = get();
+                const editIds = state.translationState.pageTranslationEditIds;
+                if (editIds.length === 0) return;
+
+                const newEdits = { ...state.pendingNativeTextEdits };
+                editIds.forEach(id => { delete newEdits[id]; });
+
+                set({
+                    pendingNativeTextEdits: newEdits,
+                    translationState: {
+                        ...state.translationState,
+                        pageTranslationEditIds: []
+                    }
+                });
+            },
 
             imageStudio: {
                 isOpen: false,

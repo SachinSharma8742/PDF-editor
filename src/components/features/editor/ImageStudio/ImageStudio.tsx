@@ -1,12 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useEditorStore } from '../../../../store/editorStore';
 import { usePDFStore } from '../../../../store/pdfStore';
 import { StudioCanvas } from './StudioCanvas';
 import { useImageStudioStore } from './useImageStudioStore';
+import { removeBackground, refineMask } from '../../../../utils/backgroundRemoval';
 import {
     X, Image as ImageIcon, Check, RotateCcw,
     Sun, Contrast, Droplet, MoveHorizontal, MoveVertical,
-    Ghost, RotateCw, Wand2, Sliders, Crop, Maximize, Square, Sparkles, RefreshCw, Heart
+    Ghost, RotateCw, Wand2, Sliders, Crop, Maximize, Square, Sparkles, RefreshCw, Heart,
+    Eraser, Loader2
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -59,7 +61,7 @@ const FilterSlider = ({ label, icon, value, min, max, step, onChange }: any) => 
     );
 };
 
-type Tab = 'adjust' | 'transform' | 'crop' | 'effects';
+type Tab = 'adjust' | 'transform' | 'crop' | 'effects' | 'background';
 
 export const ImageStudio: React.FC = () => {
     const { imageStudio, closeImageStudio, updateObject, addObject, saveToHistory } = useEditorStore();
@@ -67,6 +69,11 @@ export const ImageStudio: React.FC = () => {
 
     const containerRef = useRef<HTMLDivElement>(null);
     const [canvasDimensions, setCanvasDimensions] = useState({ width: 0, height: 0 });
+
+    // Background removal state
+    const [bgRemovalProgress, setBgRemovalProgress] = useState<{ stage: string; percent: number } | null>(null);
+    const [bgRemovalError, setBgRemovalError] = useState<string | null>(null);
+    const [isBgProcessing, setIsBgProcessing] = useState(false);
 
     useEffect(() => {
         if (imageStudio.isOpen) {
@@ -92,6 +99,59 @@ export const ImageStudio: React.FC = () => {
         observer.observe(containerRef.current);
         return () => observer.disconnect();
     }, [imageStudio.isOpen]);
+
+    // Background removal handlers (must be before early return for hooks rules)
+    const handleRemoveBackground = useCallback(async () => {
+        if (!imageStudio.initialImageSrc || isBgProcessing) return;
+
+        setIsBgProcessing(true);
+        setBgRemovalError(null);
+        setBgRemovalProgress({ stage: 'Initializing...', percent: 0 });
+
+        try {
+            const { maskedSrc, rawMaskDataUrl } = await removeBackground(
+                imageStudio.initialImageSrc,
+                (stage, percent) => setBgRemovalProgress({ stage, percent })
+            );
+
+            setParam('backgroundMaskSrc', maskedSrc);
+            setParam('rawMaskDataUrl', rawMaskDataUrl);
+            setBgRemovalProgress({ stage: 'Complete!', percent: 100 });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Background removal failed';
+            setBgRemovalError(message);
+            // Restore original on error
+            setParam('backgroundMaskSrc', null);
+            setParam('rawMaskDataUrl', null);
+        } finally {
+            setIsBgProcessing(false);
+        }
+    }, [imageStudio.initialImageSrc, isBgProcessing, setParam]);
+
+    const handleMaskRefinement = useCallback(async (feather: number, threshold: number) => {
+        if (!imageStudio.initialImageSrc || !params.rawMaskDataUrl) return;
+
+        try {
+            const maskedSrc = await refineMask(
+                imageStudio.initialImageSrc,
+                params.rawMaskDataUrl,
+                feather,
+                threshold
+            );
+            setParam('backgroundMaskSrc', maskedSrc);
+        } catch (err) {
+            console.error('Mask refinement failed:', err);
+        }
+    }, [imageStudio.initialImageSrc, params.rawMaskDataUrl, setParam]);
+
+    const handleResetMask = useCallback(() => {
+        setParam('backgroundMaskSrc', null);
+        setParam('rawMaskDataUrl', null);
+        setParam('bgRemovalFeather', 0);
+        setParam('bgRemovalThreshold', 128);
+        setBgRemovalProgress(null);
+        setBgRemovalError(null);
+    }, [setParam]);
 
     if (!imageStudio.isOpen || !imageStudio.initialImageSrc) return null;
 
@@ -126,7 +186,8 @@ export const ImageStudio: React.FC = () => {
 
     const handleApply = () => {
         saveToHistory();
-        const src = imageStudio.initialImageSrc!;
+        // Use masked src if background removal was applied, otherwise original
+        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc!;
 
         if (!src) {
             console.error("No source image found for apply");
@@ -142,7 +203,7 @@ export const ImageStudio: React.FC = () => {
         const cropW = params.crop ? params.crop.width : originalW;
         const cropH = params.crop ? params.crop.height : originalH;
 
-        const newObjectData: any = {
+        const newObjectData: Record<string, unknown> = {
             src: src,
             originalSrc: src,
             brightness: params.brightness,
@@ -227,11 +288,12 @@ export const ImageStudio: React.FC = () => {
         }
     };
 
-    const tabs: { id: Tab; icon: any; label: string }[] = [
+    const tabs: { id: Tab; icon: React.ElementType; label: string }[] = [
         { id: 'adjust', icon: Sliders, label: 'Adjust' },
-        { id: 'transform', icon: RefreshCw, label: 'Transform' },
+        { id: 'transform', icon: RefreshCw, label: 'Flip' },
         { id: 'crop', icon: Crop, label: 'Crop' },
-        { id: 'effects', icon: Sparkles, label: 'Effects' },
+        { id: 'effects', icon: Sparkles, label: 'FX' },
+        { id: 'background', icon: Eraser, label: 'BG' },
     ];
 
     const renderTabContent = () => {
@@ -395,7 +457,7 @@ export const ImageStudio: React.FC = () => {
                         ].map(ef => (
                             <button
                                 key={ef.key}
-                                onClick={() => setParam(ef.key as any, params[ef.key as keyof typeof params] ? 0 : 1)}
+                                onClick={() => setParam(ef.key as keyof typeof params, params[ef.key as keyof typeof params] ? 0 : 1)}
                                 className={clsx(
                                     "flex flex-col items-center justify-center gap-1.5 py-4 rounded-xl border transition-all",
                                     params[ef.key as keyof typeof params]
@@ -407,6 +469,118 @@ export const ImageStudio: React.FC = () => {
                                 <span className="text-[9px] font-bold uppercase">{ef.label}</span>
                             </button>
                         ))}
+                    </div>
+                );
+            case 'background':
+                return (
+                    <div className="space-y-4">
+                        {/* Remove Background Button */}
+                        <button
+                            onClick={handleRemoveBackground}
+                            disabled={isBgProcessing}
+                            className={clsx(
+                                "w-full flex items-center justify-center gap-2.5 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all",
+                                isBgProcessing
+                                    ? "bg-zinc-800 text-zinc-500 cursor-wait"
+                                    : params.backgroundMaskSrc
+                                        ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                                        : "bg-gradient-to-r from-violet-600 to-blue-600 text-white shadow-lg shadow-violet-500/20 hover:shadow-violet-500/40 hover:from-violet-500 hover:to-blue-500"
+                            )}
+                        >
+                            {isBgProcessing ? (
+                                <>
+                                    <Loader2 size={16} className="animate-spin" />
+                                    Processing...
+                                </>
+                            ) : params.backgroundMaskSrc ? (
+                                <>
+                                    <Check size={16} />
+                                    Background Removed
+                                </>
+                            ) : (
+                                <>
+                                    <Eraser size={16} />
+                                    Remove Background
+                                </>
+                            )}
+                        </button>
+
+                        {/* Progress Bar */}
+                        {bgRemovalProgress && isBgProcessing && (
+                            <div className="space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-medium text-zinc-400">
+                                        {bgRemovalProgress.stage}
+                                    </span>
+                                    <span className="text-[10px] font-mono text-blue-400">
+                                        {bgRemovalProgress.percent}%
+                                    </span>
+                                </div>
+                                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-violet-600 to-blue-500 transition-all duration-300 ease-out rounded-full"
+                                        style={{ width: `${bgRemovalProgress.percent}%` }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Error Message */}
+                        {bgRemovalError && (
+                            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
+                                <X size={14} className="text-red-400 mt-0.5 shrink-0" />
+                                <span className="text-[11px] text-red-300">{bgRemovalError}</span>
+                            </div>
+                        )}
+
+                        {/* Refinement Sliders (only after mask exists) */}
+                        {params.rawMaskDataUrl && (
+                            <div className="space-y-4 pt-2 border-t border-white/5">
+                                <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Mask Refinement</span>
+
+                                <FilterSlider
+                                    label="Feather Edge"
+                                    icon={<Ghost size={12} />}
+                                    value={params.bgRemovalFeather}
+                                    min={0} max={20} step={1}
+                                    onChange={(v: number) => {
+                                        setParam('bgRemovalFeather', v);
+                                        handleMaskRefinement(v, params.bgRemovalThreshold);
+                                    }}
+                                />
+                                <FilterSlider
+                                    label="Edge Threshold"
+                                    icon={<Contrast size={12} />}
+                                    value={params.bgRemovalThreshold}
+                                    min={0} max={255} step={1}
+                                    onChange={(v: number) => {
+                                        setParam('bgRemovalThreshold', v);
+                                        handleMaskRefinement(params.bgRemovalFeather, v);
+                                    }}
+                                />
+                            </div>
+                        )}
+
+                        {/* Reset Mask */}
+                        {params.backgroundMaskSrc && (
+                            <button
+                                onClick={handleResetMask}
+                                className="w-full flex items-center justify-center gap-2 text-zinc-500 hover:text-white transition-colors text-[10px] font-bold uppercase tracking-wider py-2 hover:bg-white/5 rounded-lg border border-white/5"
+                            >
+                                <RotateCcw size={12} />
+                                Reset Mask
+                            </button>
+                        )}
+
+                        {/* Info */}
+                        {!params.backgroundMaskSrc && !isBgProcessing && (
+                            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-zinc-800/30 border border-white/5">
+                                <Sparkles size={14} className="text-zinc-500 mt-0.5 shrink-0" />
+                                <p className="text-[10px] text-zinc-500 leading-relaxed">
+                                    AI-powered background removal runs entirely in your browser. No data is sent to any server.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 );
             default:
@@ -445,7 +619,7 @@ export const ImageStudio: React.FC = () => {
                         {canvasDimensions.width > 0 && canvasDimensions.height > 0 && (
                             <div className="relative rounded-lg overflow-hidden shadow-2xl ring-1 ring-white/10">
                                 <StudioCanvas
-                                    src={imageStudio.initialImageSrc}
+                                    src={params.backgroundMaskSrc || imageStudio.initialImageSrc}
                                     width={canvasDimensions.width}
                                     height={canvasDimensions.height}
                                 />
@@ -463,7 +637,7 @@ export const ImageStudio: React.FC = () => {
                 </div>
 
                 {/* Right Side - Controls Panel */}
-                <div className="w-[320px] flex flex-col bg-[#18181b] border-l border-white/5">
+                <div className="w-[360px] flex flex-col bg-[#18181b] border-l border-white/5">
 
                     {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
@@ -486,28 +660,40 @@ export const ImageStudio: React.FC = () => {
                         </button>
                     </div>
 
-                    {/* Tabs */}
-                    <div className="flex p-1 gap-0.5 bg-[#0f0f10] border-b border-white/5">
-                        {tabs.map(tab => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id as any)}
-                                className={clsx(
-                                    "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg transition-all text-[10px] font-bold uppercase tracking-wide",
-                                    activeTab === tab.id
-                                        ? "bg-[#18181b] text-white shadow"
-                                        : "text-zinc-500 hover:text-zinc-300"
-                                )}
-                            >
-                                <tab.icon size={12} />
-                                <span className="hidden sm:inline">{tab.label}</span>
-                            </button>
-                        ))}
-                    </div>
+                    {/* Tabs + Content Area */}
+                    <div className="flex-1 flex min-h-0">
+                        {/* Vertical Tab Rail */}
+                        <div className="w-[58px] flex flex-col items-center py-2 gap-0.5 bg-[#111113] border-r border-white/5 shrink-0">
+                            {tabs.map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id as Tab)}
+                                    className={clsx(
+                                        "group relative w-[50px] flex flex-col items-center justify-center gap-1 py-2.5 rounded-lg transition-all duration-200",
+                                        activeTab === tab.id
+                                            ? "bg-white/[0.08] text-white"
+                                            : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.04]"
+                                    )}
+                                >
+                                    {/* Active indicator bar */}
+                                    {activeTab === tab.id && (
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-blue-500" />
+                                    )}
+                                    <tab.icon size={16} strokeWidth={activeTab === tab.id ? 2.5 : 2} />
+                                    <span className={clsx(
+                                        "text-[8px] font-bold uppercase tracking-wider leading-none",
+                                        activeTab === tab.id ? "text-blue-400" : "text-zinc-600"
+                                    )}>
+                                        {tab.label}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
 
-                    {/* Tab Content */}
-                    <div className="flex-1 overflow-y-auto p-4">
-                        {renderTabContent()}
+                        {/* Tab Content */}
+                        <div className="flex-1 overflow-y-auto p-4 min-w-0">
+                            {renderTabContent()}
+                        </div>
                     </div>
 
                     {/* Footer Actions */}

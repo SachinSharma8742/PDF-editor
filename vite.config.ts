@@ -5,6 +5,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    include: ['react-konva-utils']
+    include: ['react-konva-utils'],
+    exclude: ['onnxruntime-web']
+  },
+  worker: {
+    format: 'es'
   }
 })

@@ -22,6 +22,7 @@
     "konva": "^10.2.0",
     "lucide-react": "^0.563.0",
     "microdiff": "^1.5.0",
+    "onnxruntime-web": "^1.24.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.530",
     "raf-schd": "^4.0.3",

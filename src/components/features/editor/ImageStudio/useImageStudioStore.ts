@@ -19,6 +19,10 @@ export interface ImageEditParams {
     flipY: boolean;
     crop: { x: number; y: number; width: number; height: number } | null;
     cropShape?: 'rect' | 'circle' | 'heart';
+    backgroundMaskSrc: string | null;
+    rawMaskDataUrl: string | null;
+    bgRemovalFeather: number;
+    bgRemovalThreshold: number;
 }
 
 export const DEFAULT_EDIT_PARAMS: ImageEditParams = {
@@ -39,12 +43,16 @@ export const DEFAULT_EDIT_PARAMS: ImageEditParams = {
     flipX: false,
     flipY: false,
     crop: null,
-    cropShape: 'rect'
+    cropShape: 'rect',
+    backgroundMaskSrc: null,
+    rawMaskDataUrl: null,
+    bgRemovalFeather: 0,
+    bgRemovalThreshold: 128,
 };
 
 interface ImageStudioStore {
     params: ImageEditParams;
-    activeTab: 'adjust' | 'transform' | 'crop' | 'effects' | 'mask' | 'settings';
+    activeTab: 'adjust' | 'transform' | 'crop' | 'effects' | 'background';
     dimensions: { width: number; height: number };
 
     // Actions

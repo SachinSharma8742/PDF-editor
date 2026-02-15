@@ -6,25 +6,21 @@ import { SinglePageCanvas, type SinglePageCanvasHandle } from './SinglePageCanva
 import { NativeTextProperties } from '../NativeTextProperties';
 import { FindReplacePanel } from './FindReplacePanel';
 import { OCRPanel } from './OCRPanel';
-import * as pdfjsLib from 'pdfjs-dist';
 import clsx from 'clsx';
 
 export const NativeTextStudio: React.FC = () => {
     const {
         nativeTextStudio,
         closeNativeTextStudio,
-        pendingNativeTextEdits,
         findReplaceState,
         setFindReplaceOpen,
         clearFindReplace,
         ocrState,
         setOCROpen,
-        startOCR,
         commitNativeTextEdits,
-        updateNativeTextEdit
     } = useEditorStore();
     const { pdfDocument, pages } = usePDFStore();
-    const [textItems, setTextItems] = useState<any[]>([]);
+    const [textItems, setTextItems] = useState<Record<string, unknown>[]>([]);
     const canvasRef = useRef<SinglePageCanvasHandle>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -37,12 +33,12 @@ export const NativeTextStudio: React.FC = () => {
         const loadText = async () => {
             try {
                 const page = await pdfDocument.getPage(pageState.originalPageIndex!);
-                const textContent = await page.getTextContent();
+                const textContent = await (page as unknown as { getTextContent: () => Promise<{ items: Record<string, unknown>[] }> }).getTextContent();
                 const items = textContent.items
-                    .filter((item: any) => item.str?.trim())
-                    .map((item: any) => ({
+                    .filter((item: Record<string, unknown>) => (item.str as string)?.trim())
+                    .map((item: Record<string, unknown>) => ({
                         ...item,
-                        id: `text-${pageState.pageNumber}-${Number(item.transform[4]).toFixed(2)}-${Number(item.transform[5]).toFixed(2)}`,
+                        id: `text-${pageState.pageNumber}-${Number((item.transform as number[])[4]).toFixed(2)}-${Number((item.transform as number[])[5]).toFixed(2)}`,
                         text: item.str
                     }));
                 setTextItems(items);
@@ -86,16 +82,6 @@ export const NativeTextStudio: React.FC = () => {
         setOCROpen(!ocrState.isOpen);
         if (findReplaceState.isOpen) setFindReplaceOpen(false);
     };
-
-    const handleOCRScan = async () => {
-        const canvas = canvasRef.current?.getCanvas();
-        if (canvas) {
-            const dataUrl = canvas.toDataURL('image/png');
-            await startOCR(dataUrl);
-        }
-    };
-
-
 
     return (
         <div className="fixed inset-0 z-[100] flex flex-col bg-[#18181b] animate-in slide-in-from-bottom-5 duration-300">
@@ -183,7 +169,7 @@ export const NativeTextStudio: React.FC = () => {
                     <FindReplacePanel textItems={textItems} />
 
                     {/* OCR Panel */}
-                    <OCRPanel canvasRef={canvasRef} />
+                    <OCRPanel canvasRef={canvasRef} textItems={textItems} />
 
                     {/* Text Properties */}
                     <NativeTextProperties />
