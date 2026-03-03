@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { PageState, PDFObject, DrawingPath, ToolType } from './pdfStore';
 import { usePDFStore } from './pdfStore';
+import type { SnapGuide } from '../utils/alignmentAssist';
 
 // Re-using types from pdfStore where compatible, but might need specific ones later.
 // Ideally, we import them.
@@ -211,9 +212,17 @@ interface EditorStore {
     toggleSnapToGrid: () => void;
     setGridSize: (size: number) => void;
 
+    // Smart Snap (Alignment Assist)
+    smartSnap: boolean;
+    smartSnapTolerance: number;
+    activeSnapGuides: SnapGuide[];
+    toggleSmartSnap: () => void;
+    setSmartSnapTolerance: (t: number) => void;
+    setActiveSnapGuides: (guides: SnapGuide[]) => void;
+
     // UI Panel State
-    activePanelTab: 'properties' | 'layers' | 'export';
-    setActivePanelTab: (tab: 'properties' | 'layers' | 'export') => void;
+    activePanelTab: 'properties' | 'layers' | 'export' | 'summary' | 'ask';
+    setActivePanelTab: (tab: 'properties' | 'layers' | 'export' | 'summary' | 'ask') => void;
 
 
     // Clipboard
@@ -273,6 +282,10 @@ interface EditorStore {
 
     editingObjectId: string | null;
     setEditingObjectId: (id: string | null) => void;
+
+    // Crop State
+    isCropping: boolean;
+    setCropping: (isCropping: boolean) => void;
 
     // Find & Replace State
     findReplaceState: {
@@ -425,6 +438,14 @@ export const useEditorStore = create<EditorStore>()(
             gridSize: 20,
             toggleSnapToGrid: () => set(state => ({ snapToGrid: !state.snapToGrid })),
             setGridSize: (gridSize) => set({ gridSize }),
+
+            // Smart Snap (Alignment Assist)
+            smartSnap: false,
+            smartSnapTolerance: 5,
+            activeSnapGuides: [],
+            toggleSmartSnap: () => set(state => ({ smartSnap: !state.smartSnap })),
+            setSmartSnapTolerance: (t) => set({ smartSnapTolerance: t }),
+            setActiveSnapGuides: (guides) => set({ activeSnapGuides: guides }),
 
             activePanelTab: 'properties',
             setActivePanelTab: (tab) => set({ activePanelTab: tab }),
@@ -981,6 +1002,9 @@ export const useEditorStore = create<EditorStore>()(
 
             editingObjectId: null,
             setEditingObjectId: (id) => set({ editingObjectId: id }),
+
+            isCropping: false,
+            setCropping: (isCropping) => set({ isCropping }),
 
             initEditor: (page) => {
                 // Fetch the LATEST page state from the main store to ensure sync

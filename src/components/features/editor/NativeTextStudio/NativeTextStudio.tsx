@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useEditorStore } from '../../../../store/editorStore';
 import { usePDFStore } from '../../../../store/pdfStore';
-import { X, Save, Undo2, Redo2, Type, Search, ScanLine } from 'lucide-react';
+import { X, Save, Undo2, Redo2, Type, Search, ScanLine, Replace, Scale, ShieldAlert } from 'lucide-react';
 import { SinglePageCanvas, type SinglePageCanvasHandle } from './SinglePageCanvas';
 import { NativeTextProperties } from '../NativeTextProperties';
 import { FindReplacePanel } from './FindReplacePanel';
 import { OCRPanel } from './OCRPanel';
+import { AdvancedReplacePanel } from './AdvancedReplacePanel';
+import { ClausePanel } from './ClausePanel';
+import { RiskScorePanel } from './RiskScorePanel';
+import type { NativeTextItem } from '../../../../store/editorStore';
 import clsx from 'clsx';
 
 export const NativeTextStudio: React.FC = () => {
@@ -23,6 +27,9 @@ export const NativeTextStudio: React.FC = () => {
     const [textItems, setTextItems] = useState<Record<string, unknown>[]>([]);
     const canvasRef = useRef<SinglePageCanvasHandle>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [advancedReplaceOpen, setAdvancedReplaceOpen] = useState(false);
+    const [clausePanelOpen, setClausePanelOpen] = useState(false);
+    const [riskPanelOpen, setRiskPanelOpen] = useState(false);
 
     const pageState = pages.find(p => p.id === nativeTextStudio.pageId);
 
@@ -81,7 +88,34 @@ export const NativeTextStudio: React.FC = () => {
     const toggleOCR = () => {
         setOCROpen(!ocrState.isOpen);
         if (findReplaceState.isOpen) setFindReplaceOpen(false);
+        if (advancedReplaceOpen) setAdvancedReplaceOpen(false);
     };
+
+    const toggleAdvancedReplace = () => {
+        setAdvancedReplaceOpen(!advancedReplaceOpen);
+        if (findReplaceState.isOpen) setFindReplaceOpen(false);
+        if (ocrState.isOpen) setOCROpen(false);
+        if (clausePanelOpen) setClausePanelOpen(false);
+    };
+
+    const toggleClausePanel = () => {
+        setClausePanelOpen(!clausePanelOpen);
+        if (findReplaceState.isOpen) setFindReplaceOpen(false);
+        if (ocrState.isOpen) setOCROpen(false);
+        if (advancedReplaceOpen) setAdvancedReplaceOpen(false);
+        if (riskPanelOpen) setRiskPanelOpen(false);
+    };
+
+    const toggleRiskPanel = () => {
+        setRiskPanelOpen(!riskPanelOpen);
+        if (findReplaceState.isOpen) setFindReplaceOpen(false);
+        if (ocrState.isOpen) setOCROpen(false);
+        if (advancedReplaceOpen) setAdvancedReplaceOpen(false);
+        if (clausePanelOpen) setClausePanelOpen(false);
+    };
+
+    // Cast textItems to NativeTextItem[] for the AdvancedReplacePanel
+    const nativeTextItemsCasted = textItems as unknown as NativeTextItem[];
 
     return (
         <div className="fixed inset-0 z-[100] flex flex-col bg-[#18181b] animate-in slide-in-from-bottom-5 duration-300">
@@ -132,6 +166,45 @@ export const NativeTextStudio: React.FC = () => {
                     >
                         <ScanLine size={18} />
                     </button>
+                    {/* Advanced Replace Toggle */}
+                    <button
+                        onClick={toggleAdvancedReplace}
+                        className={clsx(
+                            "p-2 rounded-lg transition-colors flex items-center gap-1.5",
+                            advancedReplaceOpen
+                                ? "bg-purple-600 text-white"
+                                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                        )}
+                        title="Advanced Replace"
+                    >
+                        <Replace size={18} />
+                    </button>
+                    {/* Clause Detection Toggle */}
+                    <button
+                        onClick={toggleClausePanel}
+                        className={clsx(
+                            "p-2 rounded-lg transition-colors flex items-center gap-1.5",
+                            clausePanelOpen
+                                ? "bg-violet-600 text-white"
+                                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                        )}
+                        title="Analyze Clauses"
+                    >
+                        <Scale size={18} />
+                    </button>
+                    {/* Risk Analysis Toggle */}
+                    <button
+                        onClick={toggleRiskPanel}
+                        className={clsx(
+                            "p-2 rounded-lg transition-colors flex items-center gap-1.5",
+                            riskPanelOpen
+                                ? "bg-orange-600 text-white"
+                                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                        )}
+                        title="Risk Analysis"
+                    >
+                        <ShieldAlert size={18} />
+                    </button>
                     <div className="w-[1px] h-6 bg-white/10 mx-1 hidden md:block" />
                     <button className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors hidden md:block">
                         <Undo2 size={18} />
@@ -168,8 +241,17 @@ export const NativeTextStudio: React.FC = () => {
                     {/* Find & Replace Panel */}
                     <FindReplacePanel textItems={textItems} />
 
+                    {/* Advanced Replace Panel */}
+                    <AdvancedReplacePanel textItems={nativeTextItemsCasted} isOpen={advancedReplaceOpen} />
+
                     {/* OCR Panel */}
                     <OCRPanel canvasRef={canvasRef} textItems={textItems} />
+
+                    {/* Clause Detection Panel */}
+                    {clausePanelOpen && <ClausePanel textItems={nativeTextItemsCasted} />}
+
+                    {/* Risk Score Panel */}
+                    {riskPanelOpen && <RiskScorePanel textItems={nativeTextItemsCasted} />}
 
                     {/* Text Properties */}
                     <NativeTextProperties />

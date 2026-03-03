@@ -22,11 +22,13 @@ import {
     Moon,
     FlipHorizontal,
     FlipVertical,
-    Pencil
+    Pencil,
+    Clock
 } from 'lucide-react';
 import { loadPDF } from '../../utils/pdfOps';
 import { saveDocument, saveDocumentFlattened, exportPageAsImage } from '../../utils/exportUtils';
 import { useEditorStore } from '../../store/editorStore';
+import { TimelineModal } from '../features/editor/TimelineModal';
 import clsx from 'clsx';
 
 
@@ -39,6 +41,7 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
     const [exportFormat, setExportFormat] = useState<'standard' | 'flattened' | 'png' | 'print'>('standard');
     const [exportQuality, setExportQuality] = useState(0.8);
     const [isExporting, setIsExporting] = useState(false);
+    const [isTimelineOpen, setIsTimelineOpen] = useState(false);
 
     // Handle click outside to close export menu
     React.useEffect(() => {
@@ -201,6 +204,14 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
 
                     <button onClick={redo} disabled={!canRedo()} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-200 disabled:opacity-30 transition-all active:scale-95">
                         <Redo2 size={18} strokeWidth={2.5} />
+                    </button>
+
+                    <button
+                        onClick={() => setIsTimelineOpen(true)}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-200 transition-all active:scale-95"
+                        title="Version Timeline"
+                    >
+                        <Clock size={18} strokeWidth={2} />
                     </button>
 
                 </div>
@@ -395,6 +406,9 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
 
             <input ref={fileInputRef} type="file" accept="application/pdf" onChange={handleFileUpload} hidden />
             <input ref={imageInputRef} type="file" accept="image/*" onChange={insertImageCorrectly} hidden />
+
+            {/* Version Timeline Modal */}
+            <TimelineModal isOpen={isTimelineOpen} onClose={() => setIsTimelineOpen(false)} />
         </div>
     );
 };

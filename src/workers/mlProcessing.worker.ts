@@ -16,12 +16,16 @@ const ANALYSIS_MAX_SIZE = 512;
 const U2NET_INPUT_SIZE = 320;
 
 // Shared sessions
-let detectionSession: any | null = null;
-let upscaleSession: any | null = null;
+let detectionSession: ort.InferenceSession | null = null;
+let upscaleSession: ort.InferenceSession | null = null;
+
+// Bypass TS check for Worker context vs Window context
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ctx: any = self;
 
 // ─── Helpers: ONNX ─────────────────────────────────────────────
 
-async function loadDetectionModel(): Promise<any | null> {
+async function loadDetectionModel(): Promise<ort.InferenceSession | null> {
     if (detectionSession) return detectionSession;
     try {
         detectionSession = await ort.InferenceSession.create(U2NET_MODEL_URL, {
@@ -35,25 +39,25 @@ async function loadDetectionModel(): Promise<any | null> {
     }
 }
 
-async function loadUpscaleModel(): Promise<any | null> {
+async function loadUpscaleModel(): Promise<ort.InferenceSession | null> {
     if (upscaleSession) return upscaleSession;
     try {
         upscaleSession = await ort.InferenceSession.create(SUPER_RES_MODEL_URL, {
             executionProviders: ['wasm']
         });
         return upscaleSession;
-    } catch (e) {
+    } catch {
         // Expected if model missing
         return null;
     }
 }
 
-function preprocessU2Net(imageData: Uint8ClampedArray, w: number, h: number): any {
+function preprocessU2Net(imageData: Uint8ClampedArray, w: number, h: number): ort.Tensor {
     const size = U2NET_INPUT_SIZE;
     const float32Data = new Float32Array(1 * 3 * size * size);
 
     const canvas = new OffscreenCanvas(size, size);
-    const ctx = canvas.getContext('2d')!;
+    const context = canvas.getContext('2d')!;
 
     // Create temp canvas for resizing
     const srcCanvas = new OffscreenCanvas(w, h);
@@ -61,8 +65,8 @@ function preprocessU2Net(imageData: Uint8ClampedArray, w: number, h: number): an
     const imgData = new ImageData(new Uint8ClampedArray(imageData), w, h);
     srcCtx.putImageData(imgData, 0, 0);
 
-    ctx.drawImage(srcCanvas, 0, 0, size, size);
-    const resized = ctx.getImageData(0, 0, size, size).data;
+    context.drawImage(srcCanvas, 0, 0, size, size);
+    const resized = context.getImageData(0, 0, size, size).data;
 
     // Normalize [0,1] & struct CHW (mean/std specific to u2net validation)
     const mean = [0.485, 0.456, 0.406];
@@ -226,7 +230,7 @@ async function executeSubjectDetection(
     }
 
     // Run ONNX inference
-    let tensor: any = null;
+    let tensor: ort.Tensor | null = null;
     try {
         tensor = preprocessU2Net(imageData, width, height);
         const feeds = { [session.inputNames[0]]: tensor };
@@ -297,31 +301,31 @@ self.onmessage = async (e: MessageEvent) => {
     try {
         switch (type) {
             case 'detect-subject': {
-                postMessage({ type: 'progress', stage: 'Analyzing subject...', percent: 20 });
+                ctx.postMessage({ type: 'progress', stage: 'Analyzing subject...', percent: 20 });
                 const pixels = new Uint8ClampedArray(imageData);
                 const bounds = await executeSubjectDetection(pixels, width, height);
-                postMessage({ type: 'progress', stage: 'Complete', percent: 100 });
-                postMessage({ type: 'result', action: 'detect-subject', data: bounds });
+                ctx.postMessage({ type: 'progress', stage: 'Complete', percent: 100 });
+                ctx.postMessage({ type: 'result', action: 'detect-subject', data: bounds });
                 break;
             }
 
             case 'upscale': {
-                postMessage({ type: 'progress', stage: 'Upscaling...', percent: 20 });
+                ctx.postMessage({ type: 'progress', stage: 'Upscaling...', percent: 20 });
                 const pixels = new Uint8ClampedArray(imageData);
                 const result = await executeUpscale(pixels, width, height);
-                postMessage({ type: 'progress', stage: 'Complete', percent: 100 });
-                postMessage(
+                ctx.postMessage({ type: 'progress', stage: 'Complete', percent: 100 });
+                ctx.postMessage(
                     { type: 'result', action: 'upscale', data: result.data, width: result.width, height: result.height },
-                    { transfer: [result.data] }
+                    [result.data]
                 );
                 break;
             }
 
             default:
-                postMessage({ type: 'error', message: `Unknown message type: ${type}` });
+                ctx.postMessage({ type: 'error', message: `Unknown message type: ${type}` });
         }
     } catch (err) {
         const message = err instanceof Error ? err.message : 'ML Worker error';
-        postMessage({ type: 'error', message });
+        ctx.postMessage({ type: 'error', message });
     }
 };

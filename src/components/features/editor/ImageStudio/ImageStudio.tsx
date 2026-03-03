@@ -1,31 +1,56 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useEditorStore } from '../../../../store/editorStore';
-import { usePDFStore } from '../../../../store/pdfStore';
+import { type PDFObject } from '../../../../store/pdfStore';
 import { StudioCanvas } from './StudioCanvas';
-import { useImageStudioStore, type ImageEditParams } from './useImageStudioStore';
-import { removeBackground, refineMask } from '../../../../utils/backgroundRemoval';
+import { useImageStudioStore, type ImageEditParams, DEFAULT_EDIT_PARAMS } from './useImageStudioStore';
 import { smartCrop } from '../../../../utils/smartCrop';
-import { deskew } from '../../../../utils/deskew';
-import { backgroundCleanup } from '../../../../utils/backgroundCleanup';
-import { colorEnhance } from '../../../../utils/colorEnhance';
-import { detectSubject } from '../../../../utils/subjectDetection';
-import { upscaleImage } from '../../../../utils/imageUpscale';
-import { autoCleanupDocument } from '../../../../utils/documentCleanup';
-import { detectLayout } from '../../../../utils/layoutDetection';
-import { detectOCRRegions } from '../../../../utils/ocrRegionAssist';
-import { segmentPage } from '../../../../utils/pageSegmentation';
-import type { StudioRegion } from './StudioCanvas';
+import { buildPipeline } from '../../../../imagePipeline/buildPipeline';
+import { IMAGE_TOOLS, type ImageTool, CropIcon } from '../../../../config/imageTools';
 import {
-    X, Image as ImageIcon, Check, RotateCcw,
-    Sun, Contrast, Droplet, MoveHorizontal, MoveVertical,
-    Ghost, RotateCw, Wand2, Sliders, Crop, Maximize, Square, Sparkles, RefreshCw, Heart,
-    Eraser, Loader2, Scan, AlignVerticalSpaceAround, Focus, ArrowUpCircle, FileText, LayoutTemplate,
-    TextSelect, Rows // Icons for new tools
+    RotateCw, Wand2, Sliders, RefreshCw,
+    Loader2, Scan, Hammer,
+    Check, X, Image as ImageIcon, RotateCcw, Sparkles,
+    Square, Circle, Heart
 } from 'lucide-react';
 import clsx from 'clsx';
 
+
 // Premium Filter Slider Component
-const FilterSlider = ({ label, icon, value, min, max, step, onChange }: any) => {
+interface FilterSliderProps {
+    label: string;
+    icon: React.ReactNode;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    onChange: (value: number) => void;
+    onPointerDown?: () => void;
+    disabled?: boolean;
+}
+
+interface ShapeButtonProps {
+    icon: React.ElementType;
+    label: string;
+    active: boolean;
+    onClick: () => void;
+}
+
+const ShapeButton: React.FC<ShapeButtonProps> = ({ icon: Icon, label, active, onClick }) => (
+    <button
+        onClick={onClick}
+        className={clsx(
+            "flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-xl transition-all border group",
+            active
+                ? "bg-blue-600/20 border-blue-500/50 text-blue-400"
+                : "bg-zinc-800/30 border-white/5 text-zinc-500 hover:bg-zinc-800 hover:text-white hover:border-white/10"
+        )}
+    >
+        <Icon size={16} className={clsx("transition-transform", active ? "scale-110" : "group-hover:scale-110")} />
+        <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
+    </button>
+);
+
+const FilterSlider = ({ label, icon, value, min, max, step, onChange, onPointerDown, disabled }: FilterSliderProps) => {
     const percentage = ((value - min) / (max - min)) * 100;
 
     return (
@@ -55,6 +80,8 @@ const FilterSlider = ({ label, icon, value, min, max, step, onChange }: any) => 
                     min={min} max={max} step={step}
                     value={value}
                     onChange={(e) => onChange(Number(e.target.value))}
+                    onPointerDown={onPointerDown}
+                    disabled={disabled}
                     className="w-full h-5 appearance-none cursor-pointer bg-transparent relative z-10
                                [&::-webkit-slider-thumb]:appearance-none 
                                [&::-webkit-slider-thumb]:w-3.5 
@@ -73,7 +100,17 @@ const FilterSlider = ({ label, icon, value, min, max, step, onChange }: any) => 
     );
 };
 
-type Tab = 'adjust' | 'transform' | 'crop' | 'effects' | 'background';
+type Tab = 'transform' | 'adjust' | 'effects' | 'crop' | 'tools';
+
+// Aspect ratio presets
+const ASPECT_RATIOS = [
+    { label: 'Free', value: null },
+    { label: '1:1', value: 1 },
+    { label: '4:3', value: 4 / 3 },
+    { label: '3:2', value: 3 / 2 },
+    { label: '16:9', value: 16 / 9 },
+    { label: '9:16', value: 9 / 16 },
+] as const;
 
 export const ImageStudio: React.FC = () => {
     const { imageStudio, closeImageStudio, updateObject, addObject, saveToHistory } = useEditorStore();
@@ -84,24 +121,18 @@ export const ImageStudio: React.FC = () => {
 
     // Background removal state
     const [bgRemovalProgress, setBgRemovalProgress] = useState<{ stage: string; percent: number } | null>(null);
-    const [bgRemovalError, setBgRemovalError] = useState<string | null>(null);
+    const [, setBgRemovalError] = useState<string | null>(null);
     const [isBgProcessing, setIsBgProcessing] = useState(false);
 
     // Image preprocessing state
     const [isSmartCropping, setIsSmartCropping] = useState(false);
     const [isDeskewing, setIsDeskewing] = useState(false);
-    const [isCleaning, setIsCleaning] = useState(false);
-    const [isEnhancing, setIsEnhancing] = useState(false);
-    const [isDetecting, setIsDetecting] = useState(false);
     const [isUpscaling, setIsUpscaling] = useState(false);
-    const [isDocCleaning, setIsDocCleaning] = useState(false);
-    const [isLayoutScanning, setIsLayoutScanning] = useState(false);
-    const [isOCRScanning, setIsOCRScanning] = useState(false);
-    const [isPageSegmenting, setIsPageSegmenting] = useState(false);
 
-    // Unified analysis state
-    const [analysisRegions, setAnalysisRegions] = useState<StudioRegion[]>([]);
-    const [preprocessError, setPreprocessError] = useState<string | null>(null);
+    const [, setPreprocessError] = useState<string | null>(null);
+
+    // Crop aspect ratio state
+    const [selectedAspectRatio, setSelectedAspectRatio] = useState<number | null>(null);
 
     useEffect(() => {
         if (imageStudio.isOpen) {
@@ -110,8 +141,26 @@ export const ImageStudio: React.FC = () => {
             } else {
                 resetParams();
             }
+
+            // Phase 4: Initialize Source Bitmap for Pipeline
+            if (imageStudio.initialImageSrc) {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = imageStudio.initialImageSrc;
+                img.onload = async () => {
+                    try {
+                        const bitmap = await createImageBitmap(img);
+                        useImageStudioStore.getState().setSourceBitmap(bitmap);
+                        useImageStudioStore.getState().setDimensions(img.naturalWidth, img.naturalHeight);
+                    } catch (e) {
+                        console.error("Failed to create bitmap", e);
+                    }
+                };
+            }
+        } else {
+            useImageStudioStore.getState().setSourceBitmap(undefined as unknown as ImageBitmap);
         }
-    }, [imageStudio.isOpen, imageStudio.initialEditParams, setAllParams, resetParams]);
+    }, [imageStudio.isOpen, imageStudio.initialImageSrc, imageStudio.initialEditParams, setAllParams, resetParams]);
 
     useEffect(() => {
         if (!imageStudio.isOpen || !containerRef.current) return;
@@ -128,73 +177,51 @@ export const ImageStudio: React.FC = () => {
         return () => observer.disconnect();
     }, [imageStudio.isOpen]);
 
-    // Background removal handlers (must be before early return for hooks rules)
+    // Background removal handler
     const handleRemoveBackground = useCallback(async () => {
-        if (!imageStudio.initialImageSrc || isBgProcessing) return;
+        const { operations, setOperation } = useImageStudioStore.getState();
+        if (operations.cleanup.backgroundRemoved || isBgProcessing) return;
 
         setIsBgProcessing(true);
         setBgRemovalError(null);
         setBgRemovalProgress({ stage: 'Initializing...', percent: 0 });
 
         try {
-            const { maskedSrc, rawMaskDataUrl } = await removeBackground(
-                imageStudio.initialImageSrc,
-                (stage, percent) => setBgRemovalProgress({ stage, percent })
-            );
+            setOperation('cleanup', { backgroundRemoved: true });
+            setBgRemovalProgress({ stage: 'Processing...', percent: 50 });
 
-            setParam('backgroundMaskSrc', maskedSrc);
-            setParam('rawMaskDataUrl', rawMaskDataUrl);
-            setBgRemovalProgress({ stage: 'Complete!', percent: 100 });
+            setTimeout(() => {
+                setBgRemovalProgress({ stage: 'Complete!', percent: 100 });
+                setIsBgProcessing(false);
+            }, 1000);
+
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Background removal failed';
             setBgRemovalError(message);
-            // Restore original on error
-            setParam('backgroundMaskSrc', null);
-            setParam('rawMaskDataUrl', null);
-        } finally {
+            setOperation('cleanup', { backgroundRemoved: false });
             setIsBgProcessing(false);
         }
-    }, [imageStudio.initialImageSrc, isBgProcessing, setParam]);
+    }, [isBgProcessing]);
 
-    const handleMaskRefinement = useCallback(async (feather: number, threshold: number) => {
-        if (!imageStudio.initialImageSrc || !params.rawMaskDataUrl) return;
-
-        try {
-            const maskedSrc = await refineMask(
-                imageStudio.initialImageSrc,
-                params.rawMaskDataUrl,
-                feather,
-                threshold
-            );
-            setParam('backgroundMaskSrc', maskedSrc);
-        } catch (err) {
-            console.error('Mask refinement failed:', err);
-        }
-    }, [imageStudio.initialImageSrc, params.rawMaskDataUrl, setParam]);
-
-    const handleResetMask = useCallback(() => {
-        setParam('backgroundMaskSrc', null);
-        setParam('rawMaskDataUrl', null);
-        setParam('bgRemovalFeather', 0);
-        setParam('bgRemovalThreshold', 128);
-        setBgRemovalProgress(null);
-        setBgRemovalError(null);
-    }, [setParam]);
-
-    // Smart Crop handler
+    // Smart Crop handler — suggestion only (non-destructive)
     const handleSmartCrop = useCallback(async () => {
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
+        const src = imageStudio.initialImageSrc;
         if (!src || isSmartCropping) return;
 
         setIsSmartCropping(true);
         setPreprocessError(null);
 
         try {
-            const croppedSrc = await smartCrop(src);
-            if (croppedSrc === src) {
+            const cropRect = await smartCrop(src);
+            if (!cropRect) {
                 setPreprocessError('No margins detected — image unchanged.');
             } else {
-                setParam('backgroundMaskSrc', croppedSrc);
+                // Non-destructive: set crop bounds as suggestion
+                const { setOperation } = useImageStudioStore.getState();
+                setOperation('transform', { crop: cropRect });
+                setParam('crop', cropRect);
+                // Stay in crop tab
+                setActiveTab('crop');
             }
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Smart crop failed';
@@ -202,891 +229,575 @@ export const ImageStudio: React.FC = () => {
         } finally {
             setIsSmartCropping(false);
         }
-    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isSmartCropping, setParam]);
+    }, [imageStudio.initialImageSrc, isSmartCropping, setParam, setActiveTab]);
 
     // Auto Deskew handler
     const handleDeskew = useCallback(async () => {
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
-        if (!src || isDeskewing) return;
+        const { operations, setOperation } = useImageStudioStore.getState();
+        if (operations.cleanup.deskew || isDeskewing) return;
 
         setIsDeskewing(true);
-        setPreprocessError(null);
 
         try {
-            const correctedSrc = await deskew(src);
-            if (correctedSrc === src) {
-                setPreprocessError('No skew detected — image unchanged.');
-            } else {
-                setParam('backgroundMaskSrc', correctedSrc);
-            }
+            setOperation('cleanup', { deskew: true });
+            setTimeout(() => setIsDeskewing(false), 500);
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Deskew failed';
-            setPreprocessError(message);
-        } finally {
+            console.error(message);
+            setOperation('cleanup', { deskew: false });
             setIsDeskewing(false);
         }
-    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isDeskewing, setParam]);
+    }, [isDeskewing]);
 
-    // Background Cleanup handler
-    const handleCleanup = useCallback(async () => {
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
-        if (!src || isCleaning) return;
-
-        setIsCleaning(true);
-        setPreprocessError(null);
-
-        try {
-            const cleanedSrc = await backgroundCleanup(src);
-            setParam('backgroundMaskSrc', cleanedSrc);
-        } catch (err) {
-            const message = err instanceof Error ? err.message : 'Background cleanup failed';
-            setPreprocessError(message);
-        } finally {
-            setIsCleaning(false);
-        }
-    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isCleaning, setParam]);
-
-    // Color Enhancement handler
-    const handleEnhance = useCallback(async () => {
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
-        if (!src || isEnhancing) return;
-
-        setIsEnhancing(true);
-        setPreprocessError(null);
-
-        try {
-            const enhancedSrc = await colorEnhance(src);
-            setParam('backgroundMaskSrc', enhancedSrc);
-        } catch (err) {
-            const message = err instanceof Error ? err.message : 'Color enhancement failed';
-            setPreprocessError(message);
-        } finally {
-            setIsEnhancing(false);
-        }
-    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isEnhancing, setParam]);
-
-    // Subject Detection handler
-    const handleDetectSubject = useCallback(async () => {
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
-        if (!src || isDetecting) return;
-
-        setIsDetecting(true);
-        setPreprocessError(null);
-
-        try {
-            const bounds = await detectSubject(src);
-            if (bounds) {
-                // Determine crop shape and update params
-                setParam('crop', {
-                    x: bounds.x,
-                    y: bounds.y,
-                    width: bounds.width,
-                    height: bounds.height
-                });
-                setActiveTab('crop'); // Switch to crop tab to show result
-            } else {
-                setPreprocessError('No dominant subject detected.');
-            }
-        } catch (err) {
-            const message = err instanceof Error ? err.message : 'Subject detection failed';
-            setPreprocessError(message);
-        } finally {
-            setIsDetecting(false);
-        }
-    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isDetecting, setParam, setActiveTab]);
-
-    // AI Upscale handler
+    // AI Upscale handler — once only
     const handleUpscale = useCallback(async () => {
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
-        if (!src || isUpscaling) return;
+        const { operations, setOperation } = useImageStudioStore.getState();
+        if (operations.enhance.upscale || isUpscaling) return;
 
         setIsUpscaling(true);
         setPreprocessError(null);
 
         try {
-            const upscaledSrc = await upscaleImage(src);
-            setParam('backgroundMaskSrc', upscaledSrc);
+            // Non-Destructive: Set factor to 2. No baking.
+            // setOperation('enhance', { upscale: true }); // Update Store logic handles factor now?
+            // Let's be explicit via setParam to trigger the logic we just added
+            setParam('upscaleFactor', 2);
 
-            // Update dimensions to match new size
-            const img = new Image();
-            img.src = upscaledSrc;
-            await img.decode();
-            useImageStudioStore.getState().setDimensions(img.naturalWidth, img.naturalHeight);
-
+            setTimeout(() => setIsUpscaling(false), 500);
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Upscale failed';
             setPreprocessError(message);
-        } finally {
+            setOperation('enhance', { upscale: false });
             setIsUpscaling(false);
         }
-    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isUpscaling, setParam]);
-
-    // Document Cleanup handler
-    const handleDocCleanup = useCallback(async () => {
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
-        if (!src || isDocCleaning) return;
-
-        setIsDocCleaning(true);
-        setPreprocessError(null);
-
-        try {
-            const cleanedSrc = await autoCleanupDocument(src);
-            setParam('backgroundMaskSrc', cleanedSrc);
-        } catch (err) {
-            const message = err instanceof Error ? err.message : 'Cleanup failed';
-            setPreprocessError(message);
-        } finally {
-            setIsDocCleaning(false);
-        }
-    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isDocCleaning, setParam]);
-
-    // Layout Detection handler
-    const handleLayoutDetection = useCallback(async () => {
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
-        if (!src || isLayoutScanning) return;
-
-        setIsLayoutScanning(true);
-        setPreprocessError(null);
-        setAnalysisRegions([]);
-
-        try {
-            const regions = await detectLayout(src);
-            // Ensure result is StudioRegion[] - detectLayout returns LayoutRegion[] which is compatible
-            // but let's be explicit if needed. The types align.
-            setAnalysisRegions(regions as StudioRegion[]);
-            if (regions.length === 0) {
-                setPreprocessError('No layout regions detected.');
-            }
-        } catch (err) {
-            const message = err instanceof Error ? err.message : 'Layout scan failed';
-            setPreprocessError(message);
-        } finally {
-            setIsLayoutScanning(false);
-        }
-    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isLayoutScanning]);
-
-    // OCR Region Assist handler
-    const handleOCRRegions = useCallback(async () => {
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
-        if (!src || isOCRScanning) return;
-
-        setIsOCRScanning(true);
-        setPreprocessError(null);
-        setAnalysisRegions([]); // Clear others
-
-        try {
-            const regions = await detectOCRRegions(src);
-            setAnalysisRegions(regions as StudioRegion[]);
-            if (regions.length === 0) setPreprocessError('No text regions detected.');
-        } catch (err) {
-            setPreprocessError(err instanceof Error ? err.message : 'OCR scan failed');
-        } finally {
-            setIsOCRScanning(false);
-        }
-    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isOCRScanning]);
-
-    // Page Segmentation handler
-    const handlePageSegmentation = useCallback(async () => {
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc;
-        if (!src || isPageSegmenting) return;
-
-        setIsPageSegmenting(true);
-        setPreprocessError(null);
-        setAnalysisRegions([]);
-
-        try {
-            const regions = await segmentPage(src);
-            setAnalysisRegions(regions as StudioRegion[]);
-            if (regions.length === 0) setPreprocessError('No segments detected.');
-        } catch (err) {
-            setPreprocessError(err instanceof Error ? err.message : 'Segmentation failed');
-        } finally {
-            setIsPageSegmenting(false);
-        }
-    }, [imageStudio.initialImageSrc, params.backgroundMaskSrc, isPageSegmenting]);
-
-    // Clear regions when tab changes or image changes
-    useEffect(() => {
-        setAnalysisRegions([]);
-    }, [activeTab, imageStudio.initialImageSrc]);
+    }, [isUpscaling, setParam]);
 
 
     if (!imageStudio.isOpen || !imageStudio.initialImageSrc) return null;
 
     const isEditMode = imageStudio.mode === 'edit';
+    const { isCropMode } = useImageStudioStore.getState();
 
-    const handleAspectRatio = (ratio: number | null) => {
-        if (!params.crop) return;
+    const handleApply = async () => {
+        const { sourceBitmap, operations, pipelineCache, resetParams } = useImageStudioStore.getState();
 
-        const imgW = dimensions.width || 1000;
-        const imgH = dimensions.height || 1000;
-
-        if (ratio === null) {
-            setParam('crop', { x: 0, y: 0, width: imgW, height: imgH });
-            return;
-        }
-
-        let newW, newH;
-
-        if ((imgW / imgH) > ratio) {
-            newH = imgH;
-            newW = newH * ratio;
-        } else {
-            newW = imgW;
-            newH = newW / ratio;
-        }
-
-        const newX = (imgW - newW) / 2;
-        const newY = (imgH - newH) / 2;
-
-        setParam('crop', { x: newX, y: newY, width: newW, height: newH });
-    };
-
-    const handleApply = () => {
-        saveToHistory();
-        // Use masked src if background removal was applied, otherwise original
-        const src = params.backgroundMaskSrc || imageStudio.initialImageSrc!;
-
-        if (!src) {
-            console.error("No source image found for apply");
+        if (!sourceBitmap) {
             closeImageStudio();
             return;
         }
 
-        const { dimensions } = useImageStudioStore.getState();
+        saveToHistory();
+        let finalSrc = imageStudio.initialImageSrc!;
+        const { currentPage } = useEditorStore.getState();
+        let finalWidth = dimensions.width;
+        let finalHeight = dimensions.height;
 
-        const originalW = dimensions.width || 1;
-        const originalH = dimensions.height || 1;
+        try {
+            const { output } = await buildPipeline(sourceBitmap, operations, pipelineCache);
 
-        const cropW = params.crop ? params.crop.width : originalW;
-        const cropH = params.crop ? params.crop.height : originalH;
+            // Convert Bitmap to DataURL for saving
+            const canvas = document.createElement('canvas');
+            canvas.width = output.width;
+            canvas.height = output.height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.drawImage(output, 0, 0);
+                finalSrc = canvas.toDataURL('image/png');
 
-        const newObjectData: Record<string, unknown> = {
-            src: src,
-            originalSrc: src,
-            brightness: params.brightness,
-            contrast: params.contrast,
-            saturation: params.saturation,
-            blurRadius: params.blur,
-            noise: params.noise,
-            grayscale: params.grayscale,
-            sepia: params.sepia,
-            invert: params.invert,
-            flipX: params.flipX,
-            flipY: params.flipY,
-            rotation: params.rotation,
-            crop: params.crop || undefined,
-            cropShape: params.cropShape || 'rect', // Pass the shape!
-            editParams: {
-                ...params,
-                crop: params.crop || undefined,
-                cropShape: params.cropShape || 'rect'
+                const bakedAR = output.width / output.height;
+
+                // Dimension Preservation Logic
+                if (imageStudio.mode === 'edit' && imageStudio.targetObjectId && currentPage) {
+                    const existingObj = currentPage.objects.find(o => o.id === imageStudio.targetObjectId);
+                    if (existingObj) {
+                        // Keep the visual width, adjust height for AR
+                        finalWidth = existingObj.width || output.width;
+                        finalHeight = finalWidth / bakedAR;
+                    } else {
+                        finalWidth = output.width;
+                        finalHeight = output.height;
+                    }
+                } else {
+                    // New Object: Use natural dimensions
+                    finalWidth = output.width;
+                    finalHeight = output.height;
+                }
             }
+            output.close();
+        } catch (err) {
+            console.error("ImageStudio: Error baking pipeline:", err);
+            // Fallback to original if baking fails
+        }
+
+        const newObjectData: Partial<PDFObject> = {
+            src: finalSrc,
+            width: finalWidth,
+            height: finalHeight,
+            // Reset Edit Params since they are now baked into the image
+            editParams: { ...DEFAULT_EDIT_PARAMS },
+            brightness: DEFAULT_EDIT_PARAMS.brightness,
+            contrast: DEFAULT_EDIT_PARAMS.contrast,
+            saturation: DEFAULT_EDIT_PARAMS.saturation,
+            grayscale: DEFAULT_EDIT_PARAMS.grayscale,
+            sepia: DEFAULT_EDIT_PARAMS.sepia,
+            invert: DEFAULT_EDIT_PARAMS.invert,
+            flipX: DEFAULT_EDIT_PARAMS.flipX,
+            flipY: DEFAULT_EDIT_PARAMS.flipY,
+            rotation: DEFAULT_EDIT_PARAMS.rotation,
+            crop: undefined, // Reset crop since it's baked
+            cropShape: 'rect'
         };
 
         if (imageStudio.mode === 'create') {
-            const img = new Image();
-            img.onload = () => {
-                const baseW = 300;
-                const scale = baseW / cropW;
-                const newH = cropH * scale;
-
-                const newId = `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-                try {
-                    addObject({
-                        id: newId,
-                        type: 'image',
-                        x: 100,
-                        y: 100,
-                        width: baseW,
-                        height: newH,
-                        ...newObjectData
-                    });
-                    closeImageStudio();
-                } catch (err) {
-                    console.error("ImageStudio: Error adding object:", err);
-                }
-            };
-            img.src = src;
+            const newId = `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            addObject({
+                id: newId,
+                type: 'image',
+                x: 100,
+                y: 100,
+                ...newObjectData
+            });
         } else if (imageStudio.mode === 'edit' && imageStudio.targetObjectId) {
-            const editorState = useEditorStore.getState();
-            const pdfState = usePDFStore.getState();
-
-            let targetObject;
-
-            if (editorState.currentPage) {
-                targetObject = editorState.currentPage.objects.find(o => o.id === imageStudio.targetObjectId);
-            }
-
-            if (!targetObject) {
-                for (const page of pdfState.pages) {
-                    const found = page.objects.find(o => o.id === imageStudio.targetObjectId);
-                    if (found) {
-                        targetObject = found;
-                        break;
-                    }
-                }
-            }
-
-            if (targetObject) {
-                const safeWidth = targetObject.width || 0;
-                const currentSourceW = targetObject.crop ? targetObject.crop.width : originalW;
-                const scaleX = currentSourceW !== 0 ? safeWidth / currentSourceW : 1;
-                const newWidth = cropW * scaleX;
-                const newHeight = cropH * scaleX;
-                newObjectData.width = newWidth;
-                newObjectData.height = newHeight;
-            }
-
-            updateObject(imageStudio.targetObjectId, newObjectData);
-            closeImageStudio();
-        } else {
-            closeImageStudio();
+            updateObject(imageStudio.targetObjectId, {
+                ...newObjectData
+            });
         }
+
+        resetParams();
+        closeImageStudio();
     };
 
     const tabs: { id: Tab; icon: React.ElementType; label: string }[] = [
+        { id: 'transform', icon: RefreshCw, label: 'Transform' },
+        { id: 'crop', icon: CropIcon, label: 'Crop' },
         { id: 'adjust', icon: Sliders, label: 'Adjust' },
-        { id: 'transform', icon: RefreshCw, label: 'Flip' },
-        { id: 'crop', icon: Crop, label: 'Crop' },
-        { id: 'effects', icon: Sparkles, label: 'FX' },
-        { id: 'background', icon: Eraser, label: 'BG' },
+        { id: 'effects', icon: Wand2, label: 'Effects' },
+        { id: 'tools', icon: Hammer, label: 'Tools' },
     ];
 
-    const renderTabContent = () => {
-        switch (activeTab) {
-            case 'adjust':
-                return (
-                    <div className="space-y-4">
-                        <FilterSlider
-                            label="Brightness"
-                            icon={<Sun size={12} />}
-                            value={params.brightness}
-                            min={-1} max={1} step={0.05}
-                            onChange={(v: number) => setParam('brightness', v)}
-                        />
-                        <FilterSlider
-                            label="Contrast"
-                            icon={<Contrast size={12} />}
-                            value={params.contrast}
-                            min={-100} max={100} step={5}
-                            onChange={(v: number) => setParam('contrast', v)}
-                        />
-                        <FilterSlider
-                            label="Saturation"
-                            icon={<Droplet size={12} />}
-                            value={params.saturation}
-                            min={-2} max={10} step={0.1}
-                            onChange={(v: number) => setParam('saturation', v)}
-                        />
-                        <FilterSlider
-                            label="Blur"
-                            icon={<Ghost size={12} />}
-                            value={params.blur}
-                            min={0} max={40} step={1}
-                            onChange={(v: number) => setParam('blur', v)}
-                        />
-                    </div>
-                );
-            case 'transform':
-                return (
-                    <div className="space-y-3">
-                        <button
-                            onClick={() => setParam('rotation', (params.rotation + 90) % 360)}
-                            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-800/50 hover:bg-zinc-800 border border-white/5 hover:border-white/10 text-zinc-400 hover:text-white transition-all"
-                        >
-                            <RotateCw size={18} />
-                            <span className="text-xs font-semibold">Rotate 90°</span>
-                            <span className="ml-auto text-[10px] bg-white/5 px-2 py-0.5 rounded">{params.rotation}°</span>
-                        </button>
-                        <button
-                            onClick={() => setParam('flipX', !params.flipX)}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                params.flipX
-                                    ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
-                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            <MoveHorizontal size={18} />
-                            <span className="text-xs font-semibold">Flip Horizontal</span>
-                            {params.flipX && <Check size={14} className="ml-auto" />}
-                        </button>
-                        <button
-                            onClick={() => setParam('flipY', !params.flipY)}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                params.flipY
-                                    ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
-                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            <MoveVertical size={18} />
-                            <span className="text-xs font-semibold">Flip Vertical</span>
-                            {params.flipY && <Check size={14} className="ml-auto" />}
-                        </button>
+    const handleToolAction = (tool: ImageTool, value?: number) => {
+        const { operations, setOperation, setParam } = useImageStudioStore.getState();
 
-                        {/* Divider */}
-                        <div className="border-t border-white/5 pt-3">
-                            <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">AI Tools</span>
+        // Don't allow other tool actions while in crop mode
+        if (isCropMode && tool.category !== 'adjust') return;
+
+        // 1. Sliders (Adjust/Clarity/Effects)
+        if (tool.type === 'slider') {
+            // General Slider Handler using operationKey
+            if (tool.operationKey) {
+                const parts = tool.operationKey.split('.');
+                const paramName = parts[1]; // e.g. 'brightness', 'noiseReduction'
+
+                if (paramName) {
+                    // Update Param (UI)
+                    setParam(paramName as keyof ImageEditParams, value || 0);
+                    // Update Operation (Engine) - handled by store subscription/sync usually, 
+                    // but here we might need to be explicit if setParam doesn't auto-sync everything?
+                    // setParam in store DOES sync to operations for mapped keys.
+                    // The store implementation of setParam explicitly maps 'noiseReduction', 'sharpen', etc.
+                    // So setParam is enough!
+                }
+            }
+            return;
+        }
+
+        // 2. Buttons / Toggles
+        switch (tool.id) {
+            case 'rotate': {
+                useImageStudioStore.getState().pushHistory();
+                const nextRotation = (params.rotation + 90) % 360;
+                setParam('rotation', nextRotation);
+                setOperation('transform', { rotate: nextRotation });
+                break;
+            }
+            case 'flipX': {
+                useImageStudioStore.getState().pushHistory();
+                const nextFlipX = !params.flipX;
+                setParam('flipX', nextFlipX);
+                setOperation('transform', { flipX: nextFlipX });
+                break;
+            }
+            case 'flipY': {
+                useImageStudioStore.getState().pushHistory();
+                const nextFlipY = !params.flipY;
+                setParam('flipY', nextFlipY);
+                setOperation('transform', { flipY: nextFlipY });
+                break;
+            }
+            case 'deskew':
+                useImageStudioStore.getState().pushHistory();
+                handleDeskew();
+                break;
+            case 'bgRemoval':
+                useImageStudioStore.getState().pushHistory();
+                handleRemoveBackground();
+                break;
+            case 'upscale':
+                useImageStudioStore.getState().pushHistory();
+                handleUpscale();
+                break;
+            case 'resetMask':
+                useImageStudioStore.getState().pushHistory();
+                setOperation('cleanup', { backgroundRemoved: false });
+                setBgRemovalProgress(null);
+                setBgRemovalError(null);
+                break;
+
+            // EFFECTS:
+            case 'grayscale':
+            case 'sepia':
+            case 'invert': {
+                useImageStudioStore.getState().pushHistory();
+                const opKey = tool.id as 'grayscale' | 'sepia' | 'invert';
+                const nextVal = !operations.effects[opKey];
+                setParam(opKey, nextVal ? 1 : 0);
+                setOperation('effects', { [opKey]: nextVal });
+                break;
+            }
+
+            case 'darkMode': {
+                useImageStudioStore.getState().pushHistory();
+                const nextInvert = !operations.effects.invert;
+                setParam('invert', nextInvert ? 1 : 0);
+                setOperation('effects', { invert: nextInvert });
+                break;
+            }
+
+            default:
+                // Generic Toggle if mapped
+                if (tool.operationKey && tool.type === 'toggle') {
+                    useImageStudioStore.getState().pushHistory();
+                    const [category, op] = tool.operationKey.split('.');
+                    if (category && op) {
+                        const opsRecord = operations as unknown as Record<string, Record<string, unknown>>;
+                        const currentVal = opsRecord[category]?.[op];
+                        const nextVal = !currentVal;
+                        if (category === 'transform' || category === 'effects') {
+                            if (op in params) setParam(op as keyof ImageEditParams, (nextVal ? 1 : 0) as ImageEditParams[keyof ImageEditParams]);
+                        }
+                        setOperation(category as keyof typeof operations, { [op]: nextVal } as Partial<typeof operations[keyof typeof operations]>);
+                    }
+                }
+                break;
+        }
+    };
+
+    // --- Crop Mode Panel ---
+    const renderCropPanel = () => {
+        const { setCropMode, isCropMode: cropActive } = useImageStudioStore.getState();
+
+        const handleAspectRatioChange = (ratio: number | null) => {
+            useImageStudioStore.getState().pushHistory();
+            setSelectedAspectRatio(ratio);
+            if (ratio && params.crop) {
+                // Adjust crop to match aspect ratio, keeping center
+                const centerX = params.crop.x + params.crop.width / 2;
+                const centerY = params.crop.y + params.crop.height / 2;
+                const imgW = dimensions.width || 1000;
+                const imgH = dimensions.height || 1000;
+
+                let newW = params.crop.width;
+                let newH = newW / ratio;
+
+                if (newH > imgH) {
+                    newH = imgH;
+                    newW = newH * ratio;
+                }
+                if (newW > imgW) {
+                    newW = imgW;
+                    newH = newW / ratio;
+                }
+
+                const newX = Math.max(0, Math.min(centerX - newW / 2, imgW - newW));
+                const newY = Math.max(0, Math.min(centerY - newH / 2, imgH - newH));
+
+                const newCrop = { x: newX, y: newY, width: newW, height: newH };
+                setParam('crop', newCrop);
+                useImageStudioStore.getState().setOperation('transform', { crop: newCrop });
+            }
+        };
+
+        const handleResetCrop = () => {
+            useImageStudioStore.getState().pushHistory();
+            const imgW = dimensions.width || 1000;
+            const imgH = dimensions.height || 1000;
+            const fullCrop = { x: 0, y: 0, width: imgW, height: imgH };
+            setParam('crop', fullCrop);
+            useImageStudioStore.getState().setOperation('transform', { crop: fullCrop });
+            setSelectedAspectRatio(null);
+        };
+
+        return (
+            <div className="space-y-5">
+                {/* Crop Mode Indicator */}
+                {!cropActive && (
+                    <button
+                        onClick={() => setCropMode(true)}
+                        className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold text-xs shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition flex items-center justify-center gap-2"
+                    >
+                        <CropIcon size={16} />
+                        Enter Crop Mode
+                    </button>
+                )}
+
+                {cropActive && (
+                    <>
+                        {/* Active Indicator */}
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">
+                                Crop Mode Active
+                            </span>
                         </div>
 
-                        {/* Smart Crop */}
+                        {/* Smart Suggest */}
                         <button
-                            onClick={handleSmartCrop}
-                            disabled={isSmartCropping || isDeskewing || isCleaning || isEnhancing}
+                            onClick={() => { useImageStudioStore.getState().pushHistory(); handleSmartCrop(); }}
+                            disabled={isSmartCropping}
                             className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
+                                "w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border transition-all text-xs font-bold",
                                 isSmartCropping
-                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
-                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
+                                    ? "opacity-50 cursor-not-allowed bg-zinc-800/30 border-white/5 text-zinc-400"
+                                    : "bg-zinc-800/30 border-white/5 text-zinc-300 hover:bg-zinc-800 hover:text-white hover:border-white/10"
                             )}
                         >
                             {isSmartCropping ? (
-                                <Loader2 size={18} className="animate-spin" />
+                                <Loader2 size={14} className="animate-spin" />
                             ) : (
-                                <Scan size={18} />
+                                <Scan size={14} />
                             )}
-                            <span className="text-xs font-semibold">
-                                {isSmartCropping ? 'Analyzing...' : 'Smart Crop'}
-                            </span>
+                            {isSmartCropping ? 'Analyzing...' : 'Smart Suggest'}
                         </button>
 
-                        {/* Auto Deskew */}
-                        <button
-                            onClick={handleDeskew}
-                            disabled={isDeskewing || isSmartCropping || isCleaning || isEnhancing}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                isDeskewing
-                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
-                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            {isDeskewing ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <AlignVerticalSpaceAround size={18} />
-                            )}
-                            <span className="text-xs font-semibold">
-                                {isDeskewing ? 'Correcting...' : 'Auto Deskew'}
-                            </span>
-                        </button>
-
-                        {preprocessError && (
-                            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                                <Wand2 size={14} className="text-amber-400 mt-0.5 shrink-0" />
-                                <span className="text-[11px] text-amber-300">{preprocessError}</span>
-                            </div>
-                        )}
-
-                        {/* Divider */}
-                        <div className="border-t border-white/5 pt-3">
-                            <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Enhance</span>
-                        </div>
-
-                        {/* Cleanup Scan */}
-                        <button
-                            onClick={handleCleanup}
-                            disabled={isCleaning || isEnhancing || isSmartCropping || isDeskewing}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                isCleaning
-                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
-                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            {isCleaning ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <Eraser size={18} />
-                            )}
-                            <span className="text-xs font-semibold">
-                                {isCleaning ? 'Cleaning...' : 'Cleanup Scan'}
-                            </span>
-                        </button>
-
-                        {/* Auto Enhance */}
-                        <button
-                            onClick={handleEnhance}
-                            disabled={isEnhancing || isCleaning || isSmartCropping || isDeskewing || isDetecting || isUpscaling}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                isEnhancing
-                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
-                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            {isEnhancing ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <Sparkles size={18} />
-                            )}
-                            <span className="text-xs font-semibold">
-                                {isEnhancing ? 'Enhancing...' : 'Auto Enhance'}
-                            </span>
-                        </button>
-
-                        {/* Divider */}
-                        <div className="border-t border-white/5 pt-3">
-                            <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Advanced ML</span>
-                        </div>
-
-                        {/* Detect Subject */}
-                        <button
-                            onClick={handleDetectSubject}
-                            disabled={isDetecting || isUpscaling || isCleaning || isEnhancing || isSmartCropping || isDeskewing}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                isDetecting
-                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
-                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            {isDetecting ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <Focus size={18} />
-                            )}
-                            <span className="text-xs font-semibold">
-                                {isDetecting ? 'Detecting...' : 'Detect Subject'}
-                            </span>
-                        </button>
-
-                        {/* AI Upscale */}
-                        <button
-                            onClick={handleUpscale}
-                            disabled={isUpscaling || isDetecting || isCleaning || isEnhancing || isSmartCropping || isDeskewing || isDocCleaning || isLayoutScanning}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                isUpscaling
-                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
-                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            {isUpscaling ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <ArrowUpCircle size={18} />
-                            )}
-                            <span className="text-xs font-semibold">
-                                {isUpscaling ? 'Upscaling...' : 'AI Upscale (2x)'}
-                            </span>
-                        </button>
-
-                        {/* Divider */}
-                        <div className="border-t border-white/5 pt-3">
-                            <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Document Intelligence</span>
-                        </div>
-
-                        {/* Auto Cleanup */}
-                        <button
-                            onClick={handleDocCleanup}
-                            disabled={isDocCleaning || isLayoutScanning || isUpscaling || isDetecting || isCleaning || isEnhancing}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                isDocCleaning
-                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
-                                    : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            {isDocCleaning ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <FileText size={18} />
-                            )}
-                            <span className="text-xs font-semibold">
-                                {isDocCleaning ? 'Cleaning...' : 'Auto Doc Cleanup'}
-                            </span>
-                        </button>
-
-                        {/* Detect Layout */}
-                        <button
-                            onClick={handleLayoutDetection}
-                            disabled={isLayoutScanning || isDocCleaning || isUpscaling || isDetecting || isCleaning || isOCRScanning || isPageSegmenting}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                isLayoutScanning
-                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
-                                    : analysisRegions.length > 0 && analysisRegions[0].type !== 'ocr' && analysisRegions[0].type !== 'header'
-                                        ? "bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20"
-                                        : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            {isLayoutScanning ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <LayoutTemplate size={18} />
-                            )}
-                            <span className="text-xs font-semibold">
-                                {isLayoutScanning ? 'Scanning...' : 'Detect Layout'}
-                            </span>
-                        </button>
-
-                        {/* OCR Regions */}
-                        <button
-                            onClick={handleOCRRegions}
-                            disabled={isOCRScanning || isLayoutScanning || isDocCleaning || isUpscaling}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                isOCRScanning
-                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
-                                    : analysisRegions.length > 0 && analysisRegions[0].type === 'ocr'
-                                        ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/20"
-                                        : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            {isOCRScanning ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <TextSelect size={18} />
-                            )}
-                            <span className="text-xs font-semibold">
-                                {isOCRScanning ? 'Scanning...' : 'Detect OCR Regions'}
-                            </span>
-                        </button>
-
-                        {/* Segment Page */}
-                        <button
-                            onClick={handlePageSegmentation}
-                            disabled={isPageSegmenting || isLayoutScanning || isDocCleaning || isUpscaling}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all",
-                                isPageSegmenting
-                                    ? "bg-zinc-800 border-white/5 text-zinc-500 cursor-wait"
-                                    : analysisRegions.length > 0 && (analysisRegions[0].type === 'header' || analysisRegions[0].type === 'body')
-                                        ? "bg-purple-500/10 border-purple-500/20 text-purple-400 hover:bg-purple-500/20"
-                                        : "bg-zinc-800/50 hover:bg-zinc-800 border-white/5 hover:border-white/10 text-zinc-400 hover:text-white"
-                            )}
-                        >
-                            {isPageSegmenting ? (
-                                <Loader2 size={18} className="animate-spin" />
-                            ) : (
-                                <Rows size={18} />
-                            )}
-                            <span className="text-xs font-semibold">
-                                {isPageSegmenting ? 'Segmenting...' : 'Segment Page'}
-                            </span>
-                        </button>
-                    </div>
-                );
-            case 'crop':
-                return (
-                    <div className="space-y-4">
                         {/* Shape Selection */}
+                        <div className="flex items-center justify-center gap-3 py-2 border-b border-white/5">
+                            <ShapeButton
+                                icon={Square}
+                                label="Rect"
+                                active={!params.cropShape || params.cropShape === 'rect'}
+                                onClick={() => { useImageStudioStore.getState().pushHistory(); setParam('cropShape', 'rect'); }}
+                            />
+                            <ShapeButton
+                                icon={Circle}
+                                label="Circle"
+                                active={params.cropShape === 'circle'}
+                                onClick={() => { useImageStudioStore.getState().pushHistory(); setParam('cropShape', 'circle'); }}
+                            />
+                            <ShapeButton
+                                icon={Heart}
+                                label="Heart"
+                                active={params.cropShape === 'heart'}
+                                onClick={() => { useImageStudioStore.getState().pushHistory(); setParam('cropShape', 'heart'); }}
+                            />
+                        </div>
+
+                        {/* Aspect Ratio */}
                         <div className="space-y-2">
-                            <span className="text-[10px] font-bold uppercase text-zinc-500">Shape</span>
-                            <div className="flex gap-2">
-                                {[
-                                    { id: 'rect', label: 'Square', icon: Square },
-                                    { id: 'circle', label: 'Circle', icon: null }, // Custom circle icon
-                                    { id: 'heart', label: 'Heart', icon: Heart },
-                                ].map(shape => (
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                                Aspect Ratio
+                            </span>
+                            <div className="grid grid-cols-3 gap-1.5">
+                                {ASPECT_RATIOS.map((ar) => (
                                     <button
-                                        key={shape.id}
-                                        onClick={() => setParam('cropShape', shape.id)}
+                                        key={ar.label}
+                                        onClick={() => handleAspectRatioChange(ar.value)}
                                         className={clsx(
-                                            "flex-1 py-2 rounded-lg border flex items-center justify-center transition-all",
-                                            (params.cropShape === shape.id || (!params.cropShape && shape.id === 'rect'))
+                                            "py-1.5 px-2 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all",
+                                            selectedAspectRatio === ar.value
                                                 ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
-                                                : "bg-zinc-800/30 border-white/5 text-zinc-500 hover:text-white hover:bg-zinc-800"
+                                                : "bg-zinc-800/30 border-white/5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
                                         )}
-                                        title={shape.label}
                                     >
-                                        {shape.icon ? <shape.icon size={16} /> : <div className="w-4 h-4 rounded-full border-2 border-current" />}
+                                        {ar.label}
                                     </button>
                                 ))}
                             </div>
                         </div>
 
-                        {/* Aspect Ratios */}
-                        <div className="space-y-2">
-                            <span className="text-[10px] font-bold uppercase text-zinc-500">Aspect Ratio</span>
-                            <div className="grid grid-cols-3 gap-2">
-                                {[
-                                    { label: 'Original', ratio: null, icon: Maximize },
-                                    { label: '1:1', ratio: 1, icon: Square },
-                                    { label: '16:9', ratio: 16 / 9, icon: Crop },
-                                    { label: '4:3', ratio: 4 / 3, icon: Crop },
-                                    { label: '3:2', ratio: 3 / 2, icon: Crop },
-                                    { label: '9:16', ratio: 9 / 16, icon: Crop },
-                                ].map(p => (
-                                    <button
-                                        key={p.label}
-                                        onClick={() => handleAspectRatio(p.ratio)}
-                                        className="flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl bg-zinc-800/30 hover:bg-zinc-800 border border-white/5 hover:border-white/10 text-zinc-500 hover:text-white transition-all"
-                                    >
-                                        <p.icon size={14} />
-                                        <span className="text-[9px] font-bold uppercase">{p.label}</span>
-                                    </button>
-                                ))}
+                        {/* Crop Info */}
+                        {params.crop && (
+                            <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                <div className="px-2 py-1.5 rounded bg-zinc-800/50 border border-white/5">
+                                    <span className="text-zinc-500">X:</span>{' '}
+                                    <span className="text-zinc-300 font-mono">{Math.round(params.crop.x)}</span>
+                                </div>
+                                <div className="px-2 py-1.5 rounded bg-zinc-800/50 border border-white/5">
+                                    <span className="text-zinc-500">Y:</span>{' '}
+                                    <span className="text-zinc-300 font-mono">{Math.round(params.crop.y)}</span>
+                                </div>
+                                <div className="px-2 py-1.5 rounded bg-zinc-800/50 border border-white/5">
+                                    <span className="text-zinc-500">W:</span>{' '}
+                                    <span className="text-zinc-300 font-mono">{Math.round(params.crop.width)}</span>
+                                </div>
+                                <div className="px-2 py-1.5 rounded bg-zinc-800/50 border border-white/5">
+                                    <span className="text-zinc-500">H:</span>{' '}
+                                    <span className="text-zinc-300 font-mono">{Math.round(params.crop.height)}</span>
+                                </div>
                             </div>
-                        </div>
+                        )}
 
-                        {/* Manual Dimensions */}
-                        <div className="flex items-center gap-2">
-                            <div className="flex-1 flex items-center gap-2 bg-zinc-900 rounded-lg px-2.5 py-2 border border-white/5">
-                                <span className="text-[9px] uppercase font-bold text-zinc-500">W</span>
-                                <input
-                                    type="number"
-                                    value={params.crop ? Math.round(params.crop.width) : ''}
-                                    onChange={(e) => params.crop && setParam('crop', { ...params.crop, width: Number(e.target.value) })}
-                                    className="flex-1 w-full bg-transparent text-xs font-mono text-zinc-300 focus:outline-none"
-                                />
-                            </div>
-                            <span className="text-zinc-600">×</span>
-                            <div className="flex-1 flex items-center gap-2 bg-zinc-900 rounded-lg px-2.5 py-2 border border-white/5">
-                                <span className="text-[9px] uppercase font-bold text-zinc-500">H</span>
-                                <input
-                                    type="number"
-                                    value={params.crop ? Math.round(params.crop.height) : ''}
-                                    onChange={(e) => params.crop && setParam('crop', { ...params.crop, height: Number(e.target.value) })}
-                                    className="flex-1 w-full bg-transparent text-xs font-mono text-zinc-300 focus:outline-none"
-                                />
-                            </div>
-                        </div>
-                    </div>
-                );
-            case 'effects':
-                return (
-                    <div className="grid grid-cols-3 gap-2">
-                        {[
-                            { key: 'grayscale', label: 'B&W' },
-                            { key: 'sepia', label: 'Sepia' },
-                            { key: 'invert', label: 'Invert' },
-                        ].map(ef => (
-                            <button
-                                key={ef.key}
-                                onClick={() => setParam(ef.key as keyof typeof params, params[ef.key as keyof typeof params] ? 0 : 1)}
-                                className={clsx(
-                                    "flex flex-col items-center justify-center gap-1.5 py-4 rounded-xl border transition-all",
-                                    params[ef.key as keyof typeof params]
-                                        ? "bg-purple-500/10 border-purple-500/30 text-purple-400"
-                                        : "bg-zinc-800/30 border-white/5 text-zinc-500 hover:bg-zinc-800 hover:text-white hover:border-white/10"
-                                )}
-                            >
-                                <Wand2 size={16} />
-                                <span className="text-[9px] font-bold uppercase">{ef.label}</span>
-                            </button>
-                        ))}
-                    </div>
-                );
-            case 'background':
-                return (
-                    <div className="space-y-4">
-                        {/* Remove Background Button */}
+                        {/* Reset */}
                         <button
-                            onClick={handleRemoveBackground}
-                            disabled={isBgProcessing}
-                            className={clsx(
-                                "w-full flex items-center justify-center gap-2.5 px-4 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all",
-                                isBgProcessing
-                                    ? "bg-zinc-800 text-zinc-500 cursor-wait"
-                                    : params.backgroundMaskSrc
-                                        ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-                                        : "bg-gradient-to-r from-violet-600 to-blue-600 text-white shadow-lg shadow-violet-500/20 hover:shadow-violet-500/40 hover:from-violet-500 hover:to-blue-500"
-                            )}
+                            onClick={handleResetCrop}
+                            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-white/5 bg-zinc-800/30 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all text-[10px] font-bold uppercase tracking-wider"
                         >
-                            {isBgProcessing ? (
-                                <>
-                                    <Loader2 size={16} className="animate-spin" />
-                                    Processing...
-                                </>
-                            ) : params.backgroundMaskSrc ? (
-                                <>
-                                    <Check size={16} />
-                                    Background Removed
-                                </>
-                            ) : (
-                                <>
-                                    <Eraser size={16} />
-                                    Remove Background
-                                </>
-                            )}
+                            <RefreshCw size={12} />
+                            Reset Crop
                         </button>
 
-                        {/* Progress Bar */}
-                        {bgRemovalProgress && isBgProcessing && (
-                            <div className="space-y-1.5">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-medium text-zinc-400">
-                                        {bgRemovalProgress.stage}
-                                    </span>
-                                    <span className="text-[10px] font-mono text-blue-400">
-                                        {bgRemovalProgress.percent}%
-                                    </span>
-                                </div>
-                                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full bg-gradient-to-r from-violet-600 to-blue-500 transition-all duration-300 ease-out rounded-full"
-                                        style={{ width: `${bgRemovalProgress.percent}%` }}
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Error Message */}
-                        {bgRemovalError && (
-                            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
-                                <X size={14} className="text-red-400 mt-0.5 shrink-0" />
-                                <span className="text-[11px] text-red-300">{bgRemovalError}</span>
-                            </div>
-                        )}
-
-                        {/* Refinement Sliders (only after mask exists) */}
-                        {params.rawMaskDataUrl && (
-                            <div className="space-y-4 pt-2 border-t border-white/5">
-                                <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Mask Refinement</span>
-
-                                <FilterSlider
-                                    label="Feather Edge"
-                                    icon={<Ghost size={12} />}
-                                    value={params.bgRemovalFeather}
-                                    min={0} max={20} step={1}
-                                    onChange={(v: number) => {
-                                        setParam('bgRemovalFeather', v);
-                                        handleMaskRefinement(v, params.bgRemovalThreshold);
-                                    }}
-                                />
-                                <FilterSlider
-                                    label="Edge Threshold"
-                                    icon={<Contrast size={12} />}
-                                    value={params.bgRemovalThreshold}
-                                    min={0} max={255} step={1}
-                                    onChange={(v: number) => {
-                                        setParam('bgRemovalThreshold', v);
-                                        handleMaskRefinement(params.bgRemovalFeather, v);
-                                    }}
-                                />
-                            </div>
-                        )}
-
-                        {/* Reset Mask */}
-                        {params.backgroundMaskSrc && (
+                        {/* Apply / Cancel - Restored */}
+                        <div className="flex gap-2 pt-2 border-t border-white/5">
                             <button
-                                onClick={handleResetMask}
-                                className="w-full flex items-center justify-center gap-2 text-zinc-500 hover:text-white transition-colors text-[10px] font-bold uppercase tracking-wider py-2 hover:bg-white/5 rounded-lg border border-white/5"
+                                onClick={useImageStudioStore.getState().cancelCrop}
+                                className="flex-1 py-2 rounded-xl bg-zinc-800 text-zinc-300 font-medium text-xs hover:bg-zinc-700 transition"
                             >
-                                <RotateCcw size={12} />
-                                Reset Mask
+                                Cancel
                             </button>
-                        )}
+                            <button
+                                onClick={useImageStudioStore.getState().applyCrop}
+                                className="flex-1 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs shadow-lg shadow-blue-500/20 hover:bg-blue-500 transition flex items-center justify-center gap-1.5"
+                            >
+                                <Check size={12} />
+                                Apply
+                            </button>
+                        </div>
 
-                        {/* Info */}
-                        {!params.backgroundMaskSrc && !isBgProcessing && (
-                            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-zinc-800/30 border border-white/5">
-                                <Sparkles size={14} className="text-zinc-500 mt-0.5 shrink-0" />
-                                <p className="text-[10px] text-zinc-500 leading-relaxed">
-                                    AI-powered background removal runs entirely in your browser. No data is sent to any server.
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                );
-            default:
-                return null;
+
+                    </>
+                )}
+            </div>
+        );
+    };
+
+    const renderTabContent = () => {
+        // Crop has its own panel
+        if (activeTab === 'crop') {
+            return renderCropPanel();
         }
+
+        const tools = IMAGE_TOOLS.filter(t => t.category === activeTab);
+        const { operations } = useImageStudioStore.getState();
+
+        return (
+            <div className="space-y-6">
+                {/* Sliders Section */}
+                {tools.some(t => t.type === 'slider') && (
+                    <div className="space-y-4">
+                        {tools.filter(t => t.type === 'slider').map(tool => {
+                            const config = tool.sliderConfig || { min: 0, max: 100, step: 1 };
+                            const paramKey = tool.operationKey?.split('.')[1] as keyof ImageEditParams;
+                            const value = (params[paramKey] as number) || 0;
+
+                            return (
+                                <FilterSlider
+                                    key={tool.id}
+                                    label={tool.label}
+                                    icon={<tool.icon size={12} />}
+                                    value={value}
+                                    min={config.min}
+                                    max={config.max}
+                                    step={config.step}
+                                    onChange={(v) => handleToolAction(tool, v)}
+                                    onPointerDown={() => useImageStudioStore.getState().pushHistory()}
+                                    disabled={tool.disabledIf?.(
+                                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                        operations as unknown as Record<string, any>,
+                                        {
+                                            isSmartCropping, isDeskewing, isUpscaling, isBgProcessing,
+                                        }
+                                    )}
+                                />
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Buttons Grid */}
+                {tools.some(t => t.type !== 'slider') && (
+                    <div className="grid grid-cols-2 gap-3">
+                        {tools.filter(t => t.type !== 'slider').map(tool => {
+                            const isActive = (() => {
+                                if (tool.type !== 'toggle') return false;
+                                if (tool.operationKey) {
+                                    const [cat, op] = tool.operationKey.split('.');
+                                    return (operations as unknown as Record<string, Record<string, unknown>>)[cat]?.[op];
+                                }
+                                return false;
+                            })();
+
+                            const isDisabled = tool.disabledIf?.(
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                operations as unknown as Record<string, any>,
+                                {
+                                    isSmartCropping, isDeskewing, isUpscaling, isBgProcessing,
+                                }
+                            );
+
+                            // Specific Loading State logic
+                            let isLoading = false;
+                            let loadingText = '';
+                            if (tool.id === 'bgRemoval' && isBgProcessing) { isLoading = true; loadingText = 'Unmasking...'; }
+                            if (tool.id === 'deskew' && isDeskewing) { isLoading = true; loadingText = 'Aligning...'; }
+                            if (tool.id === 'upscale' && isUpscaling) { isLoading = true; loadingText = 'Upscaling...'; }
+
+                            // Upscale "2x Applied" badge
+                            const isUpscaleApplied = tool.id === 'upscale' && operations.enhance.upscale && !isUpscaling;
+                            const isBgRemoved = tool.id === 'bgRemoval' && operations.cleanup.backgroundRemoved && !isBgProcessing;
+
+                            // Special case for bgRemoval progress
+                            if (tool.id === 'bgRemoval' && isBgProcessing && bgRemovalProgress) {
+                                return (
+                                    <div key={tool.id} className="col-span-2 p-3 rounded-xl bg-zinc-800/50 border border-white/5 space-y-2">
+                                        <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                                            <span>{bgRemovalProgress.stage}</span>
+                                            <span>{Math.round(bgRemovalProgress.percent)}%</span>
+                                        </div>
+                                        <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                                            <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${bgRemovalProgress.percent}%` }} />
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <button
+                                    key={tool.id}
+                                    onClick={() => handleToolAction(tool)}
+                                    disabled={isDisabled || isLoading || isUpscaleApplied || isBgRemoved}
+                                    className={clsx(
+                                        "flex flex-col items-center justify-center gap-2 p-3 rounded-xl border transition-all h-20 relative group",
+                                        isActive
+                                            ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
+                                            : (isUpscaleApplied || isBgRemoved)
+                                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                                                : "bg-zinc-800/30 border-white/5 text-zinc-400 hover:bg-zinc-800 hover:text-white hover:border-white/10",
+                                        (isDisabled || isLoading || isUpscaleApplied || isBgRemoved) && "opacity-60 cursor-not-allowed"
+                                    )}
+                                >
+                                    {isLoading ? <Loader2 size={20} className="animate-spin" /> : <tool.icon size={20} className={isActive ? "text-blue-400" : (isUpscaleApplied || isBgRemoved) ? "text-emerald-400" : "text-zinc-500 group-hover:text-zinc-300"} />}
+                                    <span className="text-[10px] font-bold uppercase leading-tight text-center">
+                                        {isLoading ? loadingText : tool.label}
+                                    </span>
+                                    {/* Upscale/BG Applied Badge */}
+                                    {(isUpscaleApplied || isBgRemoved) && (
+                                        <span className="absolute top-1 right-1 text-[8px] font-bold bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/30">
+                                            Applied
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Empty State for category if no tools */}
+                {tools.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-10 text-zinc-500">
+                        <span className="text-xs">No tools available</span>
+                    </div>
+                )}
+            </div>
+        );
     };
 
     return (
@@ -1120,10 +831,8 @@ export const ImageStudio: React.FC = () => {
                         {canvasDimensions.width > 0 && canvasDimensions.height > 0 && (
                             <div className="relative rounded-lg overflow-hidden shadow-2xl ring-1 ring-white/10">
                                 <StudioCanvas
-                                    src={params.backgroundMaskSrc || imageStudio.initialImageSrc}
                                     width={canvasDimensions.width}
                                     height={canvasDimensions.height}
-                                    analysisRegions={analysisRegions}
                                 />
                             </div>
                         )}
@@ -1169,12 +878,25 @@ export const ImageStudio: React.FC = () => {
                             {tabs.map(tab => (
                                 <button
                                     key={tab.id}
-                                    onClick={() => setActiveTab(tab.id as Tab)}
+                                    onClick={() => {
+                                        if (tab.id === 'crop') {
+                                            useImageStudioStore.getState().setCropMode(true);
+                                        } else {
+                                            // If leaving crop mode via tab click, cancel crop
+                                            if (isCropMode) {
+                                                useImageStudioStore.getState().cancelCrop();
+                                            }
+                                            setActiveTab(tab.id as Tab);
+                                        }
+                                    }}
+                                    disabled={isCropMode && tab.id !== 'crop'}
                                     className={clsx(
                                         "group relative w-[50px] flex flex-col items-center justify-center gap-1 py-2.5 rounded-lg transition-all duration-200",
                                         activeTab === tab.id
                                             ? "bg-white/[0.08] text-white"
-                                            : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.04]"
+                                            : isCropMode && tab.id !== 'crop'
+                                                ? "text-zinc-700 cursor-not-allowed"
+                                                : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.04]"
                                     )}
                                 >
                                     {/* Active indicator bar */}
@@ -1200,13 +922,36 @@ export const ImageStudio: React.FC = () => {
 
                     {/* Footer Actions */}
                     <div className="p-4 border-t border-white/5 bg-[#0f0f10] space-y-3">
-                        <button
-                            onClick={resetParams}
-                            className="w-full flex items-center justify-center gap-2 text-zinc-500 hover:text-white transition-colors text-[10px] font-bold uppercase tracking-wider py-2 hover:bg-white/5 rounded-lg"
-                        >
-                            <RotateCcw size={12} />
-                            <span>Reset All</span>
-                        </button>
+                        <div className="flex items-center justify-between gap-2">
+                            {/* History Controls */}
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={useImageStudioStore.getState().undo}
+                                    disabled={!useImageStudioStore.getState().canUndo()}
+                                    className="p-2 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                                    title="Undo"
+                                >
+                                    <RotateCcw size={14} className={!useImageStudioStore.getState().canUndo() ? '' : '-scale-x-100'} />
+                                </button>
+                                <button
+                                    onClick={useImageStudioStore.getState().redo}
+                                    disabled={!useImageStudioStore.getState().canRedo()}
+                                    className="p-2 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                                    title="Redo"
+                                >
+                                    <RotateCw size={14} />
+                                </button>
+                            </div>
+
+                            <button
+                                onClick={resetParams}
+                                className="px-3 py-2 flex items-center gap-1.5 text-zinc-500 hover:text-white transition-colors text-[10px] font-bold uppercase tracking-wider hover:bg-white/5 rounded-lg border border-transparent hover:border-white/5"
+                            >
+                                <Sparkles size={12} />
+                                <span>Reset</span>
+                            </button>
+                        </div>
+
                         <div className="flex gap-2">
                             <button
                                 onClick={closeImageStudio}

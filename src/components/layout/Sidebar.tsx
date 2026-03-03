@@ -4,7 +4,7 @@ import { usePDFStore } from '../../store/pdfStore';
 import {
     Plus, Upload, Trash2,
     Settings, BoxSelect, Download, Copy,
-    RefreshCw, FolderOpen, Info, HelpCircle, Printer
+    RefreshCw, FolderOpen, Info, HelpCircle, Printer, ArrowLeftRight
 } from 'lucide-react';
 import { AddPageModal } from '../../components/features/page-operations/AddPageModal';
 import { useEditorStore } from '../../store/editorStore';
@@ -15,10 +15,12 @@ import { SortablePageItem } from './SortablePageItem';
 import { loadPDF } from '../../utils/pdfOps';
 import { saveDocument } from '../../utils/exportUtils';
 import clsx from 'clsx';
+import { CompareModal } from '../features/editor/CompareModal';
 
 export const Sidebar: React.FC = () => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isCompareOpen, setIsCompareOpen] = useState(false);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const {
@@ -186,6 +188,18 @@ export const Sidebar: React.FC = () => {
                                         >
                                             <FolderOpen size={14} className="text-blue-400" />
                                             <span className="text-[11px] font-semibold">Open New PDF</span>
+                                        </button>
+
+                                        {/* Compare Documents */}
+                                        <button
+                                            onClick={() => {
+                                                setIsCompareOpen(true);
+                                                setIsSettingsOpen(false);
+                                            }}
+                                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-all text-left group"
+                                        >
+                                            <ArrowLeftRight size={14} className="text-purple-400" />
+                                            <span className="text-[11px] font-semibold">Compare Documents</span>
                                         </button>
 
                                         {/* Reset/Close Document */}
@@ -401,6 +415,7 @@ export const Sidebar: React.FC = () => {
             </div>
 
             <AddPageModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
+            <CompareModal isOpen={isCompareOpen} onClose={() => setIsCompareOpen(false)} />
         </div>
     );
 };
