@@ -187,8 +187,10 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                 />
             )}
 
-            {/* 2. Text Edits Overlay (Redactions + New Text) - z-20 (Lowered to sit below CanvasLayer z-30) */}
-            {dimensions && pageState.source === 'pdf' && (
+            {/* 2. Text Edits Overlay (Redactions + New Text) - z-20 (Lowered to sit below CanvasLayer z-30) 
+                REMOVED: Now handled inside CanvasLayer to support filters.
+            */}
+            {/* {dimensions && pageState.source === 'pdf' && (
                 <div className="absolute inset-0 z-20 pointer-events-none">
                     <PDFTextLayer
                         pageNumber={pageNumber}
@@ -196,7 +198,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                         viewOnly={true}
                     />
                 </div>
-            )}
+            )} */}
 
             {/* 3. Objects Layer (Detailed Content + Effects) - z-30 */}
             {dimensions && (
