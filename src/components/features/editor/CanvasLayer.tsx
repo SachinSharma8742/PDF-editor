@@ -1,6 +1,6 @@
-import React from 'react';
-import { Stage, Layer, Rect, Image as KonvaImage, Group } from 'react-konva';
-import { usePDFStore, type PDFObject } from '../../../store/pdfStore';
+import React, { useEffect, useState } from 'react';
+import { Stage, Layer, Rect, Image as KonvaImage, Group, Text } from 'react-konva';
+import { usePDFStore, type PDFObject, type NativeTextEdit } from '../../../store/pdfStore'; // Import NativeTextEdit
 import { PDFObjectRenderer } from './PDFObjectRenderer';
 import { AdjustmentGroup } from './shared/AdjustmentGroup';
 
@@ -12,15 +12,69 @@ interface CanvasLayerProps {
     scale: number;
     bgImage?: HTMLCanvasElement | HTMLImageElement | null;
     pageOverride?: any; // Allow passing a page state directly (for Editor Drafts)
+    hideNativeTextEdits?: boolean;
 }
 
 /**
  * CanvasLayer - Purely for VIEWING objects in the Home Panel.
  * Supports adjustment layers via nested rendering.
  */
-export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, width, height, scale, bgImage, pageOverride }) => {
-    const { pages } = usePDFStore();
+export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, width, height, scale, bgImage, pageOverride, hideNativeTextEdits = false }) => {
+    const { pages, pdfDocument } = usePDFStore();
     const page = pageOverride || pages.find(p => p.id === pageId);
+
+    // State for Native Text Edits (computed for Canvas)
+    const [canvasTextEdits, setCanvasTextEdits] = useState<any[]>([]);
+    const [pdfViewport, setPdfViewport] = useState<any>(null);
+
+    // 1. Fetch Viewport (Once per page load)
+    useEffect(() => {
+        if (page?.source !== 'pdf' || page.originalPageIndex === undefined || !pdfDocument) return;
+
+        // If we already have the correct viewport, skip
+        // Note: We can't easily check equality, but this effect only runs on page/doc change
+
+        let cancelled = false;
+        const loadViewport = async () => {
+            try {
+                const pdfPage = await pdfDocument.getPage(page.originalPageIndex);
+                if (cancelled) return;
+                const vp = pdfPage.getViewport({ scale: 1 });
+                setPdfViewport(vp);
+            } catch (e) {
+                console.error("Error loading viewport:", e);
+            }
+        };
+        loadViewport();
+
+        return () => { cancelled = true; };
+    }, [pdfDocument, page?.originalPageIndex, page?.source]);
+
+    // 2. Compute Edits (Sync when possible)
+    useEffect(() => {
+        if (!page || !page.nativeTextEdits || Object.keys(page.nativeTextEdits).length === 0) {
+            if (canvasTextEdits.length > 0) setCanvasTextEdits([]);
+            return;
+        }
+
+        if (page.source === 'pdf' && pdfViewport) {
+            const edits = Object.values(page.nativeTextEdits).map((edit: any) => {
+                const [vx, vy] = pdfViewport.convertToViewportPoint(edit.x, edit.y);
+                return {
+                    ...edit,
+                    vx,
+                    vy,
+                    yPos: vy - (edit.fontSize * 0.8)
+                };
+            });
+            setCanvasTextEdits(edits);
+        } else if (page.source !== 'pdf') {
+            // Non-PDF sources don't support native text edits usually, 
+            // but if they did, we'd handle them here without viewport conversion
+            setCanvasTextEdits([]);
+        }
+    }, [page?.nativeTextEdits, pdfViewport, page?.source]);
+
 
     if (!page) return null;
 
@@ -55,6 +109,44 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, width, height,
     } else {
         // Fallback transparent rectangle if no bgImage yet
         currentStack = <Rect key="bg-layer" width={unzoomedWidth} height={unzoomedHeight} fill="transparent" listening={false} />;
+    }
+
+    // 1.5 Inject Native Text Edits directly on top of Background
+    if (canvasTextEdits.length > 0 && !hideNativeTextEdits) {
+        const textEditNodes = canvasTextEdits.map((edit) => (
+            <Group key={edit.id}>
+                {/* Redaction Rect (White Background) */}
+                <Rect
+                    x={edit.vx}
+                    y={edit.yPos}
+                    width={edit.width}
+                    height={edit.fontSize * 1.2}
+                    fill="#ffffff"
+                    listening={false}
+                />
+                {/* New Text */}
+                <Text
+                    x={edit.vx}
+                    y={edit.yPos}
+                    text={edit.text}
+                    fontSize={edit.fontSize}
+                    fontFamily={edit.fontFamily || 'sans-serif'}
+                    fill={edit.color || 'black'}
+                    fontStyle={`${edit.fontStyle || 'normal'} ${edit.fontWeight || 'normal'}`}
+                    textDecoration={edit.textDecoration || ''}
+                    width={Math.max(edit.width, 10)} // Ensure some width for wrapping if needed
+                    listening={false}
+                />
+            </Group>
+        ));
+
+        // Wrap current stack + text edits
+        currentStack = (
+            <Group key="content-stack">
+                {currentStack}
+                {textEditNodes}
+            </Group>
+        );
     }
 
     // 2. Iterate through objects and build the nested structure

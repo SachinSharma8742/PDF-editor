@@ -92,13 +92,14 @@ export const SinglePageCanvas = forwardRef<SinglePageCanvasHandle, SinglePageCan
                             width={dimensions.width}
                             height={dimensions.height}
                             scale={scale}
-                        // Pass pageOverride if we have a draft state (Editor Store)
-                        // Note: CanvasLayer needs to be updated to accept pageOverride, 
-                        // OR we rely on the fact that CanvasLayer uses `usePDFStore`. 
-                        // BUT wait, CanvasLayer uses `usePDFStore`. It won't see `currentPage` from editorStore.
-                        // We must fix CanvasLayer first OR manually render here. 
-                        // Given I cannot easily change CanvasLayer signature in this step without reading it again, 
-                        // I will use a local rendering approach similar to CanvasLayer.
+                            // Pass pageOverride if we have a draft state (Editor Store)
+                            // Note: CanvasLayer needs to be updated to accept pageOverride, 
+                            // OR we rely on the fact that CanvasLayer uses `usePDFStore`. 
+                            // BUT wait, CanvasLayer uses `usePDFStore`. It won't see `currentPage` from editorStore.
+                            // We must fix CanvasLayer first OR manually render here. 
+                            // Given I cannot easily change CanvasLayer signature in this step without reading it again, 
+                            // I will use a local rendering approach similar to CanvasLayer.
+                            hideNativeTextEdits={true} // Hide static text in editor to avoid double rendering with HTML layer
                         />
                     </div>
 
