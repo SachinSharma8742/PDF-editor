@@ -315,8 +315,18 @@ async function drawObjectToCanvas(ctx: CanvasRenderingContext2D, obj: PDFObject)
                             // Ensure we have valid dimensions
                             const drawW = w || img.naturalWidth;
                             const drawH = h || img.naturalHeight;
+
                             if (drawW > 0 && drawH > 0) {
-                                ctx.drawImage(img, obj.x, obj.y, drawW, drawH);
+                                if ((obj as any).crop) {
+                                    const crop = (obj as any).crop;
+                                    ctx.drawImage(
+                                        img,
+                                        crop.x, crop.y, crop.width, crop.height, // Source: Crop Rect
+                                        obj.x, obj.y, drawW, drawH               // Dest: Canvas Position & Size
+                                    );
+                                } else {
+                                    ctx.drawImage(img, obj.x, obj.y, drawW, drawH);
+                                }
                             }
                         } catch (e) {
                             console.warn("Retrying image draw without crossOrigin", e);
