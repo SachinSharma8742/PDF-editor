@@ -75,12 +75,30 @@ const DATA_URL_TRUNCATE_THRESHOLD = 1024;
 
 // ─── Timeline Store (module-level singleton) ───────────────────
 
+const TIMELINE_STORAGE_KEY = 'pdf-editor-version-timeline';
+
 let timelineEntries: TimelineEntry[] = [];
+
+try {
+    const saved = localStorage.getItem(TIMELINE_STORAGE_KEY);
+    if (saved) {
+        timelineEntries = JSON.parse(saved);
+    }
+} catch (e) {
+    console.error('Failed to load timeline from storage:', e);
+}
+
 const listeners: Set<() => void> = new Set();
 
 function notifyListeners() {
     for (const listener of listeners) {
         listener();
+    }
+    // Save to local storage on every change
+    try {
+        localStorage.setItem(TIMELINE_STORAGE_KEY, JSON.stringify(timelineEntries));
+    } catch (e) {
+        console.error('Failed to save timeline to storage:', e);
     }
 }
 

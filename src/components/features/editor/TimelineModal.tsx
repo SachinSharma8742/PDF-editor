@@ -64,10 +64,20 @@ export const TimelineModal: React.FC<TimelineModalProps> = ({ isOpen, onClose })
                     return {
                         ...existing,
                         objects: snap.objects.map(obj => {
-                            // Remove serialization markers
-                            const cleaned = { ...obj };
-                            delete cleaned._srcTruncated;
-                            return cleaned;
+                            // Recover truncated src from the existing object if available
+                            let recoveredObj = { ...obj };
+                            if (recoveredObj._srcTruncated) {
+                                const originalObj = existing.objects.find(o => o.id === obj.id);
+                                if (originalObj && 'src' in originalObj) {
+                                    recoveredObj.src = originalObj.src as string;
+                                } else if (originalObj && 'url' in originalObj) {
+                                    recoveredObj.url = originalObj.url as string;
+                                } else if (originalObj && 'content' in originalObj) {
+                                    recoveredObj.content = originalObj.content as string;
+                                }
+                            }
+                            delete recoveredObj._srcTruncated;
+                            return recoveredObj;
                         }),
                         rotation: snap.rotation,
                         flipX: snap.flipX,
@@ -75,7 +85,7 @@ export const TimelineModal: React.FC<TimelineModalProps> = ({ isOpen, onClose })
                         backgroundColor: snap.backgroundColor,
                     } as unknown as PageState;
                 }
-                // Page doesn't exist in current state — skip or create blank
+                // Page doesn't exist in current state — handle gracefully
                 return {
                     id: snap.id,
                     pageNumber: snap.pageNumber,
@@ -96,8 +106,16 @@ export const TimelineModal: React.FC<TimelineModalProps> = ({ isOpen, onClose })
                 } as unknown as PageState;
             });
 
-            // Batch update pages
-            usePDFStore.setState({ pages: updatedPages });
+            // Batch update pages correctly via Zustand action, so it's tracked in history
+            const state = usePDFStore.getState();
+            usePDFStore.setState({
+                pages: updatedPages,
+                lastSavedState: updatedPages,
+                history: {
+                    past: [...state.history.past, { diff: [], inverse: [], timestamp: Date.now() }], 
+                    future: []
+                }
+            });
 
             setRestoredId(entryId);
             setConfirmRestore(null);
@@ -124,7 +142,7 @@ export const TimelineModal: React.FC<TimelineModalProps> = ({ isOpen, onClose })
     const reversedEntries = [...entries].reverse(); // newest first
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200 pointer-events-auto">
             <div className={`relative w-full max-w-lg max-h-[80vh] mx-4 rounded-2xl overflow-hidden flex flex-col ${isDark ? 'bg-[#1e1e22] text-white' : 'bg-white text-gray-900'}`}>
                 {/* Header */}
                 <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? 'border-white/10' : 'border-gray-200'}`}>

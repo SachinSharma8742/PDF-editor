@@ -53,7 +53,7 @@ export const Sidebar: React.FC = () => {
             togglePageSelection(pageId);
         } else {
             setCurrentPage(pageNumber);
-            document.getElementById(`page - ${pageNumber} `)?.scrollIntoView({ behavior: 'smooth' });
+            document.getElementById(`page-${pageNumber}`)?.scrollIntoView({ behavior: 'smooth' });
         }
     };
 
@@ -271,59 +271,34 @@ export const Sidebar: React.FC = () => {
                 </div>
             </div>
 
-            {/* Selection Mode Panel */}
+            {/* Selection Mode Panel - compact 2-row */}
             {isSelectionMode && (
-                <div className="mx-4 mb-4 bg-[#1a1a1d] rounded-2xl border border-white/5 overflow-hidden animate-in slide-in-from-top-2 duration-300">
-                    {/* Header Row */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
-                            <span className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">Selection Mode</span>
-                        </div>
+                <div className="mx-3 mb-3 bg-[#1a1a1d] rounded-xl border border-white/5 overflow-hidden animate-in slide-in-from-top-2 duration-300">
+                    {/* Row 1: status + controls */}
+                    <div className="flex items-center gap-2 px-3 py-2 border-b border-white/5">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.7)] shrink-0" />
+                        <span className="text-[11px] font-black text-blue-400 tabular-nums">{selectedPageIds.length}</span>
+                        <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">selected</span>
+                        <button onClick={selectAllPages} className="ml-auto px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[9px] font-bold uppercase rounded-md border border-white/5 transition-all">All</button>
+                        <button onClick={deselectAllPages} className="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[9px] font-bold uppercase rounded-md border border-white/5 transition-all">None</button>
                         <button
                             onClick={() => { setIsSelectionMode(false); deselectAllPages(); }}
-                            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-wider rounded-lg transition-all active:scale-95 shadow-lg shadow-blue-600/20"
-                        >
-                            Done
-                        </button>
+                            className="px-2.5 py-0.5 bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-black uppercase tracking-wider rounded-md transition-all active:scale-95"
+                        >Done</button>
                     </div>
-
-                    {/* Counter Row */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-                        <div>
-                            <span className="text-2xl font-black text-blue-400 tabular-nums">{selectedPageIds.length}</span>
-                            <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest ml-2">Pages<br />Selected</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={selectAllPages}
-                                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all border border-white/5"
-                            >
-                                All
-                            </button>
-                            <button
-                                onClick={deselectAllPages}
-                                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all border border-white/5"
-                            >
-                                None
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Action Buttons Row */}
-                    {/* Action Buttons Row - Grid Layout */}
-                    <div className="grid grid-cols-2 gap-2 p-3">
+                    {/* Row 2: action buttons */}
+                    <div className="flex items-center justify-around px-2 py-1.5">
                         <button
                             onClick={deleteSelectedPages}
                             disabled={selectedPageIds.length === 0}
-                            className="flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-white/5 hover:border-red-500/20 disabled:opacity-30 disabled:cursor-not-allowed group"
+                            className="flex flex-col items-center gap-0.5 p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-30"
+                            title="Delete"
                         >
-                            <Trash2 size={14} className="group-hover:scale-110 transition-transform" />
-                            Delete
+                            <Trash2 size={14} />
+                            <span className="text-[8px] font-bold uppercase">Delete</span>
                         </button>
                         <button
                             onClick={async () => {
-                                // Export selected pages
                                 if (selectedPageIds.length > 0) {
                                     const selectedPages = pages.filter(p => selectedPageIds.includes(p.id));
                                     await saveDocument(selectedPages, originalPdfBytes);
@@ -332,30 +307,29 @@ export const Sidebar: React.FC = () => {
                                 }
                             }}
                             disabled={selectedPageIds.length === 0}
-                            className="flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-blue-500/10 text-zinc-400 hover:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-white/5 hover:border-blue-500/20 disabled:opacity-30 disabled:cursor-not-allowed group"
+                            className="flex flex-col items-center gap-0.5 p-2 rounded-lg text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 transition-all disabled:opacity-30"
+                            title="Export"
                         >
-                            <Download size={14} className="group-hover:scale-110 transition-transform" />
-                            Export
+                            <Download size={14} />
+                            <span className="text-[8px] font-bold uppercase">Export</span>
                         </button>
                         <button
-                            onClick={() => {
-                                // Open Print Modal with selected pages
-                                useEditorStore.getState().openPrintModal(selectedPageIds);
-                            }}
+                            onClick={() => useEditorStore.getState().openPrintModal(selectedPageIds)}
                             disabled={selectedPageIds.length === 0}
-                            className="flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-teal-500/10 text-zinc-400 hover:text-teal-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-white/5 hover:border-teal-500/20 disabled:opacity-30 disabled:cursor-not-allowed group"
-                            title="Print Selected Pages"
+                            className="flex flex-col items-center gap-0.5 p-2 rounded-lg text-zinc-500 hover:text-teal-400 hover:bg-teal-500/10 transition-all disabled:opacity-30"
+                            title="Print"
                         >
-                            <Printer size={14} className="group-hover:scale-110 transition-transform" />
-                            Print
+                            <Printer size={14} />
+                            <span className="text-[8px] font-bold uppercase">Print</span>
                         </button>
                         <button
                             onClick={duplicateSelectedPages}
                             disabled={selectedPageIds.length === 0}
-                            className="flex items-center justify-center gap-2 py-3 bg-zinc-800/50 hover:bg-purple-500/10 text-zinc-400 hover:text-purple-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-white/5 hover:border-purple-500/20 disabled:opacity-30 disabled:cursor-not-allowed group"
+                            className="flex flex-col items-center gap-0.5 p-2 rounded-lg text-zinc-500 hover:text-purple-400 hover:bg-purple-500/10 transition-all disabled:opacity-30"
+                            title="Clone"
                         >
-                            <Copy size={14} className="group-hover:scale-110 transition-transform" />
-                            Clone
+                            <Copy size={14} />
+                            <span className="text-[8px] font-bold uppercase">Clone</span>
                         </button>
                     </div>
                 </div>

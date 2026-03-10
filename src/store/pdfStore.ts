@@ -369,6 +369,7 @@ interface PDFStore {
     updatePage: (pageId: string, updates: Partial<PageState>) => void;
     reorderPages: (fromIndex: number, toIndex: number) => void;
     applyStructureToAllPages: (type: 'header' | 'footer' | 'both', structure: PageState['structure']) => void;
+    applyEffectToAllPages: (effect: PDFObject) => void;
     deletePage: (pageId: string) => void;
     deleteSelectedPages: () => void;
     rotatePage: (pageId: string, direction: 'cw' | 'ccw') => void;
@@ -556,6 +557,11 @@ export const usePDFStore = create<PDFStore>()(
                     };
 
                     const newPast = [...history.past, newPatch].slice(-100);
+
+                    // Trigger Auto Timeline Snapshot
+                    import('../utils/versionTimeline').then(({ autoCheckpointIfNeeded }) => {
+                        autoCheckpointIfNeeded('Auto Save', currentSnapshot, 30_000); // 30 sec interval
+                    }).catch(console.error);
 
                     set({
                         history: {
@@ -1128,6 +1134,30 @@ export const usePDFStore = create<PDFStore>()(
                                 else delete newStructure.footer;
                             }
                             return { ...p, structure: newStructure, isEdited: true };
+                        })
+                    }));
+                    get().saveToHistory();
+                },
+
+                applyEffectToAllPages: (effect) => {
+                    set(state => ({
+                        pages: state.pages.map(p => {
+                            // First, remove any existing effect objects
+                            const filteredObjects = p.objects.filter(obj => obj.type !== 'effect');
+                            
+                            // Adjust the effect to fit the current page's dimensions
+                            const newEffectObj: PDFObject = {
+                                ...effect,
+                                id: `effect-${p.id}-${Date.now()}`,
+                                width: p.width,
+                                height: p.height,
+                            };
+                            
+                            return {
+                                ...p,
+                                objects: [...filteredObjects, newEffectObj],
+                                isEdited: true
+                            };
                         })
                     }));
                     get().saveToHistory();

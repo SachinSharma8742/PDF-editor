@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEditorStore } from '../../../store/editorStore';
+import { usePDFStore } from '../../../store/pdfStore';
 import {
     Sparkles, Trash2, Eye, EyeOff,
     Zap, Moon, Contrast, SlidersHorizontal, Droplets, Wand2
@@ -170,6 +171,21 @@ export const EffectsPanel: React.FC = () => {
                                                     <span className="text-blue-400 font-mono">{formatParamValue(key, value)}</span>
                                                 </div>
                                             ))}
+                                    </div>
+                                    
+                                    <div className="mt-3 pt-3 border-t border-white/5">
+                                        <button
+                                            onClick={() => {
+                                                const { applyEffectToAllPages } = usePDFStore.getState();
+                                                applyEffectToAllPages(effect);
+                                                // Small toast or feedback could be added here
+                                            }}
+                                            className="w-full flex items-center justify-center gap-2 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors border border-blue-500/20"
+                                            title="Apply this exact effect to all pages in the document"
+                                        >
+                                            <Sparkles size={12} />
+                                            Apply to All Pages
+                                        </button>
                                     </div>
                                 </div>
                             ))
