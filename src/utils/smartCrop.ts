@@ -116,7 +116,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 export async function smartCrop(
     imageSrc: string,
     padding: number = DEFAULT_PADDING
-): Promise<string> {
+): Promise<{ x: number; y: number; width: number; height: number } | null> {
     const img = await loadImage(imageSrc);
     const origW = img.naturalWidth;
     const origH = img.naturalHeight;
@@ -145,8 +145,8 @@ export async function smartCrop(
     const bounds = findContentBounds(analysisData.data, analysisW, analysisH, bgColor);
 
     if (!bounds) {
-        // No content detected — return original unchanged
-        return imageSrc;
+        // No content detected — return null
+        return null;
     }
 
     // --- Step 4: Map bounds back to original resolution ---
@@ -167,25 +167,19 @@ export async function smartCrop(
 
     // If crop would be essentially the full image (within padding), skip
     if (cropW >= origW - padding * 2 && cropH >= origH - padding * 2) {
-        return imageSrc;
+        return null;
     }
 
-    // --- Step 5: Crop original-resolution image ---
-    const outputCanvas = document.createElement('canvas');
-    outputCanvas.width = cropW;
-    outputCanvas.height = cropH;
-    const outputCtx = outputCanvas.getContext('2d');
-    if (!outputCtx) throw new Error('Failed to get output context');
-    outputCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    // --- Step 5: Return Crop Rectangle ---
+    // We no longer return a data URL. We return the coordinates.
+    // The previous implementation created a new canvas and drew the cropped image.
+    // Now we just want the definition.
 
-    // --- Step 6: Return new bitmap as data URL ---
-    const result = outputCanvas.toDataURL('image/png');
-
-    // Cleanup
-    analysisCanvas.width = 0;
-    analysisCanvas.height = 0;
-    outputCanvas.width = 0;
-    outputCanvas.height = 0;
-
-    return result;
+    return {
+        x: cropX,
+        y: cropY,
+        width: cropW,
+        height: cropH
+    };
 }
+

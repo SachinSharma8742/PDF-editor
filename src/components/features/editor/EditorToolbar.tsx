@@ -6,7 +6,7 @@ import {
     PenTool, Brush, EraserIcon,
     Pipette, PlusCircle, Ruler,
     Signature, Smile, Sparkles,
-    Shapes
+    Shapes, Magnet
 } from 'lucide-react';
 import clsx from 'clsx';
 import { SignatureModal } from './SignatureModal';
@@ -94,7 +94,8 @@ export const EditorToolbar: React.FC = () => {
     const isMobile = useIsMobile();
     const {
         activeTool, setActiveTool, addObject, toolPreferences, updateToolSettings,
-        addColorToHistory, openShapeEditor, openTextStudio
+        addColorToHistory, openShapeEditor, openTextStudio,
+        smartSnap, toggleSmartSnap
     } = useEditorStore();
 
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -273,6 +274,20 @@ export const EditorToolbar: React.FC = () => {
                             className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-[#09090b] shadow-sm z-20"
                             style={{ backgroundColor: currentSettings?.color || '#000' }}
                         />
+                    </button>
+
+                    {/* Smart Snap Toggle */}
+                    <button
+                        onClick={toggleSmartSnap}
+                        title={smartSnap ? 'Smart Snap (ON)' : 'Smart Snap (OFF)'}
+                        className={clsx(
+                            "w-9 h-9 md:w-11 md:h-11 rounded-xl flex items-center justify-center transition-all duration-200 group relative mx-auto",
+                            smartSnap
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-1 ring-blue-400/50'
+                                : 'text-zinc-300 hover:bg-white/10 hover:text-white'
+                        )}
+                    >
+                        <Magnet size={20} className={clsx("transition-transform", smartSnap && "scale-110")} />
                     </button>
 
                     <div className="w-8 h-px bg-white/5 mx-auto rounded-full" />

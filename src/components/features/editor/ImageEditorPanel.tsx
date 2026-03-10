@@ -22,19 +22,7 @@ export const ImageEditorPanel: React.FC = () => {
         );
     }
 
-    const filters = selectedObj.filters || [];
-    const getFilterValue = (name: string, defaultVal: number = 0) => {
-        const f = filters.find(f => f.name === name);
-        return f ? f.value : defaultVal;
-    };
 
-    const updateFilter = (name: string, value: number) => {
-        const newFilters = filters.filter(f => f.name !== name);
-        if (value !== 0) { // Only store non-default values
-            newFilters.push({ name, value });
-        }
-        updateObject(selectedObj.id, { filters: newFilters });
-    };
 
     return (
         <div className="p-4 space-y-8 pb-20">
@@ -259,7 +247,7 @@ export const ImageEditorPanel: React.FC = () => {
             </CollapsibleSection>
 
             {/* Crop */}
-            <div className="pt-4 border-t border-white/5">
+            <div className="pt-4 border-t border-white/5 space-y-3">
                 <button
                     onClick={() => setCropping(!isCropping)}
                     className={clsx(
@@ -270,7 +258,7 @@ export const ImageEditorPanel: React.FC = () => {
                     )}
                 >
                     <Scissors size={16} />
-                    <span className="text-[10px] font-bold uppercase">{isCropping ? "Confirm Crop" : "Enter Crop Mode"}</span>
+                    <span className="text-[10px] font-bold uppercase">{isCropping ? "Apply" : "Enter Crop Mode"}</span>
                 </button>
             </div>
         </div>
@@ -279,11 +267,7 @@ export const ImageEditorPanel: React.FC = () => {
 
 // --- Helpers ---
 
-const SectionLabel = ({ label, icon }: { label: string, icon: React.ReactNode }) => (
-    <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-        {icon} <span>{label}</span>
-    </div>
-);
+
 
 const FilterSlider = ({ label, icon, value, min, max, step, onChange }: {
     label: string;

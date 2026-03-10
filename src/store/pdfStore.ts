@@ -144,6 +144,7 @@ export interface PDFObject {
         rotation?: number; // 0, 90, 180, 270
         flipX?: boolean;
         flipY?: boolean;
+        upscaleFactor?: number;
     };
 
     isNew?: boolean; // Temporary flag for auto-focusing new objects

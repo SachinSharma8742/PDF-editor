@@ -1,31 +1,77 @@
-import React, { useEffect, useRef, useMemo } from 'react';
-import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Path, Text as KonvaText } from 'react-konva';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
+import { Stage, Layer, Image as KonvaImage, Rect, Transformer, Group, Path } from 'react-konva';
 import Konva from 'konva';
-import useImage from 'use-image';
 import { useImageStudioStore } from './useImageStudioStore';
-// Unified region type for all analysis tools
-export interface StudioRegion {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    type: 'text' | 'image' | 'header' | 'footer' | 'body' | 'ocr';
-    confidence?: number;
-}
 
 interface StudioCanvasProps {
-    src: string;
     width: number;
     height: number;
-    analysisRegions?: StudioRegion[];
 }
 
-export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, analysisRegions }) => {
-    const { params, activeTab, setParam, setDimensions } = useImageStudioStore();
+import { buildPipeline } from '../../../../imagePipeline/buildPipeline';
+
+export const StudioCanvas: React.FC<StudioCanvasProps> = ({ width, height }) => {
+    const { params, activeTab, setParam, setDimensions, sourceBitmap, operations, pipelineCache } = useImageStudioStore();
     const imageRef = useRef<Konva.Image>(null);
     const transformerRef = useRef<Konva.Transformer>(null);
     const cropRectRef = useRef<Konva.Rect>(null);
-    const [img] = useImage(src, 'anonymous');
+
+    // Pipeline State
+    const [pipelineImg, setPipelineImg] = useState<ImageBitmap | HTMLImageElement | null>(null);
+
+    // -- OPTIMIZATION: Effective Operations --
+    // When in Crop tab, we want to see the FULL image (uncropped) so we can adjust the crop box.
+    // So we temporarily strip the 'crop' operation from the pipeline for display purposes.
+    const effectiveOperations = useMemo(() => {
+        if (activeTab === 'crop') {
+            return {
+                ...operations,
+                transform: {
+                    ...operations.transform,
+                    crop: undefined // Disable crop in pipeline while editing crop
+                }
+            };
+        }
+        return operations;
+    }, [operations, activeTab]);
+
+    // -- PIPELINE EXECUTION --
+    useEffect(() => {
+        let active = true;
+
+        const runPipeline = async () => {
+            if (!sourceBitmap) {
+                if (active) setPipelineImg(null);
+                return;
+            }
+
+            try {
+                // Use effectiveOperations
+                const { output, cache } = await buildPipeline(sourceBitmap, effectiveOperations, pipelineCache);
+
+                if (active) {
+                    setPipelineImg(output);
+
+                    if (cache !== pipelineCache) {
+                        useImageStudioStore.getState().pipelineCache = cache;
+                    }
+                }
+            } catch (err) {
+                console.error("Pipeline failed:", err);
+            }
+        };
+
+        runPipeline();
+
+        return () => { active = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sourceBitmap, effectiveOperations]); // Remove pipelineCache from deps to avoids loops if we mutate it.
+
+    // Choose which image to display
+    const img = (pipelineImg as HTMLImageElement);
+
+    // Check if we are showing the pipeline result directly
+    const showingPipeline = !!pipelineImg;
 
     useEffect(() => {
         if (img) {
@@ -46,11 +92,16 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
         const availW = width - padding * 2;
         const availH = height - padding * 2;
 
-        const isRotated = (params.rotation / 90) % 2 !== 0; // 90, 270, etc.
-
         // If rotated 90deg, the image's height becomes its width in the container
-        const effectiveIW = isRotated ? img.height : img.width;
-        const effectiveIH = isRotated ? img.width : img.height;
+        const isRotated = (params.rotation / 90) % 2 !== 0;
+
+        let effectiveIW = img.width;
+        let effectiveIH = img.height;
+
+        if (!showingPipeline && isRotated) {
+            effectiveIW = img.height;
+            effectiveIH = img.width;
+        }
 
         // Base scale to fit full image
         const baseScaleW = availW / effectiveIW;
@@ -74,9 +125,8 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
             if (cropRatio < 0.8) {
                 smartZoomActive = true;
 
-                // Calculate scale to make the crop area fill ~70% of available space
-                const effectiveCropW = isRotated ? cropH : cropW;
-                const effectiveCropH = isRotated ? cropW : cropH;
+                const effectiveCropW = (!showingPipeline && isRotated) ? cropH : cropW;
+                const effectiveCropH = (!showingPipeline && isRotated) ? cropW : cropH;
 
                 const cropScaleW = (availW * 0.85) / effectiveCropW;
                 const cropScaleH = (availH * 0.85) / effectiveCropH;
@@ -88,15 +138,12 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
                 smartScale = Math.max(minZoom, Math.min(cropScale, maxZoom));
 
                 // Calculate offset to center the crop area
-                // Crop center in image coordinates
                 const cropCenterX = params.crop.x + cropW / 2;
                 const cropCenterY = params.crop.y + cropH / 2;
 
-                // Image center
                 const imageCenterX = img.width / 2;
                 const imageCenterY = img.height / 2;
 
-                // Offset needed to center crop (in scaled pixels)
                 offsetX = (imageCenterX - cropCenterX) * smartScale;
                 offsetY = (imageCenterY - cropCenterY) * smartScale;
             }
@@ -110,7 +157,7 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
             width: visualW,
             height: visualH,
             scale: smartScale,
-            x: (width - visualW) / 2, // Top-left of unrotated image relative to stage (approx)
+            x: (width - visualW) / 2,
             y: (height - visualH) / 2,
             stageCenterX: width / 2,
             stageCenterY: height / 2,
@@ -118,7 +165,7 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
             offsetY,
             smartZoomActive
         };
-    }, [img, width, height, params.rotation, activeTab, params.crop]);
+    }, [img, width, height, params.rotation, activeTab, params.crop, showingPipeline]);
 
     // Apply Crop Overlay
     useEffect(() => {
@@ -129,72 +176,14 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
             }
 
             if (transformerRef.current && cropRectRef.current) {
-                // We need to detach first to avoid issues
                 transformerRef.current.nodes([]);
-                // Then attach
                 transformerRef.current.nodes([cropRectRef.current]);
                 transformerRef.current.getLayer()?.batchDraw();
             }
         }
-    }, [activeTab, params.crop, img]);
+    }, [activeTab, params.crop, img, setParam]);
 
-    // Apply Filters
-    useEffect(() => {
-        if (!img || !imageRef.current) return;
 
-        const node = imageRef.current;
-        const activeFilters: any[] = [];
-
-        // 1. Basic Adjustments
-        if (params.brightness !== 0) {
-            activeFilters.push(Konva.Filters.Brighten);
-            node.brightness(params.brightness);
-        }
-        if (params.contrast !== 0) {
-            activeFilters.push(Konva.Filters.Contrast);
-            node.contrast(params.contrast);
-        }
-        if (params.saturation !== 0) {
-            activeFilters.push(Konva.Filters.HSL);
-            node.saturation(params.saturation);
-        }
-
-        // Blur
-        if (params.blur > 0) {
-            activeFilters.push(Konva.Filters.Blur);
-            node.blurRadius(params.blur);
-        }
-
-        // Noise
-        if (params.noise > 0) {
-            activeFilters.push(Konva.Filters.Noise);
-            node.noise(params.noise);
-        }
-
-        // Grayscale / Invert / Sepia
-        if (params.grayscale) activeFilters.push(Konva.Filters.Grayscale);
-        if (params.invert) activeFilters.push(Konva.Filters.Invert);
-        if (params.sepia) activeFilters.push(Konva.Filters.Sepia);
-
-        // Apply
-        node.filters(activeFilters);
-
-        // Clear previous cache to avoid artifacts or errors
-        node.clearCache();
-
-        if (activeFilters.length > 0) {
-            try {
-                node.cache({
-                    pixelRatio: 1, // Fix resolution for performance
-                    imageSmoothingEnabled: true
-                });
-            } catch (e) {
-                console.error("StudioCanvas: Failed to cache image", e);
-            }
-        }
-
-        node.getLayer()?.batchDraw();
-    }, [img, params]);
 
     if (!img) return null;
 
@@ -210,31 +199,48 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
                     height={displayDims.height}
                     offsetX={displayDims.width / 2}
                     offsetY={displayDims.height / 2}
-                    rotation={params.rotation} // Rotate background too
+                    rotation={showingPipeline ? 0 : params.rotation}
                     fillPatternRepeat="repeat"
                     opacity={0.5}
                 />
 
-                <KonvaImage
-                    ref={imageRef}
-                    image={img}
-                    width={displayDims.width}
-                    height={displayDims.height}
-
-                    // Transforms
-                    rotation={params.rotation}
-
-                    // Center pivot for correct rotation/flip
-                    offsetX={displayDims.width / 2}
-                    offsetY={displayDims.height / 2}
-
-                    // Place at center of stage (with smart zoom offset)
+                <Group
                     x={displayDims.stageCenterX + displayDims.offsetX}
                     y={displayDims.stageCenterY + displayDims.offsetY}
+                    offsetX={displayDims.width / 2}
+                    offsetY={displayDims.height / 2}
+                    rotation={showingPipeline ? 0 : params.rotation}
+                    scaleX={showingPipeline ? 1 : (params.flipX ? -1 : 1)}
+                    scaleY={showingPipeline ? 1 : (params.flipY ? -1 : 1)}
+                    clipFunc={
+                        (activeTab !== 'crop' && params.cropShape && params.cropShape !== 'rect')
+                            ? (ctx) => {
+                                const w = displayDims.width;
+                                const h = displayDims.height;
 
-                    scaleX={(params.flipX ? -1 : 1)}
-                    scaleY={(params.flipY ? -1 : 1)}
-                />
+                                ctx.beginPath();
+                                if (params.cropShape === 'circle') {
+                                    const rx = w / 2;
+                                    const ry = h / 2;
+                                    ctx.ellipse(w / 2, h / 2, rx, ry, 0, 0, Math.PI * 2);
+                                } else if (params.cropShape === 'heart') {
+                                    const x = 0, y = 0;
+                                    ctx.moveTo(x + w / 2, y + h);
+                                    ctx.bezierCurveTo(x, y + h * 0.6, x, y, x + w / 2, y + h * 0.3);
+                                    ctx.bezierCurveTo(x + w, y, x + w, y + h * 0.6, x + w / 2, y + h);
+                                }
+                                ctx.closePath();
+                            }
+                            : undefined
+                    }
+                >
+                    <KonvaImage
+                        ref={imageRef}
+                        image={img}
+                        width={displayDims.width}
+                        height={displayDims.height}
+                    />
+                </Group>
 
                 {/* Crop Overlay */}
                 {activeTab === 'crop' && (
@@ -244,9 +250,9 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
                             y={displayDims.stageCenterY + displayDims.offsetY}
                             offsetX={displayDims.width / 2}
                             offsetY={displayDims.height / 2}
-                            rotation={params.rotation}
-                            scaleX={(params.flipX ? -1 : 1)}
-                            scaleY={(params.flipY ? -1 : 1)}
+                            rotation={showingPipeline ? 0 : params.rotation}
+                            scaleX={showingPipeline ? 1 : (params.flipX ? -1 : 1)}
+                            scaleY={showingPipeline ? 1 : (params.flipY ? -1 : 1)}
                         >
                             {/* Dark Tint Overlay with Hole */}
                             <Path
@@ -255,37 +261,21 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
                                     const outer = `M 0 0 H ${displayDims.width} V ${displayDims.height} H 0 Z`;
 
                                     // Inner Hole (The visible crop part)
-                                    let inner = "";
-
                                     const cx = params.crop ? params.crop.x * displayDims.scale : 0;
                                     const cy = params.crop ? params.crop.y * displayDims.scale : 0;
                                     const cw = params.crop ? params.crop.width * displayDims.scale : displayDims.width;
                                     const ch = params.crop ? params.crop.height * displayDims.scale : displayDims.height;
                                     const shape = params.cropShape || 'rect';
 
+                                    let inner = "";
+
                                     if (shape === 'circle') {
                                         const rx = cw / 2;
                                         const ry = ch / 2;
                                         const centX = cx + rx;
                                         const centY = cy + ry;
-                                        // Counter-clockwise for hole in non-zero rule,
-                                        // BUT evenodd rule is simpler: just draw the shape.
-                                        // For evenodd to work as a hole, we just draw the shape path.
-                                        // Circle path: move to right edge, arc around.
                                         inner = `M ${centX - rx} ${centY} A ${rx} ${ry} 0 1 0 ${centX + rx} ${centY} A ${rx} ${ry} 0 1 0 ${centX - rx} ${centY}`;
                                     } else if (shape === 'heart') {
-                                        // Approximate heart shape path normalized to crop box
-                                        const p0 = { x: cx + cw / 2, y: cy + ch };
-                                        const p1 = { x: cx, y: cy + ch * 0.4 };
-                                        const p2 = { x: cx, y: cy };
-                                        const p3 = { x: cx + cw / 2, y: cy + ch * 0.2 };
-                                        const p4 = { x: cx + cw, y: cy };
-                                        const p5 = { x: cx + cw, y: cy + ch * 0.4 };
-
-                                        // Cubic Bezier Heart
-                                        // simplified:
-                                        // M center bottom
-                                        // C (control points) top-left
                                         inner = `M ${cx + cw / 2} ${cy + ch} ` +
                                             `C ${cx} ${cy + ch * 0.6}, ${cx} ${cy}, ${cx + cw / 2} ${cy + ch * 0.3} ` +
                                             `C ${cx + cw} ${cy}, ${cx + cw} ${cy + ch * 0.6}, ${cx + cw / 2} ${cy + ch} Z`;
@@ -297,8 +287,8 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
                                     return `${outer} ${inner}`;
                                 })()}
                                 fill="rgba(0, 0, 0, 0.6)"
-                                fillRule="evenodd" // Important for hole
-                                listening={false} // Don't block interactions
+                                fillRule="evenodd"
+                                listening={false}
                             />
 
                             <Rect
@@ -308,14 +298,10 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
                                 width={params.crop ? params.crop.width * displayDims.scale : displayDims.width}
                                 height={params.crop ? params.crop.height * displayDims.scale : displayDims.height}
                                 stroke="white"
-                                strokeWidth={2 / displayDims.scale} // Counter-scale stroke? Or just 2
+                                strokeWidth={2 / displayDims.scale}
                                 dash={[10, 5]}
                                 draggable
                                 dragBoundFunc={(pos) => {
-                                    // POS is absolute global coordinates.
-                                    // This is tricky inside a transformed group.
-                                    // Easier: Don't implement dragBoundFunc strictly or use local conversion.
-                                    // For now, let it be loose.
                                     return pos;
                                 }}
                                 onTransformEnd={() => {
@@ -330,9 +316,6 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
                                         node.width(node.width() * scaleX);
                                         node.height(node.height() * scaleY);
 
-                                        // Store as relative to image pixels?
-                                        // node.x() is local to the Group (which matches Image).
-                                        // So node.x() / displayDims.scale = Image Pixels X.
                                         setParam('crop', {
                                             x: node.x() / displayDims.scale,
                                             y: node.y() / displayDims.scale,
@@ -344,7 +327,6 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
                                 onDragEnd={() => {
                                     if (cropRectRef.current) {
                                         const node = cropRectRef.current;
-                                        // node.x() is local
                                         setParam('crop', {
                                             x: node.x() / displayDims.scale,
                                             y: node.y() / displayDims.scale,
@@ -364,83 +346,6 @@ export const StudioCanvas: React.FC<StudioCanvasProps> = ({ src, width, height, 
                             }}
                         />
                     </>
-                )}
-
-                {/* Analysis Regions Overlay */}
-                {analysisRegions && analysisRegions.length > 0 && (
-                    <Group
-                        x={displayDims.stageCenterX + displayDims.offsetX}
-                        y={displayDims.stageCenterY + displayDims.offsetY}
-                        offsetX={displayDims.width / 2}
-                        offsetY={displayDims.height / 2}
-                        rotation={params.rotation}
-                        scaleX={(params.flipX ? -1 : 1)}
-                        scaleY={(params.flipY ? -1 : 1)}
-                    >
-                        {analysisRegions.map((region, i) => {
-                            let strokeColor = '#ef4444'; // default red (text)
-                            let fillColor = 'rgba(239, 68, 68, 0.1)';
-
-                            switch (region.type) {
-                                case 'image':
-                                    strokeColor = '#3b82f6'; // blue
-                                    fillColor = 'rgba(59, 130, 246, 0.1)';
-                                    break;
-                                case 'ocr':
-                                    strokeColor = '#eab308'; // yellow
-                                    fillColor = 'rgba(234, 179, 8, 0.15)';
-                                    break;
-                                case 'header':
-                                case 'footer':
-                                    strokeColor = '#a855f7'; // purple
-                                    fillColor = 'rgba(168, 85, 247, 0.1)';
-                                    break;
-                                case 'body':
-                                    strokeColor = '#22c55e'; // green
-                                    fillColor = 'rgba(34, 197, 94, 0.1)';
-                                    break;
-                            }
-
-                            return (
-                                <React.Fragment key={i}>
-                                    {/* Region Box */}
-                                    <Rect
-                                        x={region.x * displayDims.scale}
-                                        y={region.y * displayDims.scale}
-                                        width={region.width * displayDims.scale}
-                                        height={region.height * displayDims.scale}
-                                        stroke={strokeColor}
-                                        strokeWidth={2 / displayDims.scale}
-                                        fill={fillColor}
-                                        listening={false}
-                                    />
-                                    <Group
-                                        x={region.x * displayDims.scale}
-                                        y={(region.y * displayDims.scale) - (14)} // Fixed height 14px (no inverse scale)
-                                        listening={false}
-                                    >
-                                        {/* Label Background */}
-                                        <Rect
-                                            width={Math.min(region.width * displayDims.scale, 80)}
-                                            height={14}
-                                            fill={strokeColor}
-                                        />
-                                        {/* Label Text */}
-                                        <KonvaText
-                                            text={region.type.toUpperCase()}
-                                            fontSize={10}
-                                            fill="#ffffff"
-                                            padding={2}
-                                            width={Math.min(region.width * displayDims.scale, 80)}
-                                            height={14}
-                                            align="center"
-                                            verticalAlign="middle"
-                                        />
-                                    </Group>
-                                </React.Fragment>
-                            );
-                        })}
-                    </Group>
                 )}
             </Layer>
         </Stage >

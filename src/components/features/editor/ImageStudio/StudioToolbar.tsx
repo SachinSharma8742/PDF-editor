@@ -1,15 +1,27 @@
 import React from 'react';
-import { useImageStudioStore } from './useImageStudioStore';
+import { useImageStudioStore, type ImageStudioStore } from './useImageStudioStore';
 import {
     Sun, Contrast, Droplet, MoveHorizontal, MoveVertical,
-    Ghost, RotateCw, Wand2, Sliders, Check, RotateCcw,
+    RotateCw, Wand2, Sliders, Check, RotateCcw,
     Crop, Maximize, Square, Sparkles, RefreshCw
 } from 'lucide-react';
+
 import clsx from 'clsx';
 import { useEditorStore } from '../../../../store/editorStore';
 
+interface FilterSliderProps {
+    label: string;
+    icon: React.ReactNode;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    onChange: (value: number) => void;
+    onPointerDown?: () => void;
+}
+
 // Premium Filter Slider Component
-const FilterSlider = ({ label, icon, value, min, max, step, onChange }: any) => {
+const FilterSlider: React.FC<FilterSliderProps> = ({ label, icon, value, min, max, step, onChange, onPointerDown }) => {
     const percentage = ((value - min) / (max - min)) * 100;
 
     return (
@@ -41,6 +53,7 @@ const FilterSlider = ({ label, icon, value, min, max, step, onChange }: any) => 
                     min={min} max={max} step={step}
                     value={value}
                     onChange={(e) => onChange(Number(e.target.value))}
+                    onPointerDown={onPointerDown}
                     className="w-full h-6 appearance-none cursor-pointer bg-transparent relative z-10
                                [&::-webkit-slider-thumb]:appearance-none 
                                [&::-webkit-slider-thumb]:w-4 
@@ -66,8 +79,15 @@ const FilterSlider = ({ label, icon, value, min, max, step, onChange }: any) => 
     );
 };
 
+interface TransformButtonProps {
+    icon: React.ElementType;
+    label: string;
+    active: boolean;
+    onClick: () => void;
+}
+
 // Transform Button Component
-const TransformButton = ({ icon: Icon, label, active, onClick }: any) => (
+const TransformButton: React.FC<TransformButtonProps> = ({ icon: Icon, label, active, onClick }) => (
     <button
         onClick={onClick}
         className={clsx(
@@ -82,8 +102,14 @@ const TransformButton = ({ icon: Icon, label, active, onClick }: any) => (
     </button>
 );
 
+interface AspectButtonProps {
+    icon: React.ElementType;
+    label: string;
+    onClick: () => void;
+}
+
 // Aspect Ratio Button Component
-const AspectButton = ({ icon: Icon, label, onClick }: any) => (
+const AspectButton: React.FC<AspectButtonProps> = ({ icon: Icon, label, onClick }) => (
     <button
         onClick={onClick}
         className="flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-xl bg-zinc-800/30 hover:bg-zinc-800 border border-white/5 hover:border-white/10 text-zinc-500 hover:text-white transition-all group"
@@ -93,8 +119,18 @@ const AspectButton = ({ icon: Icon, label, onClick }: any) => (
     </button>
 );
 
+
+
+
+
+interface EffectButtonProps {
+    label: string;
+    active: boolean;
+    onClick: () => void;
+}
+
 // Effect Button Component
-const EffectButton = ({ label, active, onClick }: any) => (
+const EffectButton: React.FC<EffectButtonProps> = ({ label, active, onClick }) => (
     <button
         onClick={onClick}
         className={clsx(
@@ -110,7 +146,7 @@ const EffectButton = ({ label, active, onClick }: any) => (
 );
 
 export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void }> = ({ onApply, onCancel }) => {
-    const { params, setParam, activeTab, setActiveTab, resetParams, dimensions } = useImageStudioStore();
+    const { params, setParam, activeTab, setActiveTab, resetParams, dimensions, pushHistory } = useImageStudioStore();
     const { imageStudio } = useEditorStore();
 
     const isEditMode = imageStudio.mode === 'edit';
@@ -122,6 +158,7 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
         const imgH = dimensions.height || 1000;
 
         if (ratio === null) {
+            pushHistory();
             setParam('crop', { x: 0, y: 0, width: imgW, height: imgH });
             return;
         }
@@ -139,6 +176,7 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
         const newX = (imgW - newW) / 2;
         const newY = (imgH - newH) / 2;
 
+        pushHistory();
         setParam('crop', { x: newX, y: newY, width: newW, height: newH });
     };
 
@@ -160,6 +198,7 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                             value={params.brightness}
                             min={-1} max={1} step={0.05}
                             onChange={(v: number) => setParam('brightness', v)}
+                            onPointerDown={pushHistory}
                         />
                         <FilterSlider
                             label="Contrast"
@@ -167,6 +206,7 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                             value={params.contrast}
                             min={-100} max={100} step={5}
                             onChange={(v: number) => setParam('contrast', v)}
+                            onPointerDown={pushHistory}
                         />
                         <FilterSlider
                             label="Saturation"
@@ -174,13 +214,7 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                             value={params.saturation}
                             min={-2} max={10} step={0.1}
                             onChange={(v: number) => setParam('saturation', v)}
-                        />
-                        <FilterSlider
-                            label="Blur"
-                            icon={<Ghost size={12} />}
-                            value={params.blur}
-                            min={0} max={40} step={1}
-                            onChange={(v: number) => setParam('blur', v)}
+                            onPointerDown={pushHistory}
                         />
                     </div>
                 );
@@ -191,28 +225,30 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                             icon={RotateCw}
                             label="Rotate 90°"
                             active={false}
-                            onClick={() => setParam('rotation', (params.rotation + 90) % 360)}
+                            onClick={() => { pushHistory(); setParam('rotation', (params.rotation + 90) % 360); }}
                         />
                         <div className="w-px h-12 bg-white/10" />
                         <TransformButton
                             icon={MoveHorizontal}
                             label="Flip X"
                             active={params.flipX}
-                            onClick={() => setParam('flipX', !params.flipX)}
+                            onClick={() => { pushHistory(); setParam('flipX', !params.flipX); }}
                         />
                         <TransformButton
                             icon={MoveVertical}
                             label="Flip Y"
                             active={params.flipY}
-                            onClick={() => setParam('flipY', !params.flipY)}
+                            onClick={() => { pushHistory(); setParam('flipY', !params.flipY); }}
                         />
                     </div>
                 );
             case 'crop':
                 return (
                     <div className="flex flex-col gap-4">
-                        {/* Aspect Ratio Presets */}
-                        <div className="flex items-center justify-center gap-3">
+
+
+                        {/* Aspect Ratio Presets - Moved to top as primary control */}
+                        <div className="flex items-center justify-center gap-3 pt-2">
                             <AspectButton icon={Maximize} label="Original" onClick={() => handleAspectRatio(null)} />
                             <AspectButton icon={Square} label="1:1" onClick={() => handleAspectRatio(1)} />
                             <AspectButton icon={Crop} label="16:9" onClick={() => handleAspectRatio(16 / 9)} />
@@ -252,17 +288,17 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                         <EffectButton
                             label="Grayscale"
                             active={params.grayscale === 1}
-                            onClick={() => setParam('grayscale', params.grayscale ? 0 : 1)}
+                            onClick={() => { pushHistory(); setParam('grayscale', params.grayscale ? 0 : 1); }}
                         />
                         <EffectButton
                             label="Sepia"
                             active={params.sepia === 1}
-                            onClick={() => setParam('sepia', params.sepia ? 0 : 1)}
+                            onClick={() => { pushHistory(); setParam('sepia', params.sepia ? 0 : 1); }}
                         />
                         <EffectButton
                             label="Invert"
                             active={params.invert === 1}
-                            onClick={() => setParam('invert', params.invert ? 0 : 1)}
+                            onClick={() => { pushHistory(); setParam('invert', params.invert ? 0 : 1); }}
                         />
                     </div>
                 );
@@ -278,7 +314,7 @@ export const StudioToolbar: React.FC<{ onApply: () => void; onCancel: () => void
                 {tabs.map(tab => (
                     <button
                         key={tab.id}
-                        onClick={() => setActiveTab(tab.id as any)}
+                        onClick={() => setActiveTab(tab.id as ImageStudioStore['activeTab'])}
                         className={clsx(
                             "flex items-center gap-2.5 px-5 py-2 rounded-xl transition-all text-[11px] font-bold uppercase tracking-wider",
                             activeTab === tab.id

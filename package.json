@@ -30,7 +30,7 @@
     "react-dom": "^19.2.0",
     "react-konva": "^19.2.1",
     "react-konva-utils": "^2.0.0",
-    "tailwind-merge": "^3.4.0",
+    "tailwind-merge": "^3.4.1",
     "tesseract.js": "^7.0.0",
     "use-image": "^1.1.4",
     "zustand": "^5.0.10"

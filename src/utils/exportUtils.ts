@@ -352,6 +352,18 @@ async function drawObjectToCanvas(ctx: CanvasRenderingContext2D, obj: PDFObject)
                 });
             }
 
+        } else if (obj.type === 'redaction') {
+            // Secure redaction flattening: erase underlying content then fill opaque black
+            // Step 1: Erase underlying pixels using destination-out composite
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillStyle = 'black';
+            ctx.fillRect(obj.x, obj.y, w, h);
+            // Step 2: Fill solid black over the erased region
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(obj.x, obj.y, w, h);
+
         } else if (['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse'].includes(obj.type)) {
             ctx.beginPath();
             if (obj.type === 'rectangle') {
