@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings2, Layers, FileText, MessageCircleQuestion } from 'lucide-react';
+import { Settings2, Layers } from 'lucide-react';
 import { EditorProperties } from './EditorProperties';
 import { LayerPanel } from './LayerPanel';
-import { SummarizerPanel } from './SummarizerPanel';
-import { DocumentQAPanel } from './DocumentQAPanel';
 
 import { useEditorStore } from '../../../store/editorStore';
 import clsx from 'clsx';
@@ -22,7 +20,7 @@ const useIsMobile = () => {
     return isMobile;
 };
 
-type Tab = 'properties' | 'layers' | 'export' | 'summary' | 'ask';
+type Tab = 'properties' | 'layers' | 'export';
 
 export const EditorRightPanel: React.FC = () => {
     const isMobile = useIsMobile();
@@ -35,8 +33,6 @@ export const EditorRightPanel: React.FC = () => {
     const tabs = [
         { id: 'properties', icon: Settings2, label: 'Settings' },
         { id: 'layers', icon: Layers, label: 'Layers' },
-        { id: 'summary', icon: FileText, label: 'Summary' },
-        { id: 'ask', icon: MessageCircleQuestion, label: 'Ask' },
     ];
 
     return (
@@ -64,8 +60,6 @@ export const EditorRightPanel: React.FC = () => {
             <div className="flex-1 overflow-y-auto custom-scrollbar relative text-white bg-[#1e1e20]">
                 {activePanelTab === 'properties' && <EditorProperties />}
                 {activePanelTab === 'layers' && <LayerPanel />}
-                {activePanelTab === 'summary' && <SummarizerPanel />}
-                {activePanelTab === 'ask' && <DocumentQAPanel />}
             </div>
 
             {/* Footer Label */}

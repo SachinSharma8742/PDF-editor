@@ -329,6 +329,12 @@ interface EditorStore {
     // Full-Page Translation
     translatePage: (textItems: (PDFTextItem | NativeTextItem)[], targetLang: string) => Promise<void>;
     undoPageTranslation: () => void;
+
+    // Bézier Custom Shape Drawing
+    isBezierDrawing: boolean;
+    bezierStyle: { stroke: string; strokeWidth: number; fill: string; fillOpacity: number; opacity: number };
+    startBezierMode: (style?: Partial<EditorStore['bezierStyle']>) => void;
+    endBezierMode: () => void;
 }
 
 export interface TranslationState {
@@ -942,6 +948,16 @@ export const useEditorStore = create<EditorStore>()(
                     }
                 });
             },
+
+            // Bézier Custom Shape Drawing
+            isBezierDrawing: false,
+            bezierStyle: { stroke: '#000000', strokeWidth: 2, fill: 'transparent', fillOpacity: 1, opacity: 1 },
+            startBezierMode: (style) => set(state => ({
+                isBezierDrawing: true,
+                bezierStyle: { ...state.bezierStyle, ...(style || {}) },
+                activeTool: 'select' // Neutral — BezierShapeCanvas takes over input
+            })),
+            endBezierMode: () => set({ isBezierDrawing: false }),
 
             imageStudio: {
                 isOpen: false,

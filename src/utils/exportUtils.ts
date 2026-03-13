@@ -435,7 +435,25 @@ async function drawObjectToCanvas(ctx: CanvasRenderingContext2D, obj: PDFObject)
             }
 
         } else if (['path', 'heart', 'cloud', 'lightning', 'drop', 'callout-bubble'].includes(obj.type)) {
-            if (obj.type === 'path' && obj.points) {
+            // Bézier custom shape with SVG pathData
+            if (obj.type === 'path' && (obj as any).pathData) {
+                const p = new Path2D((obj as any).pathData);
+                ctx.save();
+                ctx.translate(obj.x, obj.y);
+                if (obj.fill && obj.fill !== 'transparent') {
+                    ctx.fillStyle = hexToRgba(obj.fill, obj.fillOpacity ?? 1);
+                    ctx.fill(p);
+                }
+                const sw = obj.strokeWidth ?? 2;
+                if (sw > 0 && obj.stroke && obj.stroke !== 'transparent') {
+                    ctx.strokeStyle = obj.stroke;
+                    ctx.lineWidth = sw;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.stroke(p);
+                }
+                ctx.restore();
+            } else if (obj.type === 'path' && obj.points) {
                 // Freehand Path
                 ctx.beginPath();
                 ctx.strokeStyle = obj.stroke || 'black';

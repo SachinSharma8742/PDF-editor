@@ -8,6 +8,7 @@ import { PDFObjectRenderer } from './PDFObjectRenderer';
 import { AdjustmentGroup } from './shared/AdjustmentGroup';
 import { ImageCropOverlay } from './ImageCropOverlay';
 import { TextEditorOverlay } from './TextEditorOverlay';
+import { BezierShapeCanvas } from './BezierShapeCanvas';
 import { Loader2 } from 'lucide-react';
 
 
@@ -40,7 +41,8 @@ export const EditorCanvas: React.FC = () => {
         previewStyle,
         setScale,
         isCropping,
-        setCropping
+        setCropping,
+        isBezierDrawing,
     } = useEditorStore();
 
     // PDF Global State (Source)
@@ -57,8 +59,8 @@ export const EditorCanvas: React.FC = () => {
             try {
                 const page = await pdfDocument.getPage(index);
                 // Get unscaled viewport
-                const rotation = (currentPage.rotation || 0) + (page.rotate || 0);
-                const viewport = page.getViewport({ scale: 1, rotation: rotation % 360 });
+                const rotation = (currentPage.rotation || 0) + ((page as any).rotate || 0);
+                const viewport = page.getViewport({ scale: 1, rotation: rotation % 360 } as any);
 
                 const container = document.getElementById('editor-workspace');
                 if (!container) return;
@@ -179,10 +181,10 @@ export const EditorCanvas: React.FC = () => {
                 const page = await pdfDocument.getPage(indexToFetch);
                 if (isCancelled) return;
 
-                const rotation = (currentPage.rotation || 0) + (page.rotate || 0); // Combine intrinsic + user rotation
+                const rotation = (currentPage.rotation || 0) + ((page as any).rotate || 0); // Combine intrinsic + user rotation
 
                 // Get base viewport at scale 1 to determine unzoomed size
-                const baseViewport = page.getViewport({ scale: 1, rotation: rotation % 360 });
+                const baseViewport = page.getViewport({ scale: 1, rotation: rotation % 360 } as any);
                 const baseWidth = baseViewport.width;
                 const baseHeight = baseViewport.height;
 
@@ -197,7 +199,7 @@ export const EditorCanvas: React.FC = () => {
 
                 // Use a fixed high-DPI scale for background rendering to keep it sharp
                 const RENDER_SCALE = 2;
-                const viewport = page.getViewport({ scale: RENDER_SCALE, rotation: rotation % 360 });
+                const viewport = page.getViewport({ scale: RENDER_SCALE, rotation: rotation % 360 } as any);
                 const outputScale = 1;
 
                 // 1. Prepare Buffer Canvas (Internal PDF Render)
@@ -218,7 +220,7 @@ export const EditorCanvas: React.FC = () => {
                     viewport: viewport,
                 };
 
-                renderTask = page.render(renderContext);
+                renderTask = page.render(renderContext) as any;
                 await renderTask!.promise;
 
                 // Base background rendered
@@ -1480,6 +1482,15 @@ export const EditorCanvas: React.FC = () => {
                     return null;
                 })()}
             </div>
+
+            {/* Bézier Custom Shape Builder Overlay */}
+            {isBezierDrawing && currentPage && (
+                <BezierShapeCanvas
+                    canvasWidth={dimensions.width}
+                    canvasHeight={dimensions.height}
+                    editorScale={scale}
+                />
+            )}
 
             {/* Simple Loading Indicator */}
             {rendering && (

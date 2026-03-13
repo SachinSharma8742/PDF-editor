@@ -27,6 +27,7 @@ export interface PDFObject {
     id: string;
     comments?: Comment[]; // For collaboration/notes
     type: 'text' | 'image' | 'rectangle' | 'circle' | 'triangle' | 'star' | 'polygon' | 'ellipse' | 'line' | 'arrow' | 'stamp' | 'signature' | 'path' | 'measure' | 'redaction' | 'sticky-note' | 'callout' | 'form-text' | 'form-checkbox' | 'heart' | 'cloud' | 'lightning' | 'drop' | 'callout-bubble' | 'group' | 'effect';
+    pathData?: string; // SVG path string for Bézier custom shapes
     x: number;
     y: number;
     width?: number;
@@ -155,7 +156,7 @@ export interface DrawingPath {
     points: number[];
     stroke: string;
     strokeWidth: number;
-    tool: 'pen' | 'highlighter' | 'eraser';
+    tool: 'pen' | 'highlighter' | 'eraser' | 'freestyle';
     opacity: number;
     closed?: boolean;
     x?: number;
@@ -512,7 +513,7 @@ export const usePDFStore = create<PDFStore>()(
                     'form-checkbox': { ...DEFAULT_SETTINGS },
                     'ocr': { ...DEFAULT_SETTINGS },
                     'native-text-selection': { ...DEFAULT_SETTINGS },
-                    'effects': { ...DEFAULT_SETTINGS }
+                    'effects': { ...DEFAULT_SETTINGS },
                 },
 
                 selectedObjectIds: [],

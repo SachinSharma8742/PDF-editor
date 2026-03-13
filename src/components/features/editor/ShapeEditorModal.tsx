@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useEditorStore } from '../../../store/editorStore';
 import { usePDFStore } from '../../../store/pdfStore';
-import { X, Check, Heart, Cloud, Zap, Droplets, MessageCircle, Square, Circle, Triangle, Star, Hexagon, ArrowRight, Minus } from 'lucide-react';
+import { X, Check, Heart, Cloud, Zap, Droplets, MessageCircle, Square, Circle, Triangle, Star, Hexagon, ArrowRight, Minus, PenLine } from 'lucide-react';
 import clsx from 'clsx';
 import { Slider, ColorGrid, ActionButton } from './properties/PropertyComponents';
 import { SHAPE_PATHS } from '../../../constants/shapeConstants';
@@ -196,22 +196,47 @@ export const ShapeEditorModal: React.FC = () => {
                 <div className="flex-1 overflow-y-auto p-4 space-y-6 min-h-[300px]">
 
                     {activeTab === 'shape' && (
-                        <div className="grid grid-cols-4 gap-2">
-                            {Object.entries(SHAPE_ICONS).map(([type, Icon]) => (
-                                <button
-                                    key={type}
-                                    onClick={() => handleUpdate({ type })}
-                                    className={clsx(
-                                        "aspect-square rounded-xl flex flex-col items-center justify-center gap-2 border transition-all",
-                                        currentValues.type === type
-                                            ? "bg-blue-600/20 border-blue-500/50 text-blue-400"
-                                            : "bg-white/[0.02] border-white/5 text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
-                                    )}
-                                >
-                                    <Icon size={24} />
-                                    <span className="text-[9px] uppercase font-bold opacity-70">{type}</span>
-                                </button>
-                            ))}
+                        <div className="space-y-3">
+                            {/* Draw Custom Shape button */}
+
+
+                            <div className="grid grid-cols-4 gap-2">
+                                {Object.entries(SHAPE_ICONS).map(([type, Icon]) => (
+                                    <button
+                                        key={type}
+                                        onClick={() => handleUpdate({ type })}
+                                        className={clsx(
+                                            "aspect-square rounded-xl flex flex-col items-center justify-center gap-2 border transition-all",
+                                            currentValues.type === type
+                                                ? "bg-blue-600/20 border-blue-500/50 text-blue-400"
+                                                : "bg-white/[0.02] border-white/5 text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+                                        )}
+                                    >
+                                        <Icon size={24} />
+                                        <span className="text-[9px] uppercase font-bold opacity-70">{type}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const { startBezierMode, bezierStyle } = useEditorStore.getState();
+                                    startBezierMode({
+                                        stroke: currentValues.stroke || '#000000',
+                                        strokeWidth: currentValues.strokeWidth ?? 2,
+                                        fill: currentValues.fill || 'transparent',
+                                        fillOpacity: currentValues.fillOpacity ?? 1,
+                                        opacity: currentValues.opacity ?? 1,
+                                    });
+                                    closeShapeEditor();
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 text-blue-400 hover:from-blue-600/30 hover:to-purple-600/30 hover:text-blue-300 transition-all font-medium text-sm"
+                            >
+                                <PenLine size={18} />
+                                <div className="flex flex-col items-start">
+                                    <span className="font-bold">Draw Custom Shape</span>
+                                    <span className="text-[10px] text-blue-400/60 font-normal">Click to add points · Drag for curves</span>
+                                </div>
+                            </button>
                         </div>
                     )}
 

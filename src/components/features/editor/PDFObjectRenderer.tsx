@@ -303,13 +303,23 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
 
     // Calculate bounds logic
     const { minX, minY, calculatedWidth, calculatedHeight, isLegacyPath } = React.useMemo(() => {
-        if (!['path', 'line', 'arrow', 'measure'].includes(object.type) || !object.points) {
+        const isPathData = object.type === 'path' && !!object.pathData;
+        const hasPoints = !!object.points && object.points.length > 0;
+
+        if (!['path', 'line', 'arrow', 'measure'].includes(object.type) || (!hasPoints && !isPathData)) {
             return { minX: 0, minY: 0, calculatedWidth: 0, calculatedHeight: 0, isLegacyPath: false };
         }
-        const isLegacy = !object.width || object.width === 0;
-        const xs = object.points.filter((_, i) => i % 2 === 0);
-        const ys = object.points.filter((_, i) => i % 2 === 1);
-        if (xs.length === 0) return { minX: 0, minY: 0, calculatedWidth: 0, calculatedHeight: 0, isLegacyPath: false };
+
+        const isLegacy = (!object.width || object.width === 0) && hasPoints;
+        
+        if (!hasPoints) {
+            // If we have no points but have width/height (standard for our new Bézier shapes),
+            // we are not in legacy mode.
+            return { minX: 0, minY: 0, calculatedWidth: object.width || 0, calculatedHeight: object.height || 0, isLegacyPath: false };
+        }
+
+        const xs = object.points!.filter((_, i) => i % 2 === 0);
+        const ys = object.points!.filter((_, i) => i % 2 === 1);
         const mx = Math.min(...xs);
         const my = Math.min(...ys);
         return {
@@ -318,7 +328,7 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
             calculatedHeight: Math.max(...ys) - my,
             isLegacyPath: isLegacy
         };
-    }, [object.points, object.type, object.width]);
+    }, [object.points, object.type, object.width, object.height, object.pathData]);
 
     const width = object.width || calculatedWidth;
     const height = object.height || calculatedHeight;
@@ -594,7 +604,31 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
 
             {object.type === 'image' && <URLImage {...innerProps} object={object} opacity={object.opacity ?? 1} />}
 
-            {(object.type === 'path' || object.type === 'line' || object.type === 'arrow') && object.points && (
+            {/* Bézier custom shape rendered from SVG pathData */}
+            {object.type === 'path' && object.pathData && (
+                <Path
+                    {...innerProps}
+                    data={object.pathData}
+                    x={0}
+                    y={0}
+                    width={width || 100}
+                    height={height || 100}
+                    scaleX={1}
+                    scaleY={1}
+                    fill={object.fill && object.fill !== 'transparent' ? hexToRgba(object.fill, (object.fillOpacity ?? 1) * (object.opacity ?? 1)) : 'transparent'}
+                    stroke={object.stroke || 'black'}
+                    strokeWidth={object.strokeWidth ?? 2}
+                    strokeEnabled={(object.strokeWidth ?? 2) > 0}
+                    opacity={object.opacity ?? 1}
+                    shadowColor={object.shadowColor}
+                    shadowBlur={object.shadowBlur}
+                    shadowOffsetX={object.shadowOffsetX}
+                    shadowOffsetY={object.shadowOffsetY}
+                    shadowOpacity={object.shadowOpacity}
+                />
+            )}
+
+            {(object.type === 'path' || object.type === 'line' || object.type === 'arrow') && object.points && !object.pathData && (
                 <Line
                     points={object.points}
                     stroke={object.stroke || 'black'}
