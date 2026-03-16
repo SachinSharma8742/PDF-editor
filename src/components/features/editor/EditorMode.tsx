@@ -82,7 +82,7 @@ export const EditorMode: React.FC = () => {
 
     return (
         <div
-            className="h-screen w-screen flex flex-col bg-zinc-950 text-white overflow-hidden select-none"
+            className="h-screen w-screen flex flex-col bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white overflow-hidden select-none transition-colors duration-300"
             onDragOver={handleDragOver}
             onDrop={handleDrop}
         >
@@ -99,7 +99,7 @@ export const EditorMode: React.FC = () => {
                 <EditorLeftPanel />
 
                 {/* Primary Canvas Container - Full remaining width */}
-                <main id="editor-workspace" className="flex-1 relative overflow-auto bg-[#09090b] shadow-inner flex items-center justify-center touch-none">
+                <main id="editor-workspace" className="flex-1 relative overflow-auto bg-zinc-100 dark:bg-[#09090b] shadow-inner flex items-center justify-center touch-none transition-colors duration-300">
                     <EditorCanvas />
                 </main>
 

@@ -66,23 +66,23 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
         <div
             ref={setNodeRef}
             style={style}
-            className={`group relative flex items-center gap-2 p-2 px-3 text-sm border-b border-gray-100 dark:border-zinc-800/50 transition-colors
-                ${isSelected ? 'bg-blue-50 dark:bg-blue-500/10' : 'bg-white dark:bg-transparent hover:bg-gray-50 dark:hover:bg-zinc-800'}
+            className={`group relative flex items-center gap-2 p-2 px-3 text-sm border-b border-zinc-200 dark:border-zinc-800/50 transition-colors
+                ${isSelected ? 'bg-blue-50 dark:bg-blue-500/10' : 'bg-white dark:bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'}
             `}
             onClick={onSelect}
         >
             {/* Drag Handle */}
-            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-gray-300 dark:text-zinc-600 hover:text-gray-500">
+            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-zinc-300 dark:text-zinc-600 hover:text-zinc-500">
                 <GripVertical size={14} />
             </div>
 
             {/* Icon */}
-            <div className={`text-gray-400 dark:text-zinc-500 ${isSelected ? 'text-blue-500 dark:text-blue-400' : ''}`}>
+            <div className={`text-zinc-400 dark:text-zinc-500 ${isSelected ? 'text-blue-600 dark:text-blue-400' : ''}`}>
                 {getIcon(object.type)}
             </div>
 
             {/* Name */}
-            <span className={`flex-1 truncate font-medium select-none ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-zinc-300'}`}>
+            <span className={`flex-1 truncate font-medium select-none ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-zinc-600 dark:text-zinc-300'}`}>
                 {displayName}
             </span>
 
@@ -90,7 +90,7 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
             <div className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${isMenuOpen ? 'opacity-100' : ''}`}>
                 <button
                     onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
-                    className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 ${object.visible === false ? 'text-gray-400 opacity-100' : 'text-gray-400'}`}
+                    className={`p-1.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 ${object.visible === false ? 'text-zinc-400 opacity-100' : 'text-zinc-400'}`}
                     title={object.visible === false ? "Show" : "Hide"}
                 >
                     {object.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}
@@ -98,7 +98,7 @@ const SortableLayerItem: React.FC<SortableLayerItemProps> = ({ object, isSelecte
 
                 <button
                     onClick={(e) => { e.stopPropagation(); onToggleLock?.(); }}
-                    className={`p-1.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700 ${(object.isLocked || object.type === 'effect') ? 'text-red-500 opacity-100' : 'text-gray-400'}`}
+                    className={`p-1.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 ${(object.isLocked || object.type === 'effect') ? 'text-red-500 opacity-100' : 'text-zinc-400'}`}
                     title={object.type === 'effect' ? "Fixed Geometry" : (object.isLocked ? "Unlock" : "Lock")}
                     disabled={object.type === 'effect' || !onToggleLock}
                 >
@@ -207,7 +207,7 @@ export const LayerPanel: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-transparent select-none overflow-hidden">
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 bg-zinc-50 dark:bg-transparent">
                 <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
@@ -219,7 +219,7 @@ export const LayerPanel: React.FC = () => {
                     >
                         <div className="flex flex-col gap-1">
                             {displayLayers.length === 0 && (
-                                <div className="flex flex-col items-center justify-center py-10 text-gray-400 dark:text-zinc-600">
+                                <div className="flex flex-col items-center justify-center py-10 text-zinc-400 dark:text-zinc-600">
                                     <Square size={24} className="mb-2 opacity-50" />
                                     <p className="text-xs">No layers yet</p>
                                 </div>
@@ -238,11 +238,11 @@ export const LayerPanel: React.FC = () => {
                             ))}
 
                             {/* Static Page Layer */}
-                            <div className="mt-1 group relative flex items-center gap-2 p-2 px-3 text-sm border-t border-gray-100 dark:border-zinc-800/50 bg-gray-50/50 dark:bg-zinc-900/30 text-gray-500 dark:text-zinc-500">
+                            <div className="mt-1 group relative flex items-center gap-2 p-2 px-3 text-sm border-t border-zinc-200 dark:border-zinc-800/50 bg-zinc-100 dark:bg-zinc-900/30 text-zinc-500 dark:text-zinc-500">
                                 <div className="opacity-50">
                                     <Lock size={14} />
                                 </div>
-                                <div className="text-gray-400 dark:text-zinc-600">
+                                <div className="text-zinc-400 dark:text-zinc-600">
                                     <FileText size={14} />
                                 </div>
                                 <span className="flex-1 truncate font-medium select-none italic opacity-80">

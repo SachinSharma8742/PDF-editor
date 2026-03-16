@@ -135,11 +135,11 @@ export const EditorProperties: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-[#1e1e20] text-white">
+        <div className="flex flex-col h-full bg-zinc-50 dark:bg-[#1e1e20] text-zinc-900 dark:text-white transition-colors duration-300">
             {/* Header */}
-            <div className="px-4 py-3 border-b border-white/5 bg-[#18181b] sticky top-0 z-10 backdrop-blur-xl">
+            <div className="px-4 py-3 border-b border-zinc-200 dark:border-white/5 bg-zinc-100 dark:bg-[#18181b] sticky top-0 z-10 backdrop-blur-xl transition-colors duration-300">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                    <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
                         {isMulti ? <Layers size={14} /> :
                             firstObj.type === 'text' ? <Type size={14} /> :
                                 firstObj.type === 'path' ? <PenTool size={14} /> :
@@ -149,7 +149,7 @@ export const EditorProperties: React.FC = () => {
                         }
                     </div>
                     <div>
-                        <h3 className="text-xs font-bold uppercase tracking-tight text-zinc-200">
+                        <h3 className="text-xs font-bold uppercase tracking-tight text-zinc-800 dark:text-zinc-200">
                             {isMulti ? `${selectedObjects.length} Selected` : (firstObj.type === 'effect' ? `Effect: ${firstObj.name || 'Adjustment Layer'}` : firstObj.type)}
                         </h3>
                         <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest leading-none mt-1">Properties</p>
@@ -281,15 +281,15 @@ export const EditorProperties: React.FC = () => {
                     icon={<LayoutTemplate size={12} />}
                     storageKey="alignment"
                 >
-                    <div className="bg-white/[0.03] p-3 rounded-xl border border-white/5 space-y-3">
+                    <div className="bg-zinc-200/50 dark:bg-white/[0.03] p-3 rounded-xl border border-zinc-200 dark:border-white/5 space-y-3 transition-colors duration-300">
                         <div className="grid grid-cols-3 gap-2">
-                            <button onClick={() => handleAlign('left')} className="p-2 rounded bg-white/[0.03] hover:bg-white/10 flex justify-center"><ArrowLeftToLine size={14} /></button>
-                            <button onClick={() => handleAlign('center')} className="p-2 rounded bg-white/[0.03] hover:bg-white/10 flex justify-center"><AlignHorizontalJustifyCenter size={14} /></button>
-                            <button onClick={() => handleAlign('right')} className="p-2 rounded bg-white/[0.03] hover:bg-white/10 flex justify-center"><ArrowRightToLine size={14} /></button>
+                            <button onClick={() => handleAlign('left')} className="p-2 rounded bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/10 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all shadow-sm dark:shadow-none border border-zinc-200 dark:border-transparent flex justify-center"><ArrowLeftToLine size={14} /></button>
+                            <button onClick={() => handleAlign('center')} className="p-2 rounded bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/10 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all shadow-sm dark:shadow-none border border-zinc-200 dark:border-transparent flex justify-center"><AlignHorizontalJustifyCenter size={14} /></button>
+                            <button onClick={() => handleAlign('right')} className="p-2 rounded bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/10 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all shadow-sm dark:shadow-none border border-zinc-200 dark:border-transparent flex justify-center"><ArrowRightToLine size={14} /></button>
 
-                            <button onClick={() => handleAlign('top')} className="p-2 rounded bg-white/[0.03] hover:bg-white/10 flex justify-center"><ArrowUpToLine size={14} /></button>
-                            <button onClick={() => handleAlign('middle')} className="p-2 rounded bg-white/[0.03] hover:bg-white/10 flex justify-center"><AlignVerticalJustifyCenter size={14} /></button>
-                            <button onClick={() => handleAlign('bottom')} className="p-2 rounded bg-white/[0.03] hover:bg-white/10 flex justify-center"><ArrowDownToLine size={14} /></button>
+                            <button onClick={() => handleAlign('top')} className="p-2 rounded bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/10 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all shadow-sm dark:shadow-none border border-zinc-200 dark:border-transparent flex justify-center"><ArrowUpToLine size={14} /></button>
+                            <button onClick={() => handleAlign('middle')} className="p-2 rounded bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/10 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all shadow-sm dark:shadow-none border border-zinc-200 dark:border-transparent flex justify-center"><AlignVerticalJustifyCenter size={14} /></button>
+                            <button onClick={() => handleAlign('bottom')} className="p-2 rounded bg-white/50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/10 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all shadow-sm dark:shadow-none border border-zinc-200 dark:border-transparent flex justify-center"><ArrowDownToLine size={14} /></button>
                         </div>
                     </div>
                 </CollapsibleSection>

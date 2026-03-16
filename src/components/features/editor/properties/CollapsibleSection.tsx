@@ -45,13 +45,13 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     }, [isOpen, storageKey]);
 
     return (
-        <div className={clsx("border-b border-white/5 pb-2 mb-2 last:border-0 last:mb-0 last:pb-0", className)}>
+        <div className={clsx("border-b border-zinc-200 dark:border-white/5 pb-2 mb-2 last:border-0 last:mb-0 last:pb-0 transition-colors duration-300", className)}>
             <div
-                className="flex items-center justify-between py-3 px-4 cursor-pointer group select-none hover:bg-white/[0.02] transition-colors"
+                className="flex items-center justify-between py-3 px-4 cursor-pointer group select-none hover:bg-zinc-100 dark:hover:bg-white/[0.02] transition-colors rounded-lg"
                 onClick={() => setIsOpen(!isOpen)}
             >
-                <div className="flex items-center gap-3 text-[10px] font-black text-zinc-500 uppercase tracking-[0.15em] group-hover:text-zinc-300 transition-colors">
-                    <div className={clsx("transition-transform duration-200 text-zinc-600 group-hover:text-zinc-400", isOpen ? "rotate-90" : "")}>
+                <div className="flex items-center gap-3 text-[10px] font-black text-zinc-500 uppercase tracking-[0.15em] group-hover:text-zinc-800 dark:group-hover:text-zinc-300 transition-colors">
+                    <div className={clsx("transition-transform duration-200 text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-400", isOpen ? "rotate-90" : "")}>
                         <ChevronRight size={10} strokeWidth={4} />
                     </div>
                     {icon}

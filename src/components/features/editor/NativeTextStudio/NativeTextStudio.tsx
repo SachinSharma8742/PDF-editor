@@ -23,7 +23,7 @@ export const NativeTextStudio: React.FC = () => {
         setOCROpen,
         commitNativeTextEdits,
     } = useEditorStore();
-    const { pdfDocument, pages } = usePDFStore();
+    const { pdfDocument, pages, theme } = usePDFStore();
     const [textItems, setTextItems] = useState<Record<string, unknown>[]>([]);
     const canvasRef = useRef<SinglePageCanvasHandle>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -118,24 +118,24 @@ export const NativeTextStudio: React.FC = () => {
     const nativeTextItemsCasted = textItems as unknown as NativeTextItem[];
 
     return (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-[#18181b] animate-in slide-in-from-bottom-5 duration-300">
+        <div className="fixed inset-0 z-[100] flex flex-col bg-white dark:bg-[#18181b] animate-in slide-in-from-bottom-5 duration-300 transition-colors">
             {/* Top Bar */}
-            <div className="h-14 border-b border-white/10 flex items-center justify-between px-4 md:px-6 bg-[#18181b] shrink-0">
+            <div className="h-14 border-b border-zinc-200 dark:border-white/10 flex items-center justify-between px-4 md:px-6 bg-white dark:bg-[#18181b] shrink-0 transition-colors">
                 <div className="flex items-center gap-3">
                     {/* Mobile Sidebar Toggle */}
                     <button
                         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                        className="md:hidden p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5"
+                        className="md:hidden p-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded-lg hover:bg-zinc-100 dark:hover:bg-white/5 transition-colors"
                     >
                         <ScanLine size={20} className="rotate-90" />
                     </button>
 
-                    <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400 hidden md:block">
+                    <div className="p-2 bg-indigo-500/10 dark:bg-indigo-500/20 rounded-lg text-indigo-600 dark:text-indigo-400 hidden md:block transition-colors">
                         <Type size={20} />
                     </div>
                     <div>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider hidden md:block">PDF Text Studio</h2>
-                        <h2 className="text-sm font-bold text-white uppercase tracking-wider md:hidden">Text Studio</h2>
+                        <h2 className="text-sm font-bold text-zinc-900 dark:text-white uppercase tracking-wider hidden md:block">PDF Text Studio</h2>
+                        <h2 className="text-sm font-bold text-zinc-900 dark:text-white uppercase tracking-wider md:hidden">Text Studio</h2>
                     </div>
                 </div>
 
@@ -146,8 +146,8 @@ export const NativeTextStudio: React.FC = () => {
                         className={clsx(
                             "p-2 rounded-lg transition-colors flex items-center gap-1.5",
                             findReplaceState.isOpen
-                                ? "bg-indigo-600 text-white"
-                                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30"
+                                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5"
                         )}
                         title="Find & Replace"
                     >
@@ -159,8 +159,8 @@ export const NativeTextStudio: React.FC = () => {
                         className={clsx(
                             "p-2 rounded-lg transition-colors flex items-center gap-1.5",
                             ocrState.isOpen
-                                ? "bg-emerald-600 text-white"
-                                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                                ? "bg-emerald-600 text-white shadow-lg shadow-emerald-500/30"
+                                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5"
                         )}
                         title="OCR Scanner"
                     >
@@ -172,8 +172,8 @@ export const NativeTextStudio: React.FC = () => {
                         className={clsx(
                             "p-2 rounded-lg transition-colors flex items-center gap-1.5",
                             advancedReplaceOpen
-                                ? "bg-purple-600 text-white"
-                                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                                ? "bg-purple-600 text-white shadow-lg shadow-purple-500/30"
+                                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5"
                         )}
                         title="Advanced Replace"
                     >
@@ -185,8 +185,8 @@ export const NativeTextStudio: React.FC = () => {
                         className={clsx(
                             "p-2 rounded-lg transition-colors flex items-center gap-1.5",
                             clausePanelOpen
-                                ? "bg-violet-600 text-white"
-                                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                                ? "bg-violet-600 text-white shadow-lg shadow-violet-500/30"
+                                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5"
                         )}
                         title="Analyze Clauses"
                     >
@@ -198,24 +198,24 @@ export const NativeTextStudio: React.FC = () => {
                         className={clsx(
                             "p-2 rounded-lg transition-colors flex items-center gap-1.5",
                             riskPanelOpen
-                                ? "bg-orange-600 text-white"
-                                : "text-zinc-400 hover:text-white hover:bg-white/5"
+                                ? "bg-orange-600 text-white shadow-lg shadow-orange-500/30"
+                                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5"
                         )}
                         title="Risk Analysis"
                     >
                         <ShieldAlert size={18} />
                     </button>
-                    <div className="w-[1px] h-6 bg-white/10 mx-1 hidden md:block" />
-                    <button className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors hidden md:block">
+                    <div className="w-[1px] h-6 bg-zinc-200 dark:bg-white/10 mx-1 hidden md:block" />
+                    <button className="p-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded-lg hover:bg-zinc-100 dark:hover:bg-white/5 transition-colors hidden md:block">
                         <Undo2 size={18} />
                     </button>
-                    <button className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors hidden md:block">
+                    <button className="p-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded-lg hover:bg-zinc-100 dark:hover:bg-white/5 transition-colors hidden md:block">
                         <Redo2 size={18} />
                     </button>
-                    <div className="w-[1px] h-6 bg-white/10 mx-1 md:mx-2" />
+                    <div className="w-[1px] h-6 bg-zinc-200 dark:bg-white/10 mx-1 md:mx-2" />
                     <button
                         onClick={handleSave}
-                        className="px-3 py-1.5 md:px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2"
+                        className="px-3 py-1.5 md:px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-indigo-500/20"
                     >
                         <Save size={14} />
                         <span className="hidden md:inline">Save & Close</span>
@@ -223,7 +223,7 @@ export const NativeTextStudio: React.FC = () => {
                     </button>
                     <button
                         onClick={handleClose}
-                        className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                        className="p-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded-lg hover:bg-zinc-100 dark:hover:bg-white/5 transition-colors"
                     >
                         <X size={20} />
                     </button>
@@ -231,11 +231,11 @@ export const NativeTextStudio: React.FC = () => {
             </div>
 
             {/* Main Workspace */}
-            <div className="flex-1 flex overflow-hidden relative">
+            <div className="flex-1 flex overflow-hidden relative transition-colors">
 
                 {/* Sidebar - Properties Panel */}
                 <div className={clsx(
-                    "bg-[#1e1e20] p-4 pt-24 md:pt-4 overflow-y-auto space-y-4 border-r border-white/10 transition-all duration-300 absolute z-20 inset-y-0 left-0 md:relative w-80 shadow-2xl md:shadow-none",
+                    "bg-zinc-50 dark:bg-[#1e1e20] p-4 pt-24 md:pt-4 overflow-y-auto space-y-4 border-r border-zinc-200 dark:border-white/10 transition-all duration-300 absolute z-20 inset-y-0 left-0 md:relative w-80 shadow-2xl md:shadow-none",
                     isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
                 )}>
                     {/* Find & Replace Panel */}
@@ -266,11 +266,11 @@ export const NativeTextStudio: React.FC = () => {
                 )}
 
                 {/* Canvas Area */}
-                <div className="flex-1 overflow-hidden bg-[#09090b] relative w-full z-0">
+                <div className="flex-1 overflow-hidden bg-zinc-100 dark:bg-[#09090b] relative w-full z-0 transition-colors">
                     {/* Dot Grid Background */}
                     <div className="absolute inset-0 opacity-20 pointer-events-none"
                         style={{
-                            backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)',
+                            backgroundImage: theme === 'dark' ? 'radial-gradient(#ffffff 1px, transparent 1px)' : 'radial-gradient(#000000 1px, transparent 1px)',
                             backgroundSize: '20px 20px'
                         }}
                     />

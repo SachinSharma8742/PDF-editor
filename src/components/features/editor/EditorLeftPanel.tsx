@@ -124,15 +124,15 @@ export const EditorLeftPanel: React.FC = () => {
         return (
             <div
                 className={clsx(
-                    "w-1 md:w-2 transition-all duration-500 relative bg-[#1e1e20] border-r border-white/5 flex flex-col items-center group hidden md:flex h-full",
-                    isNavigateMode ? "cursor-default" : "hover:w-6 hover:bg-white/5 cursor-pointer"
+                    "w-1 md:w-2 transition-all duration-500 relative bg-zinc-100 dark:bg-[#1e1e20] border-r border-zinc-200 dark:border-white/5 flex flex-col items-center group hidden md:flex h-full",
+                    isNavigateMode ? "cursor-default" : "hover:w-6 hover:bg-zinc-200 dark:hover:bg-white/5 cursor-pointer"
                 )}
                 onClick={() => !isNavigateMode && setIsCollapsed(false)}
             >
                 {!isNavigateMode && (
                     <button
                         onClick={(e) => { e.stopPropagation(); setIsCollapsed(false); }}
-                        className="p-1 rounded-md text-zinc-500 opacity-0 group-hover:opacity-100 transition-all mt-4"
+                        className="p-1 rounded-md text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-all mt-4"
                         title="Open Sidebar"
                     >
                         <ChevronRight size={14} />
@@ -144,21 +144,21 @@ export const EditorLeftPanel: React.FC = () => {
     }
 
     return (
-        <div className="w-64 md:w-72 bg-[#1e1e20] border-r border-white/5 flex flex-col h-full z-30 shadow-2xl flex-shrink-0 transition-all duration-300 relative font-sans fixed md:relative inset-y-0 left-0">
+        <div className="w-64 md:w-72 bg-zinc-50 dark:bg-[#1e1e20] border-r border-zinc-200 dark:border-white/5 flex flex-col h-full z-30 shadow-2xl flex-shrink-0 transition-all duration-300 relative font-sans fixed md:relative inset-y-0 left-0">
             {/* Header */}
             <div className={clsx(
-                "h-14 border-b border-white/5 flex items-center px-4 gap-3 justify-between transition-colors",
+                "h-14 border-b border-zinc-200 dark:border-white/5 flex items-center px-4 gap-3 justify-between transition-colors",
                 isLibraryTool ? "bg-blue-500/5" : "bg-transparent"
             )}>
                 <div className="flex items-center gap-2.5">
                     {isLibraryTool ? (
                         <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
                     ) : (
-                        <Library size={16} className="text-zinc-400" />
+                        <Library size={16} className="text-zinc-500 dark:text-zinc-400" />
                     )}
                     <h2 className={clsx(
                         "text-[11px] font-bold uppercase tracking-widest",
-                        isLibraryTool ? "text-blue-400" : "text-zinc-300"
+                        isLibraryTool ? "text-blue-600 dark:text-blue-400" : "text-zinc-800 dark:text-zinc-300"
                     )}>
                         {activeTab === 'stamps' ? 'Decorations' :
                             activeTab === 'scale' ? 'Measurement' :
@@ -175,14 +175,14 @@ export const EditorLeftPanel: React.FC = () => {
                 </div>
                 <button
                     onClick={() => setIsCollapsed(true)}
-                    className="p-1.5 rounded-md hover:bg-white/5 text-zinc-500 hover:text-zinc-200 transition-all"
+                    className="p-1.5 rounded-md hover:bg-zinc-200 dark:hover:bg-white/5 text-zinc-400 dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-all"
                 >
                     <ChevronLeft size={16} />
                 </button>
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#1e1e20]">
+            <div className="flex-1 overflow-y-auto custom-scrollbar bg-zinc-50 dark:bg-[#1e1e20]">
                 {activeTab === 'properties' ? (
                     (activeTool === 'text' || (hasSelection && selectedObj?.type === 'text')) ? (
                         <div className="p-4">
@@ -220,9 +220,9 @@ export const EditorLeftPanel: React.FC = () => {
             </div>
 
             {/* Status Footer */}
-            <div className="h-10 px-4 border-t border-white/5 bg-[#18181b] flex items-center justify-between">
+            <div className="h-10 px-4 border-t border-zinc-200 dark:border-white/5 bg-zinc-100 dark:bg-[#18181b] flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <Sparkles size={12} className="text-amber-500" />
+                    <Sparkles size={12} className="text-amber-600 dark:text-amber-500" />
                     <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
                         {isLibraryTool ? 'Library Mode' : 'Editor Ready'}
                     </span>

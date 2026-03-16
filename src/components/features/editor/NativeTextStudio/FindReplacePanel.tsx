@@ -45,16 +45,16 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
     if (!isOpen) return null;
 
     return (
-        <div className="bg-zinc-900/80 backdrop-blur-sm rounded-xl border border-white/10 p-4 space-y-3 animate-in slide-in-from-top-2 duration-200">
+        <div className="bg-white/90 dark:bg-zinc-900/80 backdrop-blur-md rounded-xl border border-zinc-200 dark:border-white/10 p-4 space-y-3 animate-in slide-in-from-top-2 duration-200 shadow-xl dark:shadow-none transition-colors">
             {/* Header */}
             <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <Search size={12} className="text-indigo-400" />
+                <h3 className="text-xs font-bold text-zinc-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                    <Search size={12} className="text-indigo-600 dark:text-indigo-400" />
                     Find & Replace
                 </h3>
                 <button
                     onClick={() => setFindReplaceOpen(false)}
-                    className="p-1 text-zinc-400 hover:text-white rounded hover:bg-white/10 transition-colors"
+                    className="p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded hover:bg-zinc-100 dark:hover:bg-white/10 transition-colors"
                 >
                     <X size={14} />
                 </button>
@@ -62,27 +62,27 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
 
             {/* Search Input */}
             <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
                 <input
                     type="text"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Find text..."
-                    className="w-full pl-9 pr-20 py-2 bg-zinc-800 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 outline-none focus:border-indigo-500/50 transition-colors"
+                    className="w-full pl-9 pr-20 py-2 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-white/10 rounded-lg text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 outline-none focus:border-indigo-500/50 transition-all shadow-inner dark:shadow-none"
                     autoFocus
                 />
                 {/* Match Counter & Navigation */}
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                     {matches.length > 0 && (
-                        <span className="text-[10px] text-zinc-400 mr-1">
+                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 mr-1 tabular-nums">
                             {currentMatchIndex + 1}/{matches.length}
                         </span>
                     )}
                     <button
                         onClick={() => navigateMatch('prev')}
                         disabled={matches.length === 0}
-                        className="p-1 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-white/10 transition-colors"
+                        className="p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-zinc-200 dark:hover:bg-white/10 transition-colors"
                         title="Previous (Shift+Enter)"
                     >
                         <ChevronUp size={14} />
@@ -90,7 +90,7 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
                     <button
                         onClick={() => navigateMatch('next')}
                         disabled={matches.length === 0}
-                        className="p-1 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-white/10 transition-colors"
+                        className="p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-zinc-200 dark:hover:bg-white/10 transition-colors"
                         title="Next (Enter)"
                     >
                         <ChevronDown size={14} />
@@ -100,14 +100,14 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
 
             {/* Replace Input */}
             <div className="relative">
-                <Replace size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <Replace size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
                 <input
                     type="text"
                     value={replaceTerm}
                     onChange={(e) => setReplaceTerm(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Replace with..."
-                    className="w-full pl-9 pr-3 py-2 bg-zinc-800 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 outline-none focus:border-indigo-500/50 transition-colors"
+                    className="w-full pl-9 pr-3 py-2 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-white/10 rounded-lg text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 outline-none focus:border-indigo-500/50 transition-all shadow-inner dark:shadow-none"
                 />
             </div>
 
@@ -119,8 +119,8 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
                     className={clsx(
                         "flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all",
                         caseSensitive
-                            ? "bg-indigo-600 text-white"
-                            : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white"
+                            ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"
+                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white"
                     )}
                     title="Match Case"
                 >
@@ -133,14 +133,14 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
                     <button
                         onClick={replaceCurrentMatch}
                         disabled={matches.length === 0 || currentMatchIndex < 0}
-                        className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-zinc-300 hover:text-white text-xs font-medium rounded-lg transition-colors"
+                        className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-transparent hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white text-xs font-medium rounded-lg transition-colors shadow-sm dark:shadow-none"
                     >
                         Replace
                     </button>
                     <button
                         onClick={replaceAllMatches}
                         disabled={matches.length === 0}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5"
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-lg shadow-indigo-500/20"
                     >
                         <RefreshCw size={12} />
                         Replace All
