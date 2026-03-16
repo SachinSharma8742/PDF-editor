@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { usePDFStore } from '../../../store/pdfStore';
 import { PDFPage } from './PDFPage';
 import { FileText } from 'lucide-react';
@@ -12,7 +12,8 @@ export const PDFViewer: React.FC = () => {
         redo,
         deleteObjects,
         selectedObjectIds,
-        setCurrentPage
+        setCurrentPage,
+        activeTool
     } = usePDFStore();
 
 
@@ -119,6 +120,62 @@ export const PDFViewer: React.FC = () => {
 
 
     const containerRef = useRef<HTMLDivElement>(null);
+    const panSessionRef = useRef<{
+        scrollContainer: HTMLElement;
+        startX: number;
+        startY: number;
+        startScrollLeft: number;
+        startScrollTop: number;
+    } | null>(null);
+    const [isPanning, setIsPanning] = useState(false);
+
+    useEffect(() => {
+        const stopPanning = () => {
+            panSessionRef.current = null;
+            setIsPanning(false);
+            document.body.style.removeProperty('cursor');
+            document.body.style.removeProperty('user-select');
+        };
+
+        const handlePointerMove = (event: PointerEvent) => {
+            const session = panSessionRef.current;
+            if (!session) return;
+
+            if (event.cancelable) {
+                event.preventDefault();
+            }
+
+            const dx = event.clientX - session.startX;
+            const dy = event.clientY - session.startY;
+
+            session.scrollContainer.scrollLeft = session.startScrollLeft - dx;
+            session.scrollContainer.scrollTop = session.startScrollTop - dy;
+        };
+
+        const handlePointerUp = () => {
+            stopPanning();
+        };
+
+        window.addEventListener('pointermove', handlePointerMove, { passive: false });
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
+
+        return () => {
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('pointercancel', handlePointerUp);
+            stopPanning();
+        };
+    }, []);
+
+    useEffect(() => {
+        if (activeTool !== 'pan' && panSessionRef.current) {
+            panSessionRef.current = null;
+            setIsPanning(false);
+            document.body.style.removeProperty('cursor');
+            document.body.style.removeProperty('user-select');
+        }
+    }, [activeTool]);
 
     // Auto-Fit Scale on Load
     useEffect(() => {
@@ -186,7 +243,27 @@ export const PDFViewer: React.FC = () => {
     return (
         <div
             ref={containerRef}
-            className="flex-1 bg-transparent flex flex-col items-center p-4 md:p-8 transition-all duration-300 ease-out relative w-full overflow-x-hidden"
+            className={`flex-1 bg-transparent flex flex-col items-center p-4 md:p-8 transition-all duration-300 ease-out relative w-full overflow-x-hidden ${activeTool === 'pan' ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
+            onPointerDownCapture={(event) => {
+                if (activeTool !== 'pan' || event.button !== 0) return;
+                if ((event.target as HTMLElement).closest('[data-pan-ignore="true"]')) return;
+
+                const scrollContainer = document.getElementById('main-scroll-container');
+                if (!scrollContainer) return;
+
+                panSessionRef.current = {
+                    scrollContainer,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    startScrollLeft: scrollContainer.scrollLeft,
+                    startScrollTop: scrollContainer.scrollTop
+                };
+
+                setIsPanning(true);
+                document.body.style.cursor = 'grabbing';
+                document.body.style.userSelect = 'none';
+                event.preventDefault();
+            }}
         >
             {(pages as any[]).map((page: any) => (
                 <PDFPage key={page.pageNumber} pageNumber={page.pageNumber} />

@@ -18,6 +18,7 @@ export const PageSelectionOverlay: React.FC<PageSelectionOverlayProps> = ({ page
 
     return (
         <div
+            data-pan-ignore="true"
             onClick={(e) => {
                 e.stopPropagation();
                 togglePageSelection(pageId);

@@ -20,6 +20,14 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
+  useEffect(() => {
     const restoreSession = async () => {
       // Small delay to ensure store hydration?
       // Actually zustand persist is synchronous from localStorage.

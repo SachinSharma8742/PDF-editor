@@ -9,7 +9,6 @@ import {
     Type,
     Undo2,
     Redo2,
-    MousePointer2,
     Hand,
     RotateCw,
     Printer,
@@ -90,6 +89,9 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
 
     // Check if there are any pages
     const hasPages = pages.length > 0;
+    const compactPrimaryActionClass = "group h-10 px-3 rounded-xl transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-95 flex items-center overflow-hidden whitespace-nowrap";
+    const compactIconActionClass = "group h-10 px-3 rounded-xl transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-90 flex items-center overflow-hidden whitespace-nowrap";
+    const compactPrimaryActionLabelClass = "hidden sm:block max-w-0 overflow-hidden whitespace-nowrap opacity-0 -translate-x-2 ml-0 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover:max-w-[120px] group-hover:opacity-100 group-hover:translate-x-0 group-hover:ml-2.5";
 
     // Export handler
     const handleExport = async () => {
@@ -172,7 +174,7 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                         width: targetWidth, height: targetHeight,
                         src: dataUrl
                     });
-                    setActiveTool('select');
+                    setActiveTool('pan');
                 }
             };
             img.src = dataUrl;
@@ -206,35 +208,70 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
 
                     <button
                         onClick={() => setIsTimelineOpen(true)}
-                        className="p-2.5 hover:bg-zinc-100 dark:hover:bg-white/5 rounded-xl text-zinc-400 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 transition-all active:scale-90"
+                        className={clsx(
+                            compactIconActionClass,
+                            "text-zinc-400 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-zinc-200"
+                        )}
                         title="Version Timeline"
+                        aria-label="Version Timeline"
                     >
                         <Clock size={18} strokeWidth={2.5} />
+                        <span className={clsx(compactPrimaryActionLabelClass, "text-[10px] font-black uppercase tracking-[0.15em]")}>Timeline</span>
                     </button>
                 </div>
 
                 {/* 2. Tools */}
                 <div className="flex items-center gap-1 pr-3 mr-3 border-r border-zinc-200 dark:border-white/10">
-                    <button onClick={() => setActiveTool('select')} className={clsx("p-2.5 rounded-xl transition-all duration-300 relative group", activeTool === 'select' ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white")}>
-                        <MousePointer2 size={18} strokeWidth={2.5} />
-                    </button>
-
-                    <button onClick={() => setActiveTool('pan')} className={clsx("p-2.5 rounded-xl transition-all duration-300 relative group", activeTool === 'pan' ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white")}>
+                    <button
+                        onClick={() => setActiveTool('pan')}
+                        className={clsx(
+                            compactIconActionClass,
+                            activeTool === 'pan'
+                                ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30"
+                                : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white"
+                        )}
+                        aria-label="Pan"
+                    >
                         <Hand size={18} strokeWidth={2.5} />
+                        <span className={clsx(compactPrimaryActionLabelClass, "text-[10px] font-black uppercase tracking-[0.15em]")}>Pan</span>
                     </button>
                 </div>
 
                 {/* 3. Page Orientation */}
                 <div className={clsx("flex items-center gap-1 pr-3 mr-3 border-r border-zinc-200 dark:border-white/10", !hasPages && "opacity-20 pointer-events-none")}>
-                    <button onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) rotatePage(p.id, 'cw'); }} disabled={!hasPages} className="p-2.5 rounded-xl text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white transition-all active:scale-90">
+                    <button
+                        onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) rotatePage(p.id, 'cw'); }}
+                        disabled={!hasPages}
+                        className={clsx(
+                            compactIconActionClass,
+                            "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white"
+                        )}
+                        aria-label="Rotate"
+                    >
                         <RotateCw size={18} strokeWidth={2.5} />
                     </button>
 
-                    <button onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) flipPage(p.id, 'horizontal'); }} disabled={!hasPages} className="p-2.5 rounded-xl text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white transition-all active:scale-90">
+                    <button
+                        onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) flipPage(p.id, 'horizontal'); }}
+                        disabled={!hasPages}
+                        className={clsx(
+                            compactIconActionClass,
+                            "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white"
+                        )}
+                        aria-label="Flip Horizontal"
+                    >
                         <FlipHorizontal size={18} strokeWidth={2.5} />
                     </button>
 
-                    <button onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) flipPage(p.id, 'vertical'); }} disabled={!hasPages} className="p-2.5 rounded-xl text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white transition-all active:scale-90">
+                    <button
+                        onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) flipPage(p.id, 'vertical'); }}
+                        disabled={!hasPages}
+                        className={clsx(
+                            compactIconActionClass,
+                            "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white"
+                        )}
+                        aria-label="Flip Vertical"
+                    >
                         <FlipVertical size={18} strokeWidth={2.5} />
                     </button>
                 </div>
@@ -248,10 +285,21 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                                     const page = pages.find(p => p.pageNumber === currentPage);
                                     if (page) useEditorStore.getState().openNativeTextStudio(page.id);
                                 }}
-                                className="px-4 py-2.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-xl hover:scale-[1.02] transition-all active:scale-95 flex items-center gap-2"
+                                className={clsx(
+                                    compactPrimaryActionClass,
+                                    "bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-xl hover:scale-[1.02] hover:px-4 focus-visible:px-4"
+                                )}
+                                aria-label="Edit Text"
                             >
                                 <Type size={16} strokeWidth={3} />
-                                <span className="text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">Edit Text</span>
+                                <span
+                                    className={clsx(
+                                        compactPrimaryActionLabelClass,
+                                        "text-[10px] font-black uppercase tracking-[0.15em]"
+                                    )}
+                                >
+                                    Edit Text
+                                </span>
                             </button>
 
                             <button
@@ -259,19 +307,42 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                                     const page = pages.find(p => p.pageNumber === currentPage);
                                     if (page) useEditorStore.getState().initEditor(page);
                                 }}
-                                className="px-4 py-2.5 rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-500/30 hover:scale-[1.02] transition-all active:scale-95 flex items-center gap-2"
+                                className={clsx(
+                                    compactPrimaryActionClass,
+                                    "bg-blue-600 text-white shadow-lg shadow-blue-500/30 hover:scale-[1.02] hover:px-4 focus-visible:px-4"
+                                )}
+                                aria-label="Annotate"
                             >
                                 <Pencil size={16} strokeWidth={3} />
-                                <span className="text-[10px] font-black uppercase tracking-[0.15em] hidden sm:inline">Annotate</span>
+                                <span
+                                    className={clsx(
+                                        compactPrimaryActionLabelClass,
+                                        "text-[10px] font-black uppercase tracking-[0.15em]"
+                                    )}
+                                >
+                                    Annotate
+                                </span>
                             </button>
                         </div>
                     )}
 
                     {/* 5. System Controls */}
                     <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-xl p-1 border border-zinc-200 dark:border-white/5">
-                        <button onClick={() => setScale(Math.max(0.1, scale - 0.1))} className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-lg text-zinc-500 dark:text-zinc-400 transition-all shadow-sm dark:shadow-none"><Minus size={14} strokeWidth={3} /></button>
+                        <button
+                            onClick={() => setScale(Math.max(0.1, scale - 0.1))}
+                            className="group h-8 px-2 rounded-lg hover:bg-white dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 transition-all duration-300 ease-out shadow-sm dark:shadow-none flex items-center overflow-hidden whitespace-nowrap"
+                            aria-label="Zoom Out"
+                        >
+                            <Minus size={14} strokeWidth={3} />
+                        </button>
                         <span className="text-[10px] w-10 text-center tabular-nums text-zinc-900 dark:text-zinc-100 font-black hidden md:block">{Math.round(scale * 100)}%</span>
-                        <button onClick={() => setScale(Math.min(5, scale + 0.1))} className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-lg text-zinc-500 dark:text-zinc-400 transition-all shadow-sm dark:shadow-none"><Plus size={14} strokeWidth={3} /></button>
+                        <button
+                            onClick={() => setScale(Math.min(5, scale + 0.1))}
+                            className="group h-8 px-2 rounded-lg hover:bg-white dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 transition-all duration-300 ease-out shadow-sm dark:shadow-none flex items-center overflow-hidden whitespace-nowrap"
+                            aria-label="Zoom In"
+                        >
+                            <Plus size={14} strokeWidth={3} />
+                        </button>
                     </div>
 
                     <button onClick={toggleTheme} className="p-2.5 hover:bg-zinc-100 dark:hover:bg-white/5 rounded-xl text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all active:scale-90 group">
@@ -288,15 +359,17 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                             <button
                                 onClick={() => setIsExportOpen(!isExportOpen)}
                                 className={clsx(
-                                    "h-10 px-5 rounded-xl transition-all shadow-xl active:scale-95 flex items-center gap-3 group border",
+                                    compactPrimaryActionClass,
+                                    "shadow-xl border",
                                     isExportOpen
                                         ? "bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-zinc-900"
                                         : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white border-zinc-200 dark:border-white/10"
                                 )}
+                                aria-label="Export"
                             >
                                 <Download size={16} strokeWidth={3} />
-                                <span className="text-[10px] font-black uppercase tracking-[0.15em] hidden lg:inline">Export</span>
-                                <ChevronDown size={14} className={clsx("transition-transform duration-500 opacity-40", isExportOpen && "rotate-180")} />
+                                <span className={clsx(compactPrimaryActionLabelClass, "text-[10px] font-black uppercase tracking-[0.15em]")}>Export</span>
+                                <ChevronDown size={14} className={clsx("ml-2 transition-transform duration-500 opacity-40", isExportOpen && "rotate-180")} />
                             </button>
 
                             {/* Export Dropdown Menu - Portal */}
@@ -309,16 +382,16 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                                         left: (exportBtnRef.current?.getBoundingClientRect().right || 0) - 288,
                                     }}
                                 >
-                                    <div className="w-72 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-2xl border border-zinc-200 dark:border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] dark:shadow-2xl p-4 space-y-4 animate-in fade-in zoom-in-95 duration-300">
-                                        <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-[0.2em] px-1">Export Format</div>
+                                    <div className="w-72 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-3xl border border-zinc-200/80 dark:border-white/10 rounded-2xl shadow-[0_30px_60px_-12px_rgba(0,0,0,0.15)] dark:shadow-2xl p-4 space-y-4 animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-500">
+                                        <div className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-[0.2em] px-1">Export Palette</div>
 
-                                        <div className="space-y-2">
+                                        <div className="space-y-1.5">
                                             {(['standard', 'flattened', 'png', 'print'] as const).map(id => {
                                                 const f = {
-                                                    standard: { icon: Layers, label: 'Standard PDF', desc: 'Vector & Editable' },
-                                                    flattened: { icon: Lock, label: 'Flattened PDF', desc: 'Single image layer' },
-                                                    png: { icon: ImageIcon, label: 'PNG Images', desc: 'High-res per page' },
-                                                    print: { icon: Printer, label: 'Print', desc: 'Native print dialog' }
+                                                    standard: { icon: Layers, label: 'Standard PDF', desc: 'Preserves vector data' },
+                                                    flattened: { icon: Lock, label: 'Flattened PDF', desc: 'Merges all layers' },
+                                                    png: { icon: ImageIcon, label: 'PNG Graphics', desc: 'Per-page snapshots' },
+                                                    print: { icon: Printer, label: 'System Print', desc: 'Native browser dialog' }
                                                 }[id];
 
                                                 return (
@@ -326,21 +399,23 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                                                         key={id}
                                                         onClick={() => setExportFormat(id)}
                                                         className={clsx(
-                                                            "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left group",
+                                                            "w-full flex items-center gap-3 p-3 rounded-xl border transition-all duration-300 text-left group/item",
                                                             exportFormat === id
                                                                 ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20 border-blue-500"
-                                                                : "bg-zinc-50 dark:bg-white/[0.02] border-zinc-100 dark:border-white/5 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/[0.05] hover:text-zinc-900 dark:hover:text-white"
+                                                                : "bg-zinc-50/50 dark:bg-white/[0.03] border-transparent hover:bg-zinc-100 dark:hover:bg-white/[0.08] hover:border-zinc-200 dark:hover:border-white/10 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
                                                         )}
                                                     >
                                                         <div className={clsx(
-                                                            "p-2 rounded-lg border transition-colors",
-                                                            exportFormat === id ? "bg-white/20 border-white/20 text-white" : "bg-white dark:bg-black/20 border-zinc-200 dark:border-white/5 text-zinc-400 dark:text-zinc-500"
+                                                            "p-2 rounded-lg border transition-all duration-300",
+                                                            exportFormat === id 
+                                                                ? "bg-white/20 border-white/20 text-white" 
+                                                                : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-white/5 text-zinc-400 dark:text-zinc-500 group-hover/item:scale-110 shadow-sm"
                                                         )}>
                                                             <f.icon size={14} strokeWidth={2.5} />
                                                         </div>
                                                         <div>
-                                                            <div className="text-[10px] font-black uppercase tracking-wider mb-0.5">{f.label}</div>
-                                                            <div className="text-[9px] opacity-60 font-bold">{f.desc}</div>
+                                                            <div className="text-[11px] font-black uppercase tracking-wider leading-none mb-1">{f.label}</div>
+                                                            <div className={clsx("text-[9px] font-bold uppercase tracking-widest", exportFormat === id ? "text-white/70" : "text-zinc-500 dark:text-zinc-500")}>{f.desc}</div>
                                                         </div>
                                                     </button>
                                                 );
@@ -348,9 +423,9 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                                         </div>
 
                                         {exportFormat !== 'standard' && (
-                                            <div className="space-y-2 p-3 bg-zinc-100 dark:bg-black/30 rounded-xl border border-zinc-200 dark:border-white/5 shadow-inner dark:shadow-none">
-                                                <div className="flex justify-between items-center text-[9px] font-bold text-zinc-500 uppercase tracking-widest">
-                                                    <span>Quality</span>
+                                            <div className="space-y-3 p-4 bg-zinc-50 dark:bg-black/30 rounded-2xl border border-zinc-100 dark:border-white/5 shadow-inner">
+                                                <div className="flex justify-between items-center text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest">
+                                                    <span>Output Quality</span>
                                                     <span className="text-blue-600 dark:text-blue-400 tabular-nums">{Math.round(exportQuality * 100)}%</span>
                                                 </div>
                                                 <input
@@ -358,7 +433,7 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                                                     min="0.1" max="1" step="0.05"
                                                     value={exportQuality}
                                                     onChange={(e) => setExportQuality(parseFloat(e.target.value))}
-                                                    className="w-full accent-blue-600"
+                                                    className="w-full accent-blue-600 h-1.5 rounded-full cursor-pointer"
                                                 />
                                             </div>
                                         )}
@@ -366,12 +441,12 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                                         <button
                                             onClick={handleExport}
                                             disabled={isExporting}
-                                            className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
+                                            className="w-full py-4 bg-zinc-900 dark:bg-blue-600 hover:bg-black dark:hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-xl shadow-black/10 dark:shadow-blue-900/20 active:scale-[0.98]"
                                         >
                                             {isExporting ? (
-                                                <><RotateCw className="animate-spin" size={14} /> Processing...</>
+                                                <><RotateCw className="animate-spin" size={16} strokeWidth={3} /> Processing</>
                                             ) : (
-                                                <><Download size={14} strokeWidth={3} /> Download {isSelectionMode && selectedPageIds.length > 0 ? `${selectedPageIds.length} Pages` : 'All'}</>
+                                                <><Download size={16} strokeWidth={3} /> Export Document</>
                                             )}
                                         </button>
                                     </div>

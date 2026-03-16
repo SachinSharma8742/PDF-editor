@@ -485,7 +485,7 @@ export const usePDFStore = create<PDFStore>()(
                 toggleTheme: () => set(state => ({ theme: state.theme === 'light' ? 'dark' : 'light' })),
                 setSidebarTab: (tab) => set({ sidebarTab: tab }),
 
-                activeTool: 'select',
+                activeTool: 'pan',
                 eraserMode: 'path', // Default to path eraser
 
                 // Initialize preferences for each tool
@@ -986,7 +986,7 @@ export const usePDFStore = create<PDFStore>()(
                     lastSavedState: null,
                     selectedObjectIds: [],
                     selectedPageIds: [],
-                    activeTool: 'select',
+                    activeTool: 'pan',
                     toolPreferences: {
                         select: { ...DEFAULT_SETTINGS },
                         pan: { ...DEFAULT_SETTINGS },
@@ -1205,6 +1205,19 @@ export const usePDFStore = create<PDFStore>()(
         ),
         {
             name: 'pdf-editor-storage',
+            version: 1,
+            migrate: (persistedState) => {
+                const state = persistedState as Partial<PDFStore>;
+
+                if (!state.activeTool || state.activeTool === 'select') {
+                    return {
+                        ...state,
+                        activeTool: 'pan' as ToolType
+                    };
+                }
+
+                return state;
+            },
             storage: createJSONStorage(() => ({
                 getItem: async (name) => {
                     const val = await idbGet(name);
