@@ -1,5 +1,5 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { usePDFStore } from '../../store/pdfStore';
 import {
@@ -22,12 +22,16 @@ import {
     FlipHorizontal,
     FlipVertical,
     Pencil,
-    Clock
+    Clock,
+    Search,
+    LayoutGrid
 } from 'lucide-react';
 import { loadPDF } from '../../utils/pdfOps';
 import { saveDocument, saveDocumentFlattened, exportPageAsImage } from '../../utils/exportUtils';
 import { useEditorStore } from '../../store/editorStore';
 import { TimelineModal } from '../features/editor/TimelineModal';
+import { SmartSearchPanel } from '../features/editor/SmartSearchPanel';
+import { BatchOperationsPanel } from '../features/editor/BatchOperationsPanel';
 import clsx from 'clsx';
 
 
@@ -41,6 +45,27 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
     const [exportQuality, setExportQuality] = useState(0.8);
     const [isExporting, setIsExporting] = useState(false);
     const [isTimelineOpen, setIsTimelineOpen] = useState(false);
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [searchMode, setSearchMode] = useState<'find' | 'replace'>('find');
+    const [isBatchOpen, setIsBatchOpen] = useState(false);
+
+    // Global keyboard shortcuts for search panel (Ctrl+F, Ctrl+H)
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const isMeta = e.ctrlKey || e.metaKey;
+            if (isMeta && e.key === 'f') {
+                e.preventDefault();
+                setSearchMode('find');
+                setIsSearchOpen(true);
+            } else if (isMeta && e.key === 'h') {
+                e.preventDefault();
+                setSearchMode('replace');
+                setIsSearchOpen(true);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     // Handle click outside to close export menu
     React.useEffect(() => {
@@ -276,7 +301,42 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                     </button>
                 </div>
 
-                {/* 4. Primary Actions */}
+                {/* 4. Smart Tools (Search + Batch) */}
+                {hasPages && (
+                    <div className="flex items-center gap-1 pr-3 mr-3 border-r border-zinc-200 dark:border-white/10">
+                        <button
+                            onClick={() => { setSearchMode('find'); setIsSearchOpen((v) => !v); }}
+                            className={clsx(
+                                compactIconActionClass,
+                                isSearchOpen
+                                    ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30"
+                                    : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white"
+                            )}
+                            aria-label="Smart Search (Ctrl+F)"
+                            title="Smart Search (Ctrl+F / Cmd+F)"
+                        >
+                            <Search size={18} strokeWidth={2.5} />
+                            <span className={clsx(compactPrimaryActionLabelClass, "text-[10px] font-black uppercase tracking-[0.15em]")}>Search</span>
+                        </button>
+
+                        <button
+                            onClick={() => setIsBatchOpen((v) => !v)}
+                            className={clsx(
+                                compactIconActionClass,
+                                isBatchOpen
+                                    ? "bg-purple-600 text-white shadow-lg shadow-purple-500/30"
+                                    : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white"
+                            )}
+                            aria-label="Batch Operations"
+                            title="Batch Operations — apply actions to all pages"
+                        >
+                            <LayoutGrid size={18} strokeWidth={2.5} />
+                            <span className={clsx(compactPrimaryActionLabelClass, "text-[10px] font-black uppercase tracking-[0.15em]")}>Batch</span>
+                        </button>
+                    </div>
+                )}
+
+                {/* 5. Primary Actions */}
                 <div className="flex items-center gap-3 pl-1 pr-2">
                     {hasPages && (
                         <div className="flex items-center gap-3">
@@ -463,6 +523,19 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
 
             {/* Version Timeline Modal */}
             <TimelineModal isOpen={isTimelineOpen} onClose={() => setIsTimelineOpen(false)} />
+
+            {/* Smart Search Panel */}
+            <SmartSearchPanel
+                isOpen={isSearchOpen}
+                onClose={() => setIsSearchOpen(false)}
+                defaultMode={searchMode}
+            />
+
+            {/* Batch Operations Panel */}
+            <BatchOperationsPanel
+                isOpen={isBatchOpen}
+                onClose={() => setIsBatchOpen(false)}
+            />
         </div>
     );
 };
