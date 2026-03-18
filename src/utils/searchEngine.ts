@@ -34,6 +34,16 @@ interface CompiledPattern {
     isValid: boolean;
 }
 
+type SearchCandidate = {
+    objId: string;
+    text: string;
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+    fontSize?: number;
+};
+
 function escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -73,16 +83,6 @@ function getSearchPages(pdfDocument?: SearchablePDFDocument, pageNumbers?: numbe
     const pageSet = new Set(pageNumbers);
     return documentPages.filter((page) => pageSet.has(page.pageNumber));
 }
-
-type SearchCandidate = {
-    objId: string;
-    text: string;
-    x: number;
-    y: number;
-    width?: number;
-    height?: number;
-    fontSize?: number;
-};
 
 function getSearchCandidates(page: PageState): SearchCandidate[] {
     const objectCandidates: SearchCandidate[] = page.objects
@@ -154,13 +154,15 @@ export function searchInPDF(
     targetPages.forEach((page) => {
         const candidates = getSearchCandidates(page);
         candidates.forEach((candidate) => {
-            if (!candidate.text) return;
+            if (!candidate.text) {
+                return;
+            }
 
             regex.lastIndex = 0;
             let match: RegExpExecArray | null;
             while ((match = regex.exec(candidate.text)) !== null) {
                 const fontSize = candidate.fontSize ?? 16;
-                const objWidth = candidate.width ?? Math.max((candidate.text.length * fontSize) * 0.55, 20);
+                const objWidth = candidate.width ?? Math.max(candidate.text.length * fontSize * 0.55, 20);
                 const objHeight = candidate.height ?? Math.max(fontSize * 1.4, 18);
 
                 results.push({
@@ -211,7 +213,7 @@ export function searchInPDF(
                         : candidate.text;
 
                     const fontSize = candidate.fontSize ?? 16;
-                    const objWidth = candidate.width ?? Math.max((candidate.text.length * fontSize) * 0.55, 20);
+                    const objWidth = candidate.width ?? Math.max(candidate.text.length * fontSize * 0.55, 20);
                     const objHeight = candidate.height ?? Math.max(fontSize * 1.4, 18);
 
                     results.push({

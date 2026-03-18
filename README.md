@@ -30,7 +30,7 @@ Required variable:
 PDFCO_API_KEY=your_pdfco_api_key_here
 ```
 
-An example file is included at `.env.example`.
+`.env.example` is a template only. It is not read by the app. Put the real key in `.env` or in your deployed environment variables.
 
 ## Local Setup
 
@@ -46,20 +46,14 @@ An example file is included at `.env.example`.
    copy .env.example .env
    ```
 
-3. Add your PDF.co API key to `.env`.
-4. Start the frontend:
+3. Add your real PDF.co API key to `.env`.
+4. Start local dev:
 
    ```bash
    npm run dev
    ```
 
-5. For the compression API route, run the app through a server runtime that serves the `api/` folder, such as Vercel local dev:
-
-   ```bash
-   vercel dev
-   ```
-
-`npm run dev` starts the Vite client only. Compression requires the `/api/pdfco/compress` server route as well.
+`npm run dev` now serves the local `/api/pdfco/compress` route through Vite dev middleware, so PDF.co compression works locally as long as `PDFCO_API_KEY` is present in `.env`.
 
 ## Vercel Setup
 

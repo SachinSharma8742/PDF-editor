@@ -6,10 +6,12 @@ import {
     PenTool, Brush, EraserIcon,
     Pipette, PlusCircle, Ruler,
     Signature, Smile, Sparkles,
-    Shapes, Magnet
+    Shapes, Magnet, Search, LayoutGrid
 } from 'lucide-react';
 import clsx from 'clsx';
 import { SignatureModal } from './SignatureModal';
+import { SearchFindPanel } from './SearchFindPanel';
+import { BatchOperationsPanel } from './BatchOperationsPanel';
 
 // Custom hook to detect mobile viewport
 const useIsMobile = () => {
@@ -102,6 +104,8 @@ export const EditorToolbar: React.FC = () => {
     const fallbackColorInputRef = useRef<HTMLInputElement>(null);
     const [eyedropperActive, setEyedropperActive] = useState(false);
     const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [isBatchOpen, setIsBatchOpen] = useState(false);
 
     // State to track the "current" tool for each group (to display as the main icon)
     const [groupDefaults, setGroupDefaults] = useState<Record<ToolGroupKey, ToolType>>({
@@ -325,6 +329,43 @@ export const EditorToolbar: React.FC = () => {
                         onSelect={handleToolSelect}
                     />
 
+                    {/* ── Smart Tools: Search & Batch ── */}
+                    <div className="w-8 h-px bg-zinc-200 dark:bg-white/5 mx-auto rounded-full" />
+
+                    <button
+                        onClick={() => setIsSearchOpen((v) => !v)}
+                        title="Search & Find (Ctrl+F)"
+                        className={clsx(
+                            "w-9 h-9 md:w-11 md:h-11 mx-auto rounded-xl flex items-center justify-center transition-all duration-200 group relative",
+                            isSearchOpen
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                                : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 hover:text-zinc-900 dark:hover:text-white'
+                        )}
+                    >
+                        <Search size={18} />
+                        {/* Tooltip */}
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 bg-zinc-900/90 dark:bg-white/10 backdrop-blur text-white text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg pointer-events-none opacity-0 group-hover:opacity-100 whitespace-nowrap transition-opacity">
+                            Search (Ctrl+F)
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => setIsBatchOpen((v) => !v)}
+                        title="Batch Operations"
+                        className={clsx(
+                            "w-9 h-9 md:w-11 md:h-11 mx-auto rounded-xl flex items-center justify-center transition-all duration-200 group relative",
+                            isBatchOpen
+                                ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30'
+                                : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 hover:text-zinc-900 dark:hover:text-white'
+                        )}
+                    >
+                        <LayoutGrid size={18} />
+                        {/* Tooltip */}
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 bg-zinc-900/90 dark:bg-white/10 backdrop-blur text-white text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg pointer-events-none opacity-0 group-hover:opacity-100 whitespace-nowrap transition-opacity">
+                            Batch Operations
+                        </div>
+                    </button>
+
 
 
 
@@ -335,6 +376,16 @@ export const EditorToolbar: React.FC = () => {
                 isOpen={isSignatureModalOpen}
                 onClose={() => setIsSignatureModalOpen(false)}
                 onSave={handleSignatureSave}
+            />
+
+            {/* Smart panels */}
+            <SearchFindPanel
+                isOpen={isSearchOpen}
+                onClose={() => setIsSearchOpen(false)}
+            />
+            <BatchOperationsPanel
+                isOpen={isBatchOpen}
+                onClose={() => setIsBatchOpen(false)}
             />
 
             <input
