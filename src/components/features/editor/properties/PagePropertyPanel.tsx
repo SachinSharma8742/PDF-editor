@@ -1,73 +1,204 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useEditorStore } from '../../../../store/editorStore';
 import { usePDFStore } from '../../../../store/pdfStore';
-import { Slider, ColorGrid, SimpleInput, ToggleButton } from './PropertyComponents';
+import { useBatchOperationStore } from '../../../../store/batchOperationStore';
+import { Slider, SimpleInput, ToggleButton } from './PropertyComponents';
 import {
-    Wand2, LayoutTemplate,
-    Trash2, Eraser, ArrowUpToLine, ArrowDownToLine,
-    Maximize2, RotateCw, Repeat, Type
+    LayoutTemplate,
+    ArrowUpToLine,
+    ArrowDownToLine,
+    Maximize2,
+    RotateCw,
+    RotateCcw,
+    FlipHorizontal,
+    FlipVertical,
+    Repeat,
+    Type,
+    Target,
+    FileText,
+    Loader2,
 } from 'lucide-react';
 import { CollapsibleSection } from './CollapsibleSection';
+import { applyWatermarkToAllPages, rotateAllPages, type WatermarkPosition } from '../../../../utils/batchOperations';
 
 export const PagePropertyPanel: React.FC = () => {
     const { currentPage, updateCurrentPage } = useEditorStore();
-    const { updatePage, deletePage, removeBlankPages, applyStructureToAllPages } = usePDFStore();
+    const { updatePage, applyStructureToAllPages, flipPage, pages } = usePDFStore();
+    const { isProcessing, currentTask, currentPage: processedPages, totalPages } = useBatchOperationStore();
 
     if (!currentPage) return null;
 
-    const handleUpdate = (updates: any) => {
-        // Update both stores for immediate visual feedback
-        updatePage(currentPage.id, updates);      // Persist to pdfStore
-        updateCurrentPage(updates);                // Update editorStore for canvas
+    const [watermarkScope, setWatermarkScope] = useState<'current' | 'all'>('current');
+    const [rotationScope, setRotationScope] = useState<'current' | 'all'>('current');
+    const [watermarkText, setWatermarkText] = useState(currentPage.watermark?.text || 'DRAFT');
+    const [watermarkFontSize, setWatermarkFontSize] = useState(currentPage.watermark?.fontSize || 80);
+    const [watermarkOpacity, setWatermarkOpacity] = useState(currentPage.watermark?.opacity ?? 0.18);
+    const [watermarkPosition, setWatermarkPosition] = useState<WatermarkPosition>(currentPage.watermark?.position || 'center');
+    const [watermarkAngle, setWatermarkAngle] = useState(currentPage.watermark?.rotate ?? -25);
+    const [rotationStep] = useState<90 | -90>(90);
+
+    const sortedPages = useMemo(() => [...pages].sort((a, b) => a.pageNumber - b.pageNumber), [pages]);
+    const batchProgress = totalPages > 0 ? Math.round((processedPages / totalPages) * 100) : 0;
+
+    const presetDimensions: Record<string, { width: number; height: number }> = {
+        A4: { width: 595, height: 842 },
+        Letter: { width: 612, height: 792 },
+        Legal: { width: 612, height: 1008 },
+        Tabloid: { width: 792, height: 1224 },
     };
 
+    const matchingPreset = Object.entries(presetDimensions).find(
+        ([, dims]) => Math.round(currentPage.width) === dims.width && Math.round(currentPage.height) === dims.height
+    )?.[0];
+
+    const isPortrait = currentPage.height >= currentPage.width;
+    const isBlankPage = currentPage.source === 'blank';
+
+    const watermarkPositionGrid: Array<{ key: string; position?: WatermarkPosition; dotClass: string }> = [
+        { key: 'top-left', position: 'top-left', dotClass: 'top-1.5 left-1.5' },
+        { key: 'top-center', position: 'top-center', dotClass: 'top-1.5 left-1/2 -translate-x-1/2' },
+        { key: 'top-right', position: 'top-right', dotClass: 'top-1.5 right-1.5' },
+        { key: 'middle-left', position: 'middle-left', dotClass: 'top-1/2 left-1.5 -translate-y-1/2' },
+        { key: 'center', position: 'center', dotClass: 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' },
+        { key: 'middle-right', position: 'middle-right', dotClass: 'top-1/2 right-1.5 -translate-y-1/2' },
+        { key: 'bottom-left', position: 'bottom-left', dotClass: 'bottom-1.5 left-1.5' },
+        { key: 'bottom-center', position: 'bottom-center', dotClass: 'bottom-1.5 left-1/2 -translate-x-1/2' },
+        { key: 'bottom-right', position: 'bottom-right', dotClass: 'bottom-1.5 right-1.5' },
+    ];
+
+    useEffect(() => {
+        setWatermarkText(currentPage.watermark?.text || 'DRAFT');
+        setWatermarkFontSize(currentPage.watermark?.fontSize || 80);
+        setWatermarkOpacity(currentPage.watermark?.opacity ?? 0.18);
+        setWatermarkPosition(currentPage.watermark?.position || 'center');
+        setWatermarkAngle(currentPage.watermark?.rotate ?? -25);
+    }, [currentPage.id]);
+
+    const handleUpdate = (updates: any) => {
+        // Update both stores for immediate visual feedback
+        updatePage(currentPage.id, updates);
+        updateCurrentPage(updates);
+    };
+
+    const applyWatermark = () => {
+        const text = watermarkText.trim();
+        if (!text) return;
+
+        if (watermarkScope === 'current') {
+            handleUpdate({
+                watermark: {
+                    text,
+                    fontSize: watermarkFontSize,
+                    opacity: watermarkOpacity,
+                    color: '#000000',
+                    position: watermarkPosition,
+                    rotate: watermarkAngle,
+                    isRepeating: false,
+                },
+                isEdited: true,
+            });
+            return;
+        }
+
+        applyWatermarkToAllPages(
+            text,
+            watermarkFontSize,
+            watermarkOpacity,
+            watermarkPosition,
+            watermarkAngle,
+            sortedPages,
+            {
+                editorCurrentPage: currentPage,
+                updateEditorCurrentPage: updateCurrentPage,
+            }
+        );
+    };
+
+    const applyRotation = (stepOverride?: 90 | -90) => {
+        const stepToApply = stepOverride ?? rotationStep;
+
+        if (rotationScope === 'current') {
+            const nextRotation = (((currentPage.rotation || 0) + stepToApply) % 360 + 360) % 360;
+            handleUpdate({ rotation: nextRotation, isEdited: true });
+            return;
+        }
+
+        rotateAllPages(stepToApply, sortedPages, {
+            editorCurrentPage: currentPage,
+            updateEditorCurrentPage: updateCurrentPage,
+        });
+    };
+
+    const applyFlip = (direction: 'horizontal' | 'vertical') => {
+        if (rotationScope === 'current') {
+            flipPage(currentPage.id, direction);
+            handleUpdate(direction === 'horizontal'
+                ? { flipX: !currentPage.flipX, isEdited: true }
+                : { flipY: !currentPage.flipY, isEdited: true }
+            );
+            return;
+        }
+
+        sortedPages.forEach((page) => {
+            flipPage(page.id, direction);
+        });
+
+        const syncedCurrent = usePDFStore.getState().pages.find((p) => p.id === currentPage.id);
+        if (syncedCurrent) {
+            updateCurrentPage({
+                flipX: syncedCurrent.flipX,
+                flipY: syncedCurrent.flipY,
+                isEdited: true,
+            });
+        }
+    };
+
+    useEffect(() => {
+        if (!currentPage.watermark?.text) return;
+        if (!watermarkText.trim()) return;
+
+        const timeout = window.setTimeout(() => {
+            applyWatermark();
+        }, 120);
+
+        return () => window.clearTimeout(timeout);
+    }, [watermarkText, watermarkFontSize, watermarkOpacity, watermarkPosition, watermarkAngle, watermarkScope]);
+
     return (
-        <div className="flex flex-col h-full bg-white dark:bg-[#1e1e20] text-zinc-900 dark:text-white transition-colors duration-500">
-            {/* Header */}
-            <div className="px-6 py-5 border-b border-zinc-100 dark:border-white/5 bg-white/50 dark:bg-[#18181b] sticky top-0 z-10 backdrop-blur-xl transition-colors">
-                <div className="flex items-center gap-4">
-                    <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20 shadow-sm">
-                        <LayoutTemplate size={16} strokeWidth={2.5} />
+        <div className="flex flex-col h-full bg-white dark:bg-[#1c1d20] text-zinc-900 dark:text-zinc-100 transition-colors duration-300">
+            <div className="px-5 py-4 border-b border-zinc-200/70 dark:border-white/10 bg-white/90 dark:bg-[#17181b]/95 sticky top-0 z-10 backdrop-blur-xl">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-400/20">
+                            <LayoutTemplate size={16} strokeWidth={2.5} />
+                        </div>
+                        <div>
+                            <h3 className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-800 dark:text-zinc-100">Page Properties</h3>
+                            <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">Page {currentPage.pageNumber} of {pages.length}</p>
+                        </div>
                     </div>
-                    <div>
-                        <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-zinc-900 dark:text-zinc-200">
-                            Page Architect
-                        </h3>
-                        <p className="text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-widest mt-1">
-                            Refining Page {currentPage.pageNumber}
-                        </p>
-                    </div>
+                    <span className="text-[10px] px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-white/10 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-white/10">
+                        {isPortrait ? 'Portrait' : 'Landscape'}
+                    </span>
                 </div>
             </div>
 
-            <div className="p-6 space-y-2 overflow-y-auto custom-scrollbar bg-zinc-50/30 dark:bg-transparent">
-
-                {/* --- Section 1: Page Setup & Operations --- */}
-                <CollapsibleSection
-                    title="Setup & Operations"
-                    icon={<Maximize2 size={12} />}
-                    storageKey="page_setup"
-                >
-                    <div className="space-y-4">
-                        {/* Geometry & Presets */}
-                        <div className="space-y-4 bg-white/50 dark:bg-white/[0.02] p-4 rounded-2xl border border-zinc-200 dark:border-white/5 shadow-inner dark:shadow-none transition-colors duration-300">
+            <div className="p-5 space-y-3 overflow-y-auto custom-scrollbar bg-zinc-50/60 dark:bg-transparent">
+                {isBlankPage && (
+                    <CollapsibleSection
+                        title="Blank Page Layout"
+                        icon={<Maximize2 size={12} />}
+                        storageKey="blank_page_layout"
+                    >
+                        <div className="space-y-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-4">
                             <div className="grid grid-cols-4 gap-2">
-                                {['A4', 'Letter', 'Legal', 'Tabloid'].map(preset => (
+                                {Object.keys(presetDimensions).map((preset) => (
                                     <button
                                         key={preset}
-                                        onClick={() => {
-                                            const dims: any = {
-                                                'A4': { width: 595, height: 842 },
-                                                'Letter': { width: 612, height: 792 },
-                                                'Legal': { width: 612, height: 1008 },
-                                                'Tabloid': { width: 792, height: 1224 }
-                                            }[preset];
-                                            if (dims) handleUpdate(dims);
-                                        }}
-                                        className={`p-2 rounded-lg text-[9px] font-bold border transition-all ${(Math.round(currentPage.width) === 595 && preset === 'A4') ||
-                                            (Math.round(currentPage.width) === 612 && preset === 'Letter' && Math.round(currentPage.height) === 792)
-                                            ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20'
-                                            : 'bg-zinc-100 dark:bg-white/[0.03] border-zinc-200 dark:border-white/10 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-zinc-300'
+                                        onClick={() => handleUpdate(presetDimensions[preset])}
+                                        className={`p-2 rounded-lg text-[10px] font-semibold border transition-all ${matchingPreset === preset
+                                            ? 'bg-blue-600 border-blue-500 text-white shadow-sm shadow-blue-500/30'
+                                            : 'bg-zinc-50 dark:bg-white/[0.02] border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/10'
                                             }`}
                                     >
                                         {preset}
@@ -75,227 +206,373 @@ export const PagePropertyPanel: React.FC = () => {
                                 ))}
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-3">
                                 <SimpleInput
-                                    label="W"
+                                    label="Width"
                                     value={Math.round(currentPage.width)}
                                     onChange={(v) => handleUpdate({ width: v })}
                                 />
                                 <SimpleInput
-                                    label="H"
+                                    label="Height"
                                     value={Math.round(currentPage.height)}
                                     onChange={(v) => handleUpdate({ height: v })}
                                 />
                             </div>
 
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => handleUpdate({ width: currentPage.height, height: currentPage.width })}
-                                    className="flex-1 p-2.5 rounded-xl bg-zinc-100 dark:bg-white/[0.03] border border-zinc-200 dark:border-white/10 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-zinc-300 flex items-center justify-center gap-2 group transition-all"
-                                >
-                                    <Repeat size={12} className="group-hover:rotate-90 transition-transform" />
-                                    <span className="text-[10px] font-bold uppercase tracking-wider">Rotate</span>
-                                </button>
-                                <button
-                                    onClick={() => handleUpdate({ rotation: (currentPage.rotation || 0) + 90 })}
-                                    className="p-2.5 rounded-xl bg-zinc-100 dark:bg-white/[0.03] border border-zinc-200 dark:border-white/10 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-zinc-300 flex items-center justify-center gap-2 transition-all"
-                                >
-                                    <RotateCw size={12} />
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Flow Actions (Quick management) */}
-                        <div className="grid grid-cols-2 gap-3">
                             <button
-                                onClick={() => deletePage(currentPage.id)}
-                                className="p-3 bg-red-500/5 hover:bg-red-500/15 text-red-600 dark:text-red-500/70 hover:text-red-700 dark:hover:text-red-500 rounded-xl border border-red-500/10 flex items-center justify-center gap-2 group transition-all"
+                                onClick={() => handleUpdate({ width: currentPage.height, height: currentPage.width })}
+                                className="w-full p-2.5 rounded-xl bg-zinc-100 dark:bg-white/[0.05] border border-zinc-200 dark:border-white/10 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-white/10 transition-all flex items-center justify-center gap-2"
                             >
-                                <Trash2 size={14} className="group-hover:scale-110 transition-transform" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Delete</span>
-                            </button>
-                            <button
-                                onClick={() => removeBlankPages()}
-                                className="p-3 bg-zinc-100 dark:bg-white/[0.03] hover:bg-zinc-200 dark:hover:bg-white/[0.08] text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded-xl border border-zinc-200 dark:border-white/5 flex items-center justify-center gap-2 group transition-all"
-                            >
-                                <Eraser size={14} className="group-hover:rotate-12 transition-transform" />
-                                <span className="text-[9px] font-black uppercase tracking-widest">Cleanup</span>
+                                <Repeat size={13} />
+                                <span className="text-[10px] font-semibold uppercase tracking-wide">Swap Orientation</span>
                             </button>
                         </div>
-                    </div>
-                </CollapsibleSection>
+                    </CollapsibleSection>
+                )}
 
-                {/* --- Section 2: Aesthetics & Identity --- */}
                 <CollapsibleSection
-                    title="Style & Elements"
-                    icon={<Wand2 size={12} />}
-                    storageKey="page_style"
+                    title="Rotation"
+                    icon={<RotateCw size={12} />}
+                    storageKey="page_rotation"
                 >
                     <div className="space-y-4">
-                        {/* Aesthetics Group */}
-                        <div className="space-y-4 bg-white/50 dark:bg-white/[0.02] p-4 rounded-2xl border border-zinc-200 dark:border-white/5 shadow-inner dark:shadow-none transition-colors duration-300">
-                            <div className="grid grid-cols-3 gap-2">
-                                {['none', 'sepia', 'grayscale', 'vintage', 'cool', 'warm'].map(filter => (
-                                    <button
-                                        key={filter}
-                                        onClick={() => handleUpdate({ filter })}
-                                        className={`p-2 rounded-lg text-[10px] font-bold uppercase tracking-tight transition-all border ${currentPage.filter === filter
-                                            ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/40'
-                                            : 'bg-zinc-100 dark:bg-white/[0.03] border-zinc-200 dark:border-white/10 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-zinc-300'
-                                            }`}
-                                    >
-                                        {filter}
-                                    </button>
-                                ))}
-                            </div>
-
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Tint Overlay</span>
-                                    <div className="w-3 h-3 rounded-full border border-zinc-200 dark:border-white/20 shadow-sm" style={{ backgroundColor: currentPage.overlayColor || 'transparent' }} />
-                                </div>
-                                <ColorGrid
-                                    current={currentPage.overlayColor || 'transparent'}
-                                    onSelect={(c) => handleUpdate({ overlayColor: c, overlayOpacity: currentPage.overlayOpacity || 0.15 })}
-                                    recentColors={['#fef3c7', '#dcfce7', '#fee2e2', '#e0f2fe', '#f3e8ff']}
-                                />
-                                {currentPage.overlayColor && currentPage.overlayColor !== 'transparent' && (
-                                    <Slider
-                                        value={currentPage.overlayOpacity ?? 0.15}
-                                        min={0} max={1} step={0.05}
-                                        onChange={(v) => handleUpdate({ overlayOpacity: v })}
-                                    />
-                                )}
-                            </div>
-
-                            <div className="space-y-2 border-t border-zinc-200 dark:border-white/5 pt-3">
-                                <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Surface Texture</span>
-                                <div className="grid grid-cols-4 gap-2">
-                                    {['none', 'paper', 'grain', 'canvas'].map(tex => (
-                                        <button
-                                            key={tex}
-                                            onClick={() => handleUpdate({ texture: tex, textureOpacity: 0.2 })}
-                                            className={`p-1.5 rounded-lg text-[8px] font-bold uppercase border transition-all ${currentPage.texture === tex
-                                                ? 'bg-zinc-200 dark:bg-zinc-700 border-zinc-300 dark:border-zinc-500 text-zinc-900 dark:text-white shadow-inner'
-                                                : 'bg-transparent border-zinc-100 dark:border-white/5 text-zinc-400 dark:text-zinc-600 hover:border-zinc-300 dark:hover:border-white/20'
-                                                }`}
-                                        >
-                                            {tex}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Fixed Structure Group */}
-                        <div className="space-y-4">
+                        <div className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-4 space-y-4">
                             <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Static Overlays</span>
+                                <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300">Current Rotation</span>
+                                <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold bg-zinc-100 dark:bg-white/10 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-white/10">
+                                    {((currentPage.rotation || 0) + 360) % 360}°
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-100/80 dark:bg-white/[0.03] p-1">
                                 <button
-                                    onClick={() => applyStructureToAllPages('both', currentPage.structure)}
-                                    className="text-[9px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300 uppercase tracking-widest transition-colors"
+                                    onClick={() => setRotationScope('current')}
+                                    className={`flex items-center justify-center gap-2 px-2 py-2 rounded-lg text-[10px] font-semibold transition-all ${rotationScope === 'current'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-zinc-600 dark:text-zinc-400 hover:bg-white dark:hover:bg-white/10'
+                                        }`}
                                 >
-                                    Sync Global
+                                    <Target size={12} /> Current
+                                </button>
+                                <button
+                                    onClick={() => setRotationScope('all')}
+                                    className={`flex items-center justify-center gap-2 px-2 py-2 rounded-lg text-[10px] font-semibold transition-all ${rotationScope === 'all'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-zinc-600 dark:text-zinc-400 hover:bg-white dark:hover:bg-white/10'
+                                        }`}
+                                >
+                                    <FileText size={12} /> All Pages
                                 </button>
                             </div>
 
-                            <div className="space-y-2">
-                                {/* Header Toggle */}
-                                <div className="bg-white/50 dark:bg-white/[0.03] p-3 rounded-xl border border-zinc-200 dark:border-white/5 flex justify-between items-center group hover:border-zinc-300 dark:hover:border-white/10 transition-colors shadow-sm dark:shadow-none">
-                                    <div className="flex items-center gap-3">
-                                        <ArrowUpToLine size={13} className="text-zinc-400 dark:text-zinc-500 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
-                                        <span className="text-[10px] uppercase font-bold text-zinc-600 dark:text-zinc-400">Header</span>
-                                    </div>
-                                    <ToggleButton
-                                        active={!!currentPage.structure?.header}
-                                        onClick={() => {
-                                            const newStruct = { ...(currentPage.structure || {}) };
-                                            if (newStruct.header) delete newStruct.header;
-                                            else newStruct.header = { text: "Document Title", align: 'center', fontSize: 10, color: '#71717a', opacity: 0.8 };
-                                            handleUpdate({ structure: newStruct });
-                                        }}
-                                    />
-                                </div>
-
-                                {/* Footer Toggle */}
-                                <div className="bg-white/50 dark:bg-white/[0.03] p-3 rounded-xl border border-zinc-200 dark:border-white/5 flex justify-between items-center group hover:border-zinc-300 dark:hover:border-white/10 transition-colors shadow-sm dark:shadow-none">
-                                    <div className="flex items-center gap-3">
-                                        <ArrowDownToLine size={13} className="text-zinc-400 dark:text-zinc-500 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
-                                        <span className="text-[10px] uppercase font-bold text-zinc-600 dark:text-zinc-400">Footer</span>
-                                    </div>
-                                    <ToggleButton
-                                        active={!!currentPage.structure?.footer}
-                                        onClick={() => {
-                                            const newStruct = { ...(currentPage.structure || {}) };
-                                            if (newStruct.footer) delete newStruct.footer;
-                                            else newStruct.footer = { text: "Page {{page}} of {{total}}", align: 'center', fontSize: 9, color: '#71717a', opacity: 0.8 };
-                                            handleUpdate({ structure: newStruct });
-                                        }}
-                                    />
-                                </div>
-
-                                {/* Watermark Toggle */}
-                                <div className="bg-white/50 dark:bg-white/[0.03] p-3 rounded-xl border border-zinc-200 dark:border-white/5 flex justify-between items-center group hover:border-zinc-300 dark:hover:border-white/10 transition-colors shadow-sm dark:shadow-none">
-                                    <div className="flex items-center gap-3">
-                                        <Type size={13} className="text-zinc-400 dark:text-zinc-500 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
-                                        <span className="text-[10px] uppercase font-bold text-zinc-600 dark:text-zinc-400">Watermark</span>
-                                    </div>
-                                    <ToggleButton
-                                        active={!!currentPage.watermark?.text}
-                                        onClick={() => {
-                                            if (currentPage.watermark?.text) handleUpdate({ watermark: undefined });
-                                            else handleUpdate({ watermark: { text: "DRAFT", color: "#71717a", opacity: 0.15, fontSize: 80, rotate: -45 } });
-                                        }}
-                                    />
-                                </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    onClick={() => {
+                                        applyRotation(90);
+                                    }}
+                                    disabled={isProcessing}
+                                    title="Rotate 90 degrees clockwise"
+                                    className="group px-3 py-2.5 rounded-xl bg-zinc-900 dark:bg-zinc-700 hover:bg-black dark:hover:bg-zinc-600 disabled:opacity-50 text-white transition-all flex items-center justify-center"
+                                >
+                                    <RotateCw size={16} className="transition-transform group-hover:rotate-45" />
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        applyRotation(-90);
+                                    }}
+                                    disabled={isProcessing}
+                                    title="Rotate 90 degrees counterclockwise"
+                                    className="group px-3 py-2.5 rounded-xl bg-zinc-100 dark:bg-white/[0.05] border border-zinc-200 dark:border-white/10 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-white/10 disabled:opacity-50 transition-all flex items-center justify-center"
+                                >
+                                    <RotateCcw size={16} className="transition-transform group-hover:-rotate-45" />
+                                </button>
                             </div>
 
-                            {/* Collapsible Details for Overlays */}
-                            {(currentPage.structure?.header || currentPage.structure?.footer || currentPage.watermark?.text) && (
-                                <div className="bg-zinc-100 dark:bg-black/20 p-4 rounded-2xl border border-zinc-200 dark:border-white/5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300 shadow-inner">
-                                    {currentPage.structure?.header && (
-                                        <div className="space-y-2">
-                                            <span className="text-[8px] font-black text-zinc-500 dark:text-zinc-600 uppercase tracking-widest">Header Text</span>
-                                            <input
-                                                type="text"
-                                                value={currentPage.structure.header.text}
-                                                onChange={(e) => handleUpdate({
-                                                    structure: { ...currentPage.structure, header: { ...currentPage.structure!.header!, text: e.target.value } }
-                                                })}
-                                                className="w-full bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 rounded-lg p-2 text-[10px] text-zinc-900 dark:text-white outline-none focus:border-blue-500/30 transition-all shadow-sm"
-                                            />
-                                        </div>
-                                    )}
-                                    {currentPage.structure?.footer && (
-                                        <div className="space-y-2">
-                                            <span className="text-[8px] font-black text-zinc-500 dark:text-zinc-600 uppercase tracking-widest">Footer Text</span>
-                                            <input
-                                                type="text"
-                                                value={currentPage.structure.footer.text}
-                                                onChange={(e) => handleUpdate({
-                                                    structure: { ...currentPage.structure, footer: { ...currentPage.structure!.footer!, text: e.target.value } }
-                                                })}
-                                                className="w-full bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 rounded-lg p-2 text-[10px] text-zinc-900 dark:text-white outline-none focus:border-blue-500/30 transition-all shadow-sm"
-                                            />
-                                        </div>
-                                    )}
-                                    {currentPage.watermark?.text && (
-                                        <div className="space-y-2">
-                                            <span className="text-[8px] font-black text-zinc-500 dark:text-zinc-600 uppercase tracking-widest">Watermark Text</span>
-                                            <input
-                                                type="text"
-                                                value={currentPage.watermark.text}
-                                                onChange={(e) => handleUpdate({ watermark: { ...currentPage.watermark!, text: e.target.value } })}
-                                                className="w-full bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 rounded-lg p-2 text-[10px] text-zinc-900 dark:text-white outline-none focus:border-blue-500/30 font-bold uppercase tracking-widest transition-all shadow-sm"
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                            <div className="h-px bg-zinc-200 dark:bg-white/10" />
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    onClick={() => applyFlip('horizontal')}
+                                    title="Flip horizontal"
+                                    className="group px-3 py-2.5 rounded-xl bg-zinc-100 dark:bg-white/[0.05] border border-zinc-200 dark:border-white/10 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-white/10 transition-all flex items-center justify-center"
+                                >
+                                    <FlipHorizontal size={16} className="transition-transform group-hover:scale-110" />
+                                </button>
+                                <button
+                                    onClick={() => applyFlip('vertical')}
+                                    title="Flip vertical"
+                                    className="group px-3 py-2.5 rounded-xl bg-zinc-100 dark:bg-white/[0.05] border border-zinc-200 dark:border-white/10 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-white/10 transition-all flex items-center justify-center"
+                                >
+                                    <FlipVertical size={16} className="transition-transform group-hover:scale-110" />
+                                </button>
+                            </div>
                         </div>
+
+                        {isProcessing && currentTask?.includes('rotate') && (
+                            <div className="space-y-1.5 rounded-xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.03] px-3 py-2.5">
+                                <div className="flex justify-between text-[9px] text-zinc-500 dark:text-zinc-400 font-semibold uppercase tracking-wider">
+                                    <span>{currentTask || 'Processing'}</span>
+                                    <span>{batchProgress}%</span>
+                                </div>
+                                <div className="h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                    <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${batchProgress}%` }} />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </CollapsibleSection>
 
+                <CollapsibleSection
+                    title="Header"
+                    icon={<ArrowUpToLine size={12} />}
+                    storageKey="page_header"
+                    action={
+                        <button
+                            onClick={() => applyStructureToAllPages('both', currentPage.structure)}
+                            className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300 uppercase tracking-wide transition-colors"
+                        >
+                            Apply to All
+                        </button>
+                    }
+                >
+                    <div className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-4 space-y-3">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">Header Overlay</span>
+                            </div>
+                            <ToggleButton
+                                active={!!currentPage.structure?.header}
+                                onClick={() => {
+                                    const newStruct = { ...(currentPage.structure || {}) };
+                                    if (newStruct.header) delete newStruct.header;
+                                    else newStruct.header = { text: 'Document Title', align: 'center', fontSize: 10, color: '#71717a', opacity: 0.8 };
+                                    handleUpdate({ structure: newStruct });
+                                }}
+                            />
+                        </div>
+
+                        {currentPage.structure?.header && (
+                            <input
+                                type="text"
+                                value={currentPage.structure.header.text}
+                                onChange={(e) =>
+                                    handleUpdate({
+                                        structure: { ...(currentPage.structure || {}), header: { ...currentPage.structure!.header!, text: e.target.value } },
+                                    })
+                                }
+                                className="w-full bg-white dark:bg-black/30 border border-zinc-200 dark:border-white/10 rounded-lg p-2.5 text-[12px] text-zinc-900 dark:text-white outline-none focus:border-blue-500/30 transition-all"
+                                placeholder="Header text"
+                            />
+                        )}
+                    </div>
+                </CollapsibleSection>
+
+                <CollapsibleSection
+                    title="Footer"
+                    icon={<ArrowDownToLine size={12} />}
+                    storageKey="page_footer"
+                    action={
+                        <button
+                            onClick={() => applyStructureToAllPages('footer', currentPage.structure)}
+                            className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300 uppercase tracking-wide transition-colors"
+                        >
+                            Apply to All
+                        </button>
+                    }
+                >
+                    <div className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-4 space-y-3">
+                        <div className="flex justify-between items-center">
+                            <span className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">Footer Overlay</span>
+                            <ToggleButton
+                                active={!!currentPage.structure?.footer}
+                                onClick={() => {
+                                    const newStruct = { ...(currentPage.structure || {}) };
+                                    if (newStruct.footer) delete newStruct.footer;
+                                    else newStruct.footer = { text: 'Page {{page}} of {{total}}', align: 'center', fontSize: 9, color: '#71717a', opacity: 0.8 };
+                                    handleUpdate({ structure: newStruct });
+                                }}
+                            />
+                        </div>
+
+                        {currentPage.structure?.footer && (
+                            <input
+                                type="text"
+                                value={currentPage.structure.footer.text}
+                                onChange={(e) =>
+                                    handleUpdate({
+                                        structure: { ...(currentPage.structure || {}), footer: { ...currentPage.structure!.footer!, text: e.target.value } },
+                                    })
+                                }
+                                className="w-full bg-white dark:bg-black/30 border border-zinc-200 dark:border-white/10 rounded-lg p-2.5 text-[12px] text-zinc-900 dark:text-white outline-none focus:border-blue-500/30 transition-all"
+                                placeholder="Footer text"
+                            />
+                        )}
+                    </div>
+                </CollapsibleSection>
+
+                <CollapsibleSection
+                    title="Watermark"
+                    icon={<Type size={12} />}
+                    storageKey="page_watermark"
+                >
+                    <div className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-4 space-y-3">
+                        <div className="flex justify-between items-center">
+                            <span className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">Watermark Overlay</span>
+                            <ToggleButton
+                                active={!!currentPage.watermark?.text}
+                                onClick={() => {
+                                    if (currentPage.watermark?.text) {
+                                        handleUpdate({ watermark: undefined });
+                                        return;
+                                    }
+                                    const defaultText = watermarkText.trim() || 'DRAFT';
+                                    setWatermarkText(defaultText);
+                                    handleUpdate({
+                                        watermark: {
+                                            text: defaultText,
+                                            color: '#71717a',
+                                            opacity: watermarkOpacity,
+                                            fontSize: watermarkFontSize,
+                                            position: watermarkPosition,
+                                            rotate: watermarkAngle,
+                                        },
+                                    });
+                                }}
+                            />
+                        </div>
+
+                        {currentPage.watermark?.text && (
+                            <>
+                                <div className="grid grid-cols-2 gap-2 rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-100/80 dark:bg-white/[0.03] p-1">
+                                    <button
+                                        onClick={() => setWatermarkScope('current')}
+                                        className={`flex items-center justify-center gap-2 px-2 py-2 rounded-lg text-[10px] font-semibold transition-all ${watermarkScope === 'current'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-zinc-600 dark:text-zinc-400 hover:bg-white dark:hover:bg-white/10'
+                                            }`}
+                                    >
+                                        <Target size={12} /> Current
+                                    </button>
+                                    <button
+                                        onClick={() => setWatermarkScope('all')}
+                                        className={`flex items-center justify-center gap-2 px-2 py-2 rounded-lg text-[10px] font-semibold transition-all ${watermarkScope === 'all'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-zinc-600 dark:text-zinc-400 hover:bg-white dark:hover:bg-white/10'
+                                            }`}
+                                    >
+                                        <FileText size={12} /> All Pages
+                                    </button>
+                                </div>
+
+                                <input
+                                    type="text"
+                                    value={watermarkText}
+                                    onChange={(e) => setWatermarkText(e.target.value)}
+                                    className="w-full bg-white dark:bg-black/30 border border-zinc-200 dark:border-white/10 rounded-lg p-2.5 text-[12px] text-zinc-900 dark:text-white outline-none focus:border-blue-500/30 transition-all"
+                                    placeholder="Watermark text"
+                                />
+
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400">
+                                        <span>Size</span>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                min={10}
+                                                max={240}
+                                                step={1}
+                                                value={watermarkFontSize}
+                                                onChange={(e) => {
+                                                    const next = Number(e.target.value);
+                                                    if (Number.isNaN(next)) return;
+                                                    setWatermarkFontSize(Math.min(240, Math.max(10, Math.round(next))));
+                                                }}
+                                                className="w-16 h-7 rounded-md border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-2 text-[11px] text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500/60"
+                                            />
+                                            <span className="font-semibold text-zinc-700 dark:text-zinc-200">px</span>
+                                        </div>
+                                    </div>
+                                    <Slider value={watermarkFontSize} min={10} max={240} step={1} onChange={(v) => setWatermarkFontSize(v)} />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400">
+                                        <span>Opacity</span>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={100}
+                                                step={1}
+                                                value={Math.round(watermarkOpacity * 100)}
+                                                onChange={(e) => {
+                                                    const next = Number(e.target.value);
+                                                    if (Number.isNaN(next)) return;
+                                                    const clamped = Math.min(100, Math.max(0, Math.round(next)));
+                                                    setWatermarkOpacity(clamped / 100);
+                                                }}
+                                                className="w-16 h-7 rounded-md border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-2 text-[11px] text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500/60"
+                                            />
+                                            <span className="font-semibold text-zinc-700 dark:text-zinc-200">%</span>
+                                        </div>
+                                    </div>
+                                    <Slider value={watermarkOpacity} min={0} max={1} step={0.01} onChange={(v) => setWatermarkOpacity(v)} />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400">
+                                        <span>Angle</span>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                min={-180}
+                                                max={180}
+                                                step={1}
+                                                value={watermarkAngle}
+                                                onChange={(e) => {
+                                                    const next = Number(e.target.value);
+                                                    if (Number.isNaN(next)) return;
+                                                    setWatermarkAngle(Math.min(180, Math.max(-180, Math.round(next))));
+                                                }}
+                                                className="w-16 h-7 rounded-md border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.04] px-2 text-[11px] text-zinc-800 dark:text-zinc-100 outline-none focus:border-blue-500/60"
+                                            />
+                                            <span className="font-semibold text-zinc-700 dark:text-zinc-200">deg</span>
+                                        </div>
+                                    </div>
+                                    <Slider value={watermarkAngle} min={-180} max={180} step={1} onChange={(v) => setWatermarkAngle(Math.round(v))} />
+                                </div>
+
+                                <div className="rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-white/[0.03] p-2">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {watermarkPositionGrid.map((cell) => {
+                                            const isActive = cell.position === watermarkPosition;
+
+                                            return (
+                                                <button
+                                                    key={cell.key}
+                                                    type="button"
+                                                    onClick={() => setWatermarkPosition(cell.position as WatermarkPosition)}
+                                                    aria-label={cell.position || cell.key}
+                                                    className={`relative h-10 w-full rounded-lg border transition-all ${isActive
+                                                        ? 'border-blue-500 bg-blue-500/10 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)]'
+                                                        : 'border-zinc-200 dark:border-white/10 bg-white dark:bg-white/[0.02] hover:border-zinc-300 dark:hover:border-white/20'
+                                                        }`}
+                                                >
+                                                    <span
+                                                        className={`absolute h-1.5 w-1.5 rounded-full transition-all ${cell.dotClass} ${isActive
+                                                            ? 'bg-blue-500'
+                                                            : 'bg-zinc-500 dark:bg-zinc-400'
+                                                            }`}
+                                                    />
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </CollapsibleSection>
             </div>
         </div>
     );

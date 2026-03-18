@@ -1,7 +1,8 @@
 import React, { useEffect, useCallback } from 'react';
 import { useEditorStore } from '../../../../store/editorStore';
-import { Search, Replace, ChevronUp, ChevronDown, X, CaseSensitive, RefreshCw } from 'lucide-react';
+import { Search, Replace, ChevronUp, ChevronDown, X, CaseSensitive, RefreshCw, Clock, Trash2, Regex, WholeWord, ListFilter, AlertTriangle, Sparkles } from 'lucide-react';
 import clsx from 'clsx';
+import { useSearchHistory } from '../../../../hooks/useSearchHistory';
 
 interface FindReplacePanelProps {
     textItems: any[];
@@ -13,21 +14,47 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
         setSearchTerm,
         setReplaceTerm,
         toggleCaseSensitive,
+        toggleWholeWord,
+        toggleRegex,
+        toggleFuzzy,
+        setCurrentMatchIndex,
         findMatches,
         navigateMatch,
         replaceCurrentMatch,
         replaceAllMatches,
         setFindReplaceOpen
     } = useEditorStore();
+    const { history, addEntry, removeEntry, clearHistory } = useSearchHistory();
 
-    const { searchTerm, replaceTerm, caseSensitive, matches, currentMatchIndex, isOpen } = findReplaceState;
+    const { searchTerm, replaceTerm, caseSensitive, wholeWord, useRegex, useFuzzy, regexError, matches, currentMatchIndex, isOpen } = findReplaceState;
 
-    // Re-run search when search term or case sensitivity changes
+    const hasFuzzyResult = matches.some((m) => m.isFuzzy);
+    const canReplaceCurrent = currentMatchIndex >= 0 && currentMatchIndex < matches.length && !matches[currentMatchIndex]?.isFuzzy;
+    const canReplaceAll = matches.some((m) => !m.isFuzzy);
+
+    const filteredSuggestions = searchTerm.trim()
+        ? history
+            .filter((entry) => entry.term.toLowerCase().includes(searchTerm.trim().toLowerCase()))
+            .slice(0, 5)
+        : history.slice(0, 5);
+
+    // Re-run search when search options change
     useEffect(() => {
         if (searchTerm.trim()) {
             findMatches(textItems);
         }
-    }, [searchTerm, caseSensitive, textItems]);
+    }, [searchTerm, caseSensitive, wholeWord, useRegex, useFuzzy, textItems]);
+
+    useEffect(() => {
+        const normalized = searchTerm.trim();
+        if (!normalized) return;
+
+        const timeoutId = window.setTimeout(() => {
+            addEntry(normalized, matches.length);
+        }, 280);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [searchTerm, matches.length, addEntry]);
 
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
@@ -98,6 +125,160 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
                 </div>
             </div>
 
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={toggleCaseSensitive}
+                        className={clsx(
+                            "flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all",
+                            caseSensitive
+                                ? "bg-indigo-600 text-white"
+                                : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+                        )}
+                        title="Case sensitive"
+                    >
+                        <CaseSensitive size={12} /> Aa
+                    </button>
+                    <button
+                        onClick={toggleWholeWord}
+                        className={clsx(
+                            "flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all",
+                            wholeWord
+                                ? "bg-indigo-600 text-white"
+                                : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+                        )}
+                        title="Whole word"
+                    >
+                        <WholeWord size={12} /> Word
+                    </button>
+                    <button
+                        onClick={toggleRegex}
+                        className={clsx(
+                            "flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all",
+                            useRegex
+                                ? "bg-indigo-600 text-white"
+                                : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+                        )}
+                        title="Regex"
+                    >
+                        <Regex size={12} /> Regex
+                    </button>
+                    <button
+                        onClick={toggleFuzzy}
+                        className={clsx(
+                            "flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all",
+                            useFuzzy
+                                ? "bg-indigo-600 text-white"
+                                : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+                        )}
+                        title="Fuzzy typo-tolerant matching"
+                    >
+                        <Sparkles size={12} /> Fuzzy
+                    </button>
+                </div>
+
+                <span className="text-[10px] text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+                    <ListFilter size={10} /> {matches.length} matches
+                </span>
+            </div>
+
+            {regexError && (
+                <div className="flex items-center gap-1.5 text-[11px] text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded-md px-2 py-1.5">
+                    <AlertTriangle size={12} /> {regexError}
+                </div>
+            )}
+
+            {hasFuzzyResult && (
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-500/30 rounded-md px-2 py-1.5">
+                    <Sparkles size={12} /> Typo-tolerant matches shown. Replace works on exact matches only.
+                </div>
+            )}
+
+            {filteredSuggestions.length > 0 && (
+                <div className="rounded-lg border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-zinc-800/50 p-2 space-y-1">
+                    <div className="flex items-center justify-between px-1">
+                        <span className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+                            <Clock size={10} /> Suggestions
+                        </span>
+                        <button
+                            onClick={clearHistory}
+                            className="text-[10px] text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 font-medium flex items-center gap-1"
+                        >
+                            <Trash2 size={10} /> Clear
+                        </button>
+                    </div>
+
+                    <div className="max-h-28 overflow-y-auto pr-1 space-y-1">
+                        {filteredSuggestions.map((entry) => (
+                            <div
+                                key={entry.term}
+                                className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-700/60 group"
+                            >
+                                <button
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        setSearchTerm(entry.term);
+                                    }}
+                                    className="min-w-0 flex-1 text-left"
+                                >
+                                    <span className="text-xs text-zinc-700 dark:text-zinc-200 truncate block">{entry.term}</span>
+                                </button>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    {entry.resultCount !== undefined && (
+                                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 px-1.5 py-0.5 rounded-full">
+                                            {entry.resultCount}
+                                        </span>
+                                    )}
+                                    <button
+                                        onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            removeEntry(entry.term);
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500 transition-all"
+                                        aria-label={`Remove ${entry.term}`}
+                                    >
+                                        <X size={11} />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {matches.length > 0 && (
+                <div className="rounded-lg border border-zinc-200 dark:border-white/10 bg-white/70 dark:bg-zinc-900/50 p-2 space-y-1">
+                    <div className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 px-1">Match Preview</div>
+                    <div className="max-h-28 overflow-y-auto pr-1 space-y-1">
+                        {matches.slice(0, 12).map((match, idx) => {
+                            const before = match.text.slice(Math.max(0, match.startIndex - 16), match.startIndex);
+                            const after = match.text.slice(match.endIndex, Math.min(match.text.length, match.endIndex + 20));
+                            return (
+                                <button
+                                    key={`${match.id}-${match.startIndex}-${idx}`}
+                                    onClick={() => setCurrentMatchIndex(idx)}
+                                    className={clsx(
+                                        "w-full text-left px-2 py-1.5 rounded-md transition-colors",
+                                        idx === currentMatchIndex
+                                            ? "bg-indigo-600 text-white"
+                                            : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                                    )}
+                                >
+                                    <span className="text-[11px]">
+                                        {before}
+                                        <mark className={clsx("rounded px-0.5", idx === currentMatchIndex ? "bg-white/25 text-white" : "bg-yellow-300/70 text-zinc-900")}>{match.matchedText}</mark>
+                                        {after}
+                                    </span>
+                                    {match.isFuzzy && (
+                                        <span className={clsx("ml-2 text-[10px] px-1.5 py-0.5 rounded-full", idx === currentMatchIndex ? "bg-white/25 text-white" : "bg-amber-100 text-amber-700")}>fuzzy</span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             {/* Replace Input */}
             <div className="relative">
                 <Replace size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
@@ -112,34 +293,19 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
             </div>
 
             {/* Options & Actions */}
-            <div className="flex items-center justify-between gap-2">
-                {/* Case Sensitive Toggle */}
-                <button
-                    onClick={toggleCaseSensitive}
-                    className={clsx(
-                        "flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all",
-                        caseSensitive
-                            ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"
-                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white"
-                    )}
-                    title="Match Case"
-                >
-                    <CaseSensitive size={14} />
-                    <span>Aa</span>
-                </button>
-
+            <div className="flex items-center justify-end gap-2">
                 {/* Replace Actions */}
                 <div className="flex items-center gap-2">
                     <button
                         onClick={replaceCurrentMatch}
-                        disabled={matches.length === 0 || currentMatchIndex < 0}
+                        disabled={!canReplaceCurrent}
                         className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-transparent hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white text-xs font-medium rounded-lg transition-colors shadow-sm dark:shadow-none"
                     >
                         Replace
                     </button>
                     <button
                         onClick={replaceAllMatches}
-                        disabled={matches.length === 0}
+                        disabled={!canReplaceAll}
                         className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-lg shadow-indigo-500/20"
                     >
                         <RefreshCw size={12} />

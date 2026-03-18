@@ -13,10 +13,11 @@
  *   { type: 'error', message }
  */
 
-import * as ort from 'onnxruntime-web';
+const ORT_MODULE_NAME = 'onnxruntime-web';
 
-let session: ort.InferenceSession | null = null;
+let session: any = null;
 let isLoading = false;
+let ortModule: any = null;
 
 const MODEL_INPUT_SIZE = 320;
 const MODEL_URL = '/models/u2netp.onnx';
@@ -24,7 +25,7 @@ const MODEL_URL = '/models/u2netp.onnx';
 /**
  * Load the ONNX model with execution provider fallback.
  */
-async function loadModel(): Promise<ort.InferenceSession> {
+async function loadModel(): Promise<any> {
     if (session) return session;
     if (isLoading) {
         // Wait for existing load to complete
@@ -38,8 +39,13 @@ async function loadModel(): Promise<ort.InferenceSession> {
     postMessage({ type: 'progress', stage: 'Loading model...', percent: 10 });
 
     try {
+        const ort = await loadOrtModule();
+        if (!ort) {
+            throw new Error('onnxruntime-web is not installed. Background removal is unavailable.');
+        }
+
         // Try execution providers in priority order
-        const providers: ort.InferenceSession.ExecutionProviderConfig[] = ['wasm'];
+        const providers = ['wasm'];
 
         session = await ort.InferenceSession.create(MODEL_URL, {
             executionProviders: providers,
@@ -65,7 +71,11 @@ function preprocessImage(
     imageData: Uint8ClampedArray,
     srcWidth: number,
     srcHeight: number
-): ort.Tensor {
+): any {
+    if (!ortModule) {
+        throw new Error('onnxruntime-web is not available.');
+    }
+
     const inputSize = MODEL_INPUT_SIZE;
     const float32Data = new Float32Array(1 * 3 * inputSize * inputSize);
 
@@ -99,7 +109,7 @@ function preprocessImage(
         float32Data[2 * inputSize * inputSize + i] = (b - mean[2]) / std[2];         // B channel
     }
 
-    return new ort.Tensor('float32', float32Data, [1, 3, inputSize, inputSize]);
+    return new ortModule.Tensor('float32', float32Data, [1, 3, inputSize, inputSize]);
 }
 
 /**
@@ -107,7 +117,7 @@ function preprocessImage(
  * Returns Uint8ClampedArray of mask values (0–255).
  */
 function postprocessMask(
-    outputTensor: ort.Tensor,
+    outputTensor: any,
     originalWidth: number,
     originalHeight: number
 ): Uint8ClampedArray {
@@ -171,7 +181,7 @@ async function runInference(
 
     // Get the input name from the model
     const inputName = sess.inputNames[0];
-    const feeds: Record<string, ort.Tensor> = { [inputName]: inputTensor };
+    const feeds: Record<string, any> = { [inputName]: inputTensor };
 
     const results = await sess.run(feeds);
 
@@ -226,3 +236,16 @@ self.onmessage = async (e: MessageEvent) => {
         postMessage({ type: 'error', message });
     }
 };
+
+async function loadOrtModule(): Promise<any | null> {
+    if (ortModule) {
+        return ortModule;
+    }
+
+    try {
+        ortModule = await import(/* @vite-ignore */ ORT_MODULE_NAME);
+        return ortModule;
+    } catch {
+        return null;
+    }
+}

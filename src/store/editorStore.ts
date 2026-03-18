@@ -57,6 +57,17 @@ interface PDFTextItem {
     hasEOL?: boolean;
 }
 
+interface FindReplaceMatch {
+    id: string;
+    text: string;
+    startIndex: number;
+    endIndex: number;
+    matchedText: string;
+    score: number;
+    isFuzzy: boolean;
+    originalItem: PDFTextItem | NativeTextItem;
+}
+
 export interface TextPreset {
     id: 'heading' | 'subheading' | 'body' | 'caption';
     name: string;
@@ -293,13 +304,21 @@ interface EditorStore {
         searchTerm: string;
         replaceTerm: string;
         caseSensitive: boolean;
-        matches: { id: string; text: string; startIndex: number; endIndex: number; originalItem: PDFTextItem | NativeTextItem }[];
+        wholeWord: boolean;
+        useRegex: boolean;
+        useFuzzy: boolean;
+        regexError: string | null;
+        matches: FindReplaceMatch[];
         currentMatchIndex: number;
     };
     setFindReplaceOpen: (isOpen: boolean) => void;
     setSearchTerm: (term: string) => void;
     setReplaceTerm: (term: string) => void;
     toggleCaseSensitive: () => void;
+    toggleWholeWord: () => void;
+    toggleRegex: () => void;
+    toggleFuzzy: () => void;
+    setCurrentMatchIndex: (index: number) => void;
     findMatches: (textItems: (PDFTextItem | NativeTextItem)[]) => void;
     navigateMatch: (direction: 'next' | 'prev') => void;
     replaceCurrentMatch: () => void;
@@ -354,6 +373,100 @@ const deepClone = <T>(obj: T): T => {
         return structuredClone(obj);
     }
     return JSON.parse(JSON.stringify(obj));
+};
+
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const levenshteinDistance = (a: string, b: string): number => {
+    if (a === b) return 0;
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+
+    const matrix = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+
+    for (let i = 0; i <= a.length; i += 1) matrix[i][0] = i;
+    for (let j = 0; j <= b.length; j += 1) matrix[0][j] = j;
+
+    for (let i = 1; i <= a.length; i += 1) {
+        for (let j = 1; j <= b.length; j += 1) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            matrix[i][j] = Math.min(
+                matrix[i - 1][j] + 1,
+                matrix[i][j - 1] + 1,
+                matrix[i - 1][j - 1] + cost
+            );
+        }
+    }
+
+    return matrix[a.length][b.length];
+};
+
+const findFuzzyWordMatch = (text: string, query: string, caseSensitive: boolean): Omit<FindReplaceMatch, 'id' | 'text' | 'originalItem'> | null => {
+    const queryValue = caseSensitive ? query : query.toLowerCase();
+    const sourceText = caseSensitive ? text : text.toLowerCase();
+
+    const queryWords = queryValue.split(/\s+/).filter(Boolean);
+    if (queryWords.length === 0) return null;
+
+    const tokens: { value: string; start: number; end: number }[] = [];
+    const tokenRegex = /[A-Za-z0-9']+/g;
+    let token: RegExpExecArray | null;
+    while ((token = tokenRegex.exec(sourceText)) !== null) {
+        tokens.push({ value: token[0], start: token.index, end: token.index + token[0].length });
+    }
+
+    if (tokens.length === 0) return null;
+
+    const queryLen = queryValue.length;
+    const maxDistance = queryLen <= 4 ? 1 : Math.max(1, Math.ceil(queryLen * 0.28));
+
+    let best: { score: number; startIndex: number; endIndex: number } | null = null;
+
+    if (queryWords.length > 1) {
+        const windowSize = queryWords.length;
+        for (let i = 0; i <= tokens.length - windowSize; i += 1) {
+            const windowTokens = tokens.slice(i, i + windowSize);
+            const candidateValue = windowTokens.map((w) => w.value).join(' ');
+            const distance = levenshteinDistance(candidateValue, queryValue);
+            if (distance > maxDistance + 2) continue;
+
+            const score = 300 - distance * 20 - Math.abs(candidateValue.length - queryLen) * 3;
+            if (!best || score > best.score) {
+                best = {
+                    score,
+                    startIndex: windowTokens[0].start,
+                    endIndex: windowTokens[windowTokens.length - 1].end,
+                };
+            }
+        }
+    }
+
+    for (const word of tokens) {
+        const distance = levenshteinDistance(word.value, queryValue);
+        if (distance > maxDistance) continue;
+
+        let score = 200 - distance * 24 - Math.abs(word.value.length - queryLen) * 4;
+        if (word.value.startsWith(queryValue)) score += 40;
+        if (sourceText.includes(queryValue)) score += 50;
+
+        if (!best || score > best.score) {
+            best = {
+                score,
+                startIndex: word.start,
+                endIndex: word.end,
+            };
+        }
+    }
+
+    if (!best || best.score < 120) return null;
+
+    return {
+        startIndex: best.startIndex,
+        endIndex: best.endIndex,
+        matchedText: text.slice(best.startIndex, best.endIndex),
+        score: best.score,
+        isFuzzy: true,
+    };
 };
 
 export const useEditorStore = create<EditorStore>()(
@@ -519,6 +632,10 @@ export const useEditorStore = create<EditorStore>()(
                 searchTerm: '',
                 replaceTerm: '',
                 caseSensitive: false,
+                wholeWord: false,
+                useRegex: false,
+                useFuzzy: true,
+                regexError: null,
                 matches: [],
                 currentMatchIndex: -1
             },
@@ -534,34 +651,118 @@ export const useEditorStore = create<EditorStore>()(
             toggleCaseSensitive: () => set(state => ({
                 findReplaceState: { ...state.findReplaceState, caseSensitive: !state.findReplaceState.caseSensitive }
             })),
-            findMatches: (textItems) => set(state => {
-                const { searchTerm, caseSensitive } = state.findReplaceState;
-                if (!searchTerm.trim()) {
-                    return { findReplaceState: { ...state.findReplaceState, matches: [], currentMatchIndex: -1 } };
+            toggleWholeWord: () => set(state => ({
+                findReplaceState: { ...state.findReplaceState, wholeWord: !state.findReplaceState.wholeWord }
+            })),
+            toggleRegex: () => set(state => ({
+                findReplaceState: { ...state.findReplaceState, useRegex: !state.findReplaceState.useRegex, regexError: null }
+            })),
+            toggleFuzzy: () => set(state => ({
+                findReplaceState: { ...state.findReplaceState, useFuzzy: !state.findReplaceState.useFuzzy }
+            })),
+            setCurrentMatchIndex: (index) => set(state => {
+                const maxIndex = state.findReplaceState.matches.length - 1;
+                if (maxIndex < 0) {
+                    return { findReplaceState: { ...state.findReplaceState, currentMatchIndex: -1 } };
                 }
-                const matches: { id: string; text: string; startIndex: number; endIndex: number; originalItem: PDFTextItem | NativeTextItem }[] = [];
+                const clamped = Math.max(0, Math.min(index, maxIndex));
+                return { findReplaceState: { ...state.findReplaceState, currentMatchIndex: clamped } };
+            }),
+            findMatches: (textItems) => set(state => {
+                const { searchTerm, caseSensitive, wholeWord, useRegex, useFuzzy } = state.findReplaceState;
+                if (!searchTerm.trim()) {
+                    return { findReplaceState: { ...state.findReplaceState, matches: [], currentMatchIndex: -1, regexError: null } };
+                }
+
+                let regex: RegExp;
+                try {
+                    let pattern = useRegex ? searchTerm : escapeRegex(searchTerm);
+                    if (wholeWord) pattern = `\\b${pattern}\\b`;
+                    regex = new RegExp(pattern, caseSensitive ? 'g' : 'gi');
+                } catch (error) {
+                    return {
+                        findReplaceState: {
+                            ...state.findReplaceState,
+                            matches: [],
+                            currentMatchIndex: -1,
+                            regexError: error instanceof Error ? error.message : 'Invalid expression',
+                        }
+                    };
+                }
+
+                const matches: {
+                    id: string;
+                    text: string;
+                    startIndex: number;
+                    endIndex: number;
+                    matchedText: string;
+                    score: number;
+                    isFuzzy: boolean;
+                    originalItem: PDFTextItem | NativeTextItem;
+                }[] = [];
+
                 textItems.forEach((item: PDFTextItem | NativeTextItem, index: number) => {
-                    const text = 'str' in item ? item.str : (item as NativeTextItem).text || '';
                     const itemId = 'id' in item ? item.id : `pdf-text-${index}`;
-                    const searchIn = caseSensitive ? text : text.toLowerCase();
-                    const searchFor = caseSensitive ? searchTerm : searchTerm.toLowerCase();
-                    let idx = searchIn.indexOf(searchFor);
-                    while (idx !== -1) {
+
+                    const originalText = 'str' in item ? item.str : (item as NativeTextItem).text || '';
+                    const liveText = state.pendingNativeTextEdits[itemId]?.text ?? originalText;
+                    if (!liveText) return;
+
+                    regex.lastIndex = 0;
+                    let match: RegExpExecArray | null;
+                    while ((match = regex.exec(liveText)) !== null) {
                         matches.push({
                             id: itemId,
-                            text,
-                            startIndex: idx,
-                            endIndex: idx + searchTerm.length,
-                            originalItem: item // Store full original item data
+                            text: liveText,
+                            startIndex: match.index,
+                            endIndex: match.index + match[0].length,
+                            matchedText: match[0],
+                            score: 1000,
+                            isFuzzy: false,
+                            originalItem: item
                         });
-                        idx = searchIn.indexOf(searchFor, idx + 1);
+
+                        if (match[0].length === 0) {
+                            regex.lastIndex += 1;
+                        }
                     }
                 });
+
+                if (matches.length === 0 && useFuzzy && !useRegex) {
+                    textItems.forEach((item: PDFTextItem | NativeTextItem, index: number) => {
+                        const itemId = 'id' in item ? item.id : `pdf-text-${index}`;
+                        const originalText = 'str' in item ? item.str : (item as NativeTextItem).text || '';
+                        const liveText = state.pendingNativeTextEdits[itemId]?.text ?? originalText;
+                        if (!liveText) return;
+
+                        const fuzzy = findFuzzyWordMatch(liveText, searchTerm, caseSensitive);
+                        if (!fuzzy) return;
+
+                        matches.push({
+                            id: itemId,
+                            text: liveText,
+                            startIndex: fuzzy.startIndex,
+                            endIndex: fuzzy.endIndex,
+                            matchedText: fuzzy.matchedText,
+                            score: fuzzy.score,
+                            isFuzzy: true,
+                            originalItem: item,
+                        });
+                    });
+                }
+
+                matches.sort((a, b) => {
+                    if (a.isFuzzy !== b.isFuzzy) return a.isFuzzy ? 1 : -1;
+                    if (b.score !== a.score) return b.score - a.score;
+                    return a.startIndex - b.startIndex;
+                });
+
                 return {
                     findReplaceState: {
                         ...state.findReplaceState,
                         matches,
-                        currentMatchIndex: matches.length > 0 ? 0 : -1
+                        currentMatchIndex: matches.length > 0 ? 0 : -1,
+                        regexError: null,
                     }
                 };
             }),
@@ -581,6 +782,7 @@ export const useEditorStore = create<EditorStore>()(
                 const { matches, currentMatchIndex, replaceTerm } = state.findReplaceState;
                 if (currentMatchIndex < 0 || currentMatchIndex >= matches.length) return;
                 const match = matches[currentMatchIndex];
+                if (match.isFuzzy) return;
                 const existingEdit = state.pendingNativeTextEdits[match.id];
                 const currentText = existingEdit?.text || match.text;
                 const newText = currentText.substring(0, match.startIndex) + replaceTerm + currentText.substring(match.endIndex);
@@ -617,10 +819,11 @@ export const useEditorStore = create<EditorStore>()(
             replaceAllMatches: () => {
                 const state = get();
                 const { matches, replaceTerm } = state.findReplaceState;
-                if (matches.length === 0) return;
+                const exactMatches = matches.filter((m) => !m.isFuzzy);
+                if (exactMatches.length === 0) return;
                 // Group matches by id and replace from end to start to preserve indices
-                const matchesByItem = new Map<string, typeof matches>();
-                matches.forEach(m => {
+                const matchesByItem = new Map<string, typeof exactMatches>();
+                exactMatches.forEach(m => {
                     if (!matchesByItem.has(m.id)) matchesByItem.set(m.id, []);
                     matchesByItem.get(m.id)!.push(m);
                 });
@@ -663,6 +866,10 @@ export const useEditorStore = create<EditorStore>()(
                     searchTerm: '',
                     replaceTerm: '',
                     caseSensitive: false,
+                    wholeWord: false,
+                    useRegex: false,
+                    useFuzzy: true,
+                    regexError: null,
                     matches: [],
                     currentMatchIndex: -1
                 }

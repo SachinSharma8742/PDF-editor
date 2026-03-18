@@ -4,10 +4,10 @@ export async function applyEffects(
     input: ImageBitmap,
     ops: ImageOperations['effects']
 ): Promise<ImageBitmap> {
-    const { grayscale, sepia, invert, blur } = ops;
+    const { grayscale, sepia, invert } = ops;
 
     // Optimization
-    if (!grayscale && !sepia && !invert && !blur) {
+    if (!grayscale && !sepia && !invert) {
         return input;
     }
 
@@ -19,7 +19,6 @@ export async function applyEffects(
     if (grayscale) filters.push('grayscale(1)');
     if (sepia) filters.push('sepia(1)');
     if (invert) filters.push('invert(1)');
-    if (blur > 0) filters.push(`blur(${blur}px)`);
 
     ctx.filter = filters.join(' ');
     ctx.drawImage(input, 0, 0);

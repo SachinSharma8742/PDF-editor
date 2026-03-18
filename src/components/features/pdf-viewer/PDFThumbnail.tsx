@@ -196,7 +196,7 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
 
             // Render fresh (rendering already true)
             try {
-                const page = await pdfDocument.getPage(pageState.originalPageIndex);
+                const page = await pdfDocument.getPage(pageState.originalPageIndex!);
                 if (isCancelled) return;
 
                 const viewport = page.getViewport({ scale: 1 });

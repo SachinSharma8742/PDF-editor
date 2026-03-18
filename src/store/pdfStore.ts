@@ -226,6 +226,16 @@ export interface PageState {
         opacity?: number;
         color?: string;
         rotate?: number; // degrees
+        position?:
+        | 'top-left'
+        | 'top-center'
+        | 'top-right'
+        | 'middle-left'
+        | 'center'
+        | 'middle-right'
+        | 'bottom-left'
+        | 'bottom-center'
+        | 'bottom-right';
         isRepeating?: boolean;
     };
     structure?: {

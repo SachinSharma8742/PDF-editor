@@ -1,303 +1,459 @@
-/**
- * Batch Operations Utility
- *
- * Provides functions to apply the same operation to multiple PDF pages at once.
- * All operations go through the pdfStore and batchOperationStore for progress tracking.
- */
-
 import type { PageState, PDFObject } from '../store/pdfStore';
 import { usePDFStore } from '../store/pdfStore';
 import { useBatchOperationStore } from '../store/batchOperationStore';
+import {
+    searchInPDF,
+    replaceText,
+    type SearchResult,
+    type SearchEngineOptions,
+    type SearchablePDFDocument,
+} from './searchEngine';
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export interface BatchWatermarkConfig {
+    fontSize?: number;
+    opacity?: number;
+    color?: string;
+    rotate?: number;
+    isRepeating?: boolean;
 }
 
-function getTargetPages(pageIds: string[]): PageState[] {
-    const { pages } = usePDFStore.getState();
-    return pageIds.length > 0 ? pages.filter((p) => pageIds.includes(p.id)) : pages;
-}
-
-// ─── Watermark ───────────────────────────────────────────────────────────────
-
-/**
- * Apply a watermark to all selected pages (or all pages if pageIds is empty).
- */
-export function batchAddWatermark(pageIds: string[], watermark: PageState['watermark']): void {
-    const { updatePage } = usePDFStore.getState();
-    const { start, updateProgress, finish, setError } = useBatchOperationStore.getState();
-
-    const targetPages = getTargetPages(pageIds);
-    start('watermark', targetPages.length);
-
-    try {
-        targetPages.forEach((page, i) => {
-            updatePage(page.id, { watermark, isEdited: true });
-            updateProgress(i + 1);
-        });
-        finish();
-    } catch (e) {
-        setError(e instanceof Error ? e.message : 'Watermark operation failed');
-    }
-}
-
-/**
- * Remove watermark from all selected pages (or all pages if pageIds is empty).
- */
-export function batchRemoveWatermark(pageIds: string[]): void {
-    const { updatePage } = usePDFStore.getState();
-    const { start, updateProgress, finish, setError } = useBatchOperationStore.getState();
-
-    const targetPages = getTargetPages(pageIds);
-    start('remove-watermark', targetPages.length);
-
-    try {
-        targetPages.forEach((page, i) => {
-            updatePage(page.id, { watermark: undefined, isEdited: true });
-            updateProgress(i + 1);
-        });
-        finish();
-    } catch (e) {
-        setError(e instanceof Error ? e.message : 'Remove watermark failed');
-    }
-}
-
-// ─── Text Color ──────────────────────────────────────────────────────────────
-
-/**
- * Change text color for all text objects across selected pages (or all pages).
- */
-export function batchChangeTextColor(pageIds: string[], color: string): void {
-    const { updatePage } = usePDFStore.getState();
-    const { start, updateProgress, finish, setError } = useBatchOperationStore.getState();
-
-    const targetPages = getTargetPages(pageIds);
-    start('text-color', targetPages.length);
-
-    try {
-        targetPages.forEach((page, i) => {
-            const newObjects = page.objects.map((obj) =>
-                obj.type === 'text' ? { ...obj, fill: color } : obj
-            );
-            updatePage(page.id, { objects: newObjects, isEdited: true });
-            updateProgress(i + 1);
-        });
-        finish();
-    } catch (e) {
-        setError(e instanceof Error ? e.message : 'Text color operation failed');
-    }
-}
-
-// ─── Rotate ──────────────────────────────────────────────────────────────────
-
-/**
- * Rotate selected pages (or all pages) in the given direction.
- */
-export function batchRotatePages(pageIds: string[], direction: 'cw' | 'ccw'): void {
-    const { rotatePage } = usePDFStore.getState();
-    const { start, updateProgress, finish, setError } = useBatchOperationStore.getState();
-
-    const targetPages = getTargetPages(pageIds);
-    start('rotate', targetPages.length);
-
-    try {
-        targetPages.forEach((page, i) => {
-            rotatePage(page.id, direction);
-            updateProgress(i + 1);
-        });
-        finish();
-    } catch (e) {
-        setError(e instanceof Error ? e.message : 'Rotate operation failed');
-    }
-}
-
-// ─── Auto-Redact ─────────────────────────────────────────────────────────────
-
-export interface AutoRedactOptions {
+export interface AutoRedactOptions extends SearchEngineOptions {
     caseSensitive: boolean;
     wholeWord: boolean;
     useRegex: boolean;
 }
 
-/**
- * Auto-redact text objects matching the search term across selected pages (or all pages).
- * Adds a redaction rectangle over any matching text object.
- */
-export function batchAutoRedact(pageIds: string[], searchTerm: string, options: AutoRedactOptions): number {
-    const { updatePage } = usePDFStore.getState();
-    const { start, updateProgress, finish, setError } = useBatchOperationStore.getState();
+export type SearchOptions = AutoRedactOptions;
+export type SearchMatch = SearchResult;
 
-    const targetPages = getTargetPages(pageIds);
-    start('redact', targetPages.length);
+export type WatermarkPosition =
+    | 'top-left'
+    | 'top-center'
+    | 'top-right'
+    | 'middle-left'
+    | 'center'
+    | 'middle-right'
+    | 'bottom-left'
+    | 'bottom-center'
+    | 'bottom-right';
+
+type StoreLike = {
+    updatePage?: (pageId: string, updates: Partial<PageState>) => void;
+    rotatePage?: (pageId: string, direction: 'cw' | 'ccw') => void;
+    editorCurrentPage?: PageState | null;
+    updateEditorCurrentPage?: (updates: Partial<PageState>) => void;
+};
+
+function getOperationStore(editorStore?: StoreLike) {
+    const fallbackStore = usePDFStore.getState();
+    return {
+        updatePage: editorStore?.updatePage ?? fallbackStore.updatePage,
+        rotatePage: editorStore?.rotatePage ?? fallbackStore.rotatePage,
+        editorCurrentPage: editorStore?.editorCurrentPage,
+        updateEditorCurrentPage: editorStore?.updateEditorCurrentPage,
+    };
+}
+
+function getTargetPagesByNumbers(pageNumbers?: number[]): PageState[] {
+    const { pages } = usePDFStore.getState();
+    if (!pageNumbers || pageNumbers.length === 0) {
+        return pages;
+    }
+
+    const pageSet = new Set(pageNumbers);
+    return pages.filter((page) => pageSet.has(page.pageNumber));
+}
+
+function getTargetPagesByIds(pageIds: string[]): PageState[] {
+    const { pages } = usePDFStore.getState();
+    if (pageIds.length === 0) {
+        return pages;
+    }
+
+    const idSet = new Set(pageIds);
+    return pages.filter((page) => idSet.has(page.id));
+}
+
+function toPageNumbers(pages: PageState[]): number[] {
+    return pages.map((page) => page.pageNumber);
+}
+
+function startBatch(operationType: 'watermark' | 'remove-watermark' | 'text-color' | 'redact' | 'rotate', targetPages: PageState[]): void {
+    useBatchOperationStore.getState().startOperation(operationType, targetPages.length, toPageNumbers(targetPages));
+}
+
+function updateBatchProgress(processed: number): void {
+    useBatchOperationStore.getState().setProgress(processed);
+}
+
+function finishBatch(): void {
+    useBatchOperationStore.getState().completeOperation();
+}
+
+function failBatch(fallbackMessage: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : fallbackMessage;
+    useBatchOperationStore.getState().failOperation(message);
+}
+
+export function applyEffectToAllPages(
+    effectParams: Record<string, unknown>,
+    pages: PageState[],
+    editorStore?: StoreLike
+): void {
+    const { updatePage } = getOperationStore(editorStore);
+    const targetPages = pages.length > 0 ? pages : usePDFStore.getState().pages;
+
+    useBatchOperationStore.getState().startBatchOperation('effect-all-pages', targetPages.length);
+
+    try {
+        targetPages.forEach((page, index) => {
+            const nonEffectObjects = page.objects.filter((object) => object.type !== 'effect');
+            const effectObject: PDFObject = {
+                id: `effect-${page.id}-${Date.now()}-${index}`,
+                type: 'effect',
+                effectType: 'adjustment',
+                effectParams: { ...effectParams },
+                visible: true,
+                opacity: 1,
+                x: 0,
+                y: 0,
+                width: page.width,
+                height: page.height,
+                rotation: 0,
+                name: 'Batch Effect',
+            };
+
+            updatePage(page.id, {
+                objects: [...nonEffectObjects, effectObject],
+                isEdited: true,
+            });
+
+            useBatchOperationStore.getState().updateProgress(index + 1, targetPages.length);
+        });
+
+        useBatchOperationStore.getState().completeBatchOperation();
+    } catch (error) {
+        useBatchOperationStore.getState().failBatchOperation(error instanceof Error ? error.message : 'Failed to apply effect to all pages');
+    }
+}
+
+export function applyWatermarkToAllPages(
+    watermarkText: string,
+    fontSize: number,
+    opacity: number,
+    position: WatermarkPosition,
+    angle: number,
+    pages: PageState[],
+    editorStore?: StoreLike
+): void {
+    const { updatePage, editorCurrentPage, updateEditorCurrentPage } = getOperationStore(editorStore);
+    const targetPages = pages.length > 0 ? pages : usePDFStore.getState().pages;
+
+    useBatchOperationStore.getState().startBatchOperation('watermark-all-pages', targetPages.length);
+
+    try {
+        targetPages.forEach((page, index) => {
+            const updates: Partial<PageState> = {
+                watermark: {
+                    text: watermarkText,
+                    fontSize,
+                    opacity,
+                    color: '#000000',
+                    position,
+                    rotate: angle,
+                    isRepeating: false,
+                },
+                isEdited: true,
+            };
+
+            updatePage(page.id, updates);
+
+            if (editorCurrentPage?.id === page.id && updateEditorCurrentPage) {
+                updateEditorCurrentPage(updates);
+            }
+
+            useBatchOperationStore.getState().updateProgress(index + 1, targetPages.length);
+        });
+
+        useBatchOperationStore.getState().completeBatchOperation();
+    } catch (error) {
+        useBatchOperationStore.getState().failBatchOperation(error instanceof Error ? error.message : 'Failed to apply watermark to all pages');
+    }
+}
+
+export function rotateAllPages(
+    rotation: 90 | 180 | 270 | -90,
+    pages: PageState[],
+    editorStore?: StoreLike
+): void {
+    const { rotatePage, editorCurrentPage, updateEditorCurrentPage } = getOperationStore(editorStore);
+    const targetPages = pages.length > 0 ? pages : usePDFStore.getState().pages;
+
+    useBatchOperationStore.getState().startBatchOperation('rotate-all-pages', targetPages.length);
+
+    try {
+        const direction: 'cw' | 'ccw' = rotation >= 0 ? 'cw' : 'ccw';
+        const turns = Math.max(1, Math.round(Math.abs(rotation) / 90));
+
+        targetPages.forEach((page, index) => {
+            for (let i = 0; i < turns; i += 1) {
+                rotatePage(page.id, direction);
+            }
+
+            if (editorCurrentPage?.id === page.id && updateEditorCurrentPage) {
+                const syncedPage = usePDFStore.getState().pages.find((candidate) => candidate.id === page.id);
+                if (syncedPage) {
+                    updateEditorCurrentPage({ rotation: syncedPage.rotation, isEdited: true });
+                }
+            }
+
+            useBatchOperationStore.getState().updateProgress(index + 1, targetPages.length);
+        });
+
+        useBatchOperationStore.getState().completeBatchOperation();
+    } catch (error) {
+        useBatchOperationStore.getState().failBatchOperation(error instanceof Error ? error.message : 'Failed to rotate all pages');
+    }
+}
+
+export function batchApplyWatermark(text: string, pages?: number[], config: BatchWatermarkConfig = {}): void {
+    const { updatePage } = usePDFStore.getState();
+    const targetPages = getTargetPagesByNumbers(pages);
+
+    startBatch('watermark', targetPages);
+
+    try {
+        targetPages.forEach((page, index) => {
+            updatePage(page.id, {
+                watermark: {
+                    text,
+                    fontSize: config.fontSize ?? 48,
+                    opacity: config.opacity ?? 0.2,
+                    color: config.color ?? '#000000',
+                    rotate: config.rotate ?? -45,
+                    isRepeating: config.isRepeating ?? true,
+                },
+                isEdited: true,
+            });
+            updateBatchProgress(index + 1);
+        });
+        finishBatch();
+    } catch (error) {
+        failBatch('Watermark operation failed', error);
+    }
+}
+
+export function batchApplyTextColor(color: string, pages?: number[]): void {
+    const { updatePage } = usePDFStore.getState();
+    const targetPages = getTargetPagesByNumbers(pages);
+
+    startBatch('text-color', targetPages);
+
+    try {
+        targetPages.forEach((page, index) => {
+            const objects = page.objects.map((object) =>
+                object.type === 'text' ? { ...object, fill: color } : object
+            );
+
+            updatePage(page.id, { objects, isEdited: true });
+            updateBatchProgress(index + 1);
+        });
+        finishBatch();
+    } catch (error) {
+        failBatch('Text color operation failed', error);
+    }
+}
+
+export function batchApplyRedaction(
+    searchText: string,
+    pages?: number[],
+    pdfDocument?: SearchablePDFDocument,
+    options: AutoRedactOptions = { caseSensitive: false, wholeWord: false, useRegex: false }
+): number {
+    const { pages: allPages, updatePage } = usePDFStore.getState();
+    const targetPages = getTargetPagesByNumbers(pages);
+
+    startBatch('redact', targetPages);
 
     let totalRedacted = 0;
 
     try {
-        const flags = options.caseSensitive ? 'g' : 'gi';
-        let pattern = options.useRegex ? searchTerm : escapeRegex(searchTerm);
-        if (options.wholeWord) pattern = `\\b${pattern}\\b`;
-        const regex = new RegExp(pattern, flags);
+        const pageNumbers = toPageNumbers(targetPages);
+        const results = searchInPDF(pdfDocument ?? { pages: allPages }, searchText, pageNumbers, options);
 
-        targetPages.forEach((page, i) => {
-            const newObjects: PDFObject[] = [...page.objects];
-
-            page.objects.forEach((obj) => {
-                if (obj.type === 'text' && obj.text && regex.test(obj.text)) {
-                    // Reset lastIndex for 'g' flag reuse
-                    regex.lastIndex = 0;
-                    newObjects.push({
-                        id: crypto.randomUUID(),
-                        type: 'redaction',
-                        x: obj.x,
-                        y: obj.y,
-                        width: obj.width ?? Math.max((obj.text.length * (obj.fontSize ?? 16)) / 2, 50),
-                        height: (obj.fontSize ?? 16) * 1.5,
-                        fill: '#000000',
-                        opacity: 1,
-                    });
-                    totalRedacted++;
-                }
-                // Reset for each object (since 'g' flag tracks lastIndex)
-                regex.lastIndex = 0;
-            });
-
-            if (newObjects.length !== page.objects.length) {
-                updatePage(page.id, { objects: newObjects, isEdited: true });
-            }
-
-            updateProgress(i + 1);
+        const resultMap = new Map<string, SearchResult[]>();
+        results.forEach((result) => {
+            const existing = resultMap.get(result.pageId) ?? [];
+            existing.push(result);
+            resultMap.set(result.pageId, existing);
         });
 
-        finish();
-    } catch (e) {
-        setError(e instanceof Error ? e.message : 'Redaction operation failed');
+        targetPages.forEach((page, index) => {
+            const pageResults = resultMap.get(page.id) ?? [];
+            if (pageResults.length > 0) {
+                const redactions: PDFObject[] = pageResults.map((result) => ({
+                    id: crypto.randomUUID(),
+                    type: 'redaction',
+                    x: result.x,
+                    y: result.y,
+                    width: result.width,
+                    height: result.height,
+                    fill: '#000000',
+                    opacity: 1,
+                }));
+
+                updatePage(page.id, {
+                    objects: [...page.objects, ...redactions],
+                    isEdited: true,
+                });
+
+                totalRedacted += pageResults.length;
+            }
+
+            updateBatchProgress(index + 1);
+        });
+
+        finishBatch();
+    } catch (error) {
+        failBatch('Redaction operation failed', error);
     }
 
     return totalRedacted;
 }
 
-// ─── Search Utility ──────────────────────────────────────────────────────────
+export function batchRotatePages(rotation: number, pages?: number[]): void;
+export function batchRotatePages(pageIds: string[], direction: 'cw' | 'ccw'): void;
+export function batchRotatePages(
+    arg1: number | string[],
+    arg2?: number[] | 'cw' | 'ccw'
+): void {
+    const { rotatePage } = usePDFStore.getState();
 
-export interface SearchOptions {
-    caseSensitive: boolean;
-    wholeWord: boolean;
-    useRegex: boolean;
-}
+    const isLegacyShape = Array.isArray(arg1);
+    const targetPages = isLegacyShape
+        ? getTargetPagesByIds(arg1)
+        : getTargetPagesByNumbers(Array.isArray(arg2) ? arg2 : undefined);
 
-export interface SearchMatch {
-    pageId: string;
-    pageNumber: number;
-    objId: string;
-    text: string;
-    matchStart: number;
-    matchEnd: number;
-    matchedText: string;
-}
-
-/**
- * Search for a term across all pages and return matches.
- */
-export function searchAcrossPages(term: string, options: SearchOptions): SearchMatch[] {
-    if (!term.trim()) return [];
-
-    const { pages } = usePDFStore.getState();
-    const results: SearchMatch[] = [];
+    startBatch('rotate', targetPages);
 
     try {
-        const flags = options.caseSensitive ? 'g' : 'gi';
-        let pattern = options.useRegex ? term : escapeRegex(term);
-        if (options.wholeWord) pattern = `\\b${pattern}\\b`;
-        const regex = new RegExp(pattern, flags);
+        const direction: 'cw' | 'ccw' = isLegacyShape
+            ? (arg2 as 'cw' | 'ccw')
+            : ((arg1 as number) >= 0 ? 'cw' : 'ccw');
 
-        pages.forEach((page) => {
-            page.objects.forEach((obj) => {
-                if (obj.type === 'text' && obj.text) {
-                    regex.lastIndex = 0;
-                    let match: RegExpExecArray | null;
-                    while ((match = regex.exec(obj.text)) !== null) {
-                        results.push({
-                            pageId: page.id,
-                            pageNumber: page.pageNumber,
-                            objId: obj.id,
-                            text: obj.text,
-                            matchStart: match.index,
-                            matchEnd: match.index + match[0].length,
-                            matchedText: match[0],
-                        });
-                        // Prevent infinite loop for zero-length matches
-                        if (match[0].length === 0) regex.lastIndex++;
-                    }
-                }
-            });
+        const turns = isLegacyShape
+            ? 1
+            : Math.max(1, Math.round(Math.abs(arg1 as number) / 90));
+
+        targetPages.forEach((page, index) => {
+            for (let i = 0; i < turns; i += 1) {
+                rotatePage(page.id, direction);
+            }
+            updateBatchProgress(index + 1);
         });
-    } catch {
-        // Invalid regex - return empty
+        finishBatch();
+    } catch (error) {
+        failBatch('Rotate operation failed', error);
     }
-
-    return results;
 }
 
-/**
- * Replace a single match in a text object.
- */
+// Backward-compatible exports currently used in existing panels.
+export function batchAddWatermark(pageIds: string[], watermark: PageState['watermark']): void {
+    const targetPages = getTargetPagesByIds(pageIds);
+    batchApplyWatermark(watermark?.text ?? '', toPageNumbers(targetPages), {
+        fontSize: watermark?.fontSize,
+        opacity: watermark?.opacity,
+        color: watermark?.color,
+        rotate: watermark?.rotate,
+        isRepeating: watermark?.isRepeating,
+    });
+}
+
+export function batchRemoveWatermark(pageIds: string[]): void {
+    const { updatePage } = usePDFStore.getState();
+    const targetPages = getTargetPagesByIds(pageIds);
+
+    startBatch('remove-watermark', targetPages);
+
+    try {
+        targetPages.forEach((page, index) => {
+            updatePage(page.id, { watermark: undefined, isEdited: true });
+            updateBatchProgress(index + 1);
+        });
+        finishBatch();
+    } catch (error) {
+        failBatch('Remove watermark failed', error);
+    }
+}
+
+export function batchChangeTextColor(pageIds: string[], color: string): void {
+    const targetPages = getTargetPagesByIds(pageIds);
+    batchApplyTextColor(color, toPageNumbers(targetPages));
+}
+
+export function batchAutoRedact(pageIds: string[], searchTerm: string, options: AutoRedactOptions): number {
+    const targetPages = getTargetPagesByIds(pageIds);
+    const { pdfDocument } = usePDFStore.getState();
+    return batchApplyRedaction(searchTerm, toPageNumbers(targetPages), pdfDocument, options);
+}
+
+export function searchAcrossPages(term: string, options: SearchOptions): SearchMatch[] {
+    const { pdfDocument } = usePDFStore.getState();
+    return searchInPDF(pdfDocument, term, undefined, options);
+}
+
 export function replaceSingleMatch(match: SearchMatch, replaceTerm: string, options: SearchOptions): void {
     const { pages, updatePage } = usePDFStore.getState();
-    const page = pages.find((p) => p.id === match.pageId);
-    if (!page) return;
-
-    const flags = options.caseSensitive ? 'g' : 'gi';
-    let pattern = options.useRegex ? match.matchedText : escapeRegex(match.matchedText);
-    if (options.wholeWord) pattern = `\\b${pattern}\\b`;
-
-    const newObjects = page.objects.map((obj) => {
-        if (obj.id !== match.objId || obj.type !== 'text' || !obj.text) return obj;
-        const regex = new RegExp(pattern, flags);
-        const newText = obj.text.replace(regex, replaceTerm);
-        return { ...obj, text: newText };
-    });
-
-    updatePage(page.id, { objects: newObjects, isEdited: true });
-}
-
-/**
- * Replace all matches of the search term across all pages.
- */
-export function replaceAllMatches(term: string, replaceTerm: string, options: SearchOptions): number {
-    const { pages, updatePage } = usePDFStore.getState();
-    let count = 0;
-
-    try {
-        const flags = options.caseSensitive ? 'g' : 'gi';
-        let pattern = options.useRegex ? term : escapeRegex(term);
-        if (options.wholeWord) pattern = `\\b${pattern}\\b`;
-        const regex = new RegExp(pattern, flags);
-
-        pages.forEach((page) => {
-            let pageChanged = false;
-            const newObjects = page.objects.map((obj) => {
-                if (obj.type !== 'text' || !obj.text) return obj;
-                const before = obj.text;
-                regex.lastIndex = 0;
-                const after = obj.text.replace(regex, replaceTerm);
-                if (before !== after) {
-                    pageChanged = true;
-                    // Count occurrences
-                    regex.lastIndex = 0;
-                    const matches = before.match(new RegExp(pattern, flags));
-                    count += matches ? matches.length : 0;
-                    return { ...obj, text: after };
-                }
-                return obj;
-            });
-            if (pageChanged) {
-                updatePage(page.id, { objects: newObjects, isEdited: true });
-            }
-        });
-    } catch {
-        // Invalid regex
+    const page = pages.find((item) => item.id === match.pageId);
+    if (!page) {
+        return;
     }
 
-    return count;
+    const objects = page.objects.map((object) => {
+        if (object.id !== match.objId || object.type !== 'text' || !object.text) {
+            return object;
+        }
+
+        return {
+            ...object,
+            text: replaceText(object.text, match.matchedText, replaceTerm, {
+                ...options,
+                useRegex: false,
+                wholeWord: false,
+            }),
+        };
+    });
+
+    updatePage(page.id, { objects, isEdited: true });
+}
+
+export function replaceAllMatches(term: string, replaceTerm: string, options: SearchOptions): number {
+    const { pages, updatePage, pdfDocument } = usePDFStore.getState();
+    const matches = searchInPDF(pdfDocument, term, undefined, options);
+    if (matches.length === 0) {
+        return 0;
+    }
+
+    pages.forEach((page) => {
+        let changed = false;
+        const objects = page.objects.map((object) => {
+            if (object.type !== 'text' || !object.text) {
+                return object;
+            }
+
+            const text = replaceText(object.text, term, replaceTerm, options);
+            if (text !== object.text) {
+                changed = true;
+                return { ...object, text };
+            }
+
+            return object;
+        });
+
+        if (changed) {
+            updatePage(page.id, { objects, isEdited: true });
+        }
+    });
+
+    return matches.length;
 }

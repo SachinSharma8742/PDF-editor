@@ -4,6 +4,12 @@ import { useEditorStore } from '../../../store/editorStore';
 import { Copy, Trash2, ArrowUp, ArrowDown, Edit3, ClipboardPaste, Split, StickyNote, RefreshCw, Ruler, Image } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
+type ContextMenuPayload = {
+    objectIds?: string[];
+    pageId?: string;
+    x?: number;
+    y?: number;
+};
 
 export const ContextMenu: React.FC = () => {
     const { pages } = usePDFStore();
@@ -50,7 +56,10 @@ export const ContextMenu: React.FC = () => {
 
     if (!contextMenu.isOpen) return null;
 
-    const { x, y, type, data } = contextMenu;
+    const { x, y, type } = contextMenu;
+    const data = (contextMenu.data ?? {}) as ContextMenuPayload;
+    const objectIds = data.objectIds ?? [];
+    const pageId = data.pageId;
 
     // --- Actions ---
 
@@ -83,8 +92,8 @@ export const ContextMenu: React.FC = () => {
             </button>
 
             {/* Edit Image Option */}
-            {data?.objectIds?.length === 1 && (() => {
-                const obj = currentPage?.objects.find(o => o.id === data.objectIds[0]);
+            {objectIds.length === 1 && (() => {
+                const obj = currentPage?.objects.find(o => o.id === objectIds[0]);
                 if (obj && obj.type === 'image' && obj.src) {
                     return (
                         <button
@@ -100,8 +109,8 @@ export const ContextMenu: React.FC = () => {
             })()}
 
             {/* Edit Shape Option */}
-            {data?.objectIds?.length === 1 && (() => {
-                const obj = currentPage?.objects.find(o => o.id === data.objectIds[0]);
+            {objectIds.length === 1 && (() => {
+                const obj = currentPage?.objects.find(o => o.id === objectIds[0]);
                 const isShape = obj && ['rectangle', 'circle', 'triangle', 'star', 'polygon', 'ellipse', 'heart', 'cloud', 'lightning', 'drop', 'callout-bubble'].includes(obj.type);
 
                 if (isShape) return (
@@ -117,8 +126,8 @@ export const ContextMenu: React.FC = () => {
             })()}
 
             {/* Edit Text Option */}
-            {data?.objectIds?.length === 1 && (() => {
-                const obj = currentPage?.objects.find(o => o.id === data.objectIds[0]);
+            {objectIds.length === 1 && (() => {
+                const obj = currentPage?.objects.find(o => o.id === objectIds[0]);
                 if (obj && obj.type === 'text') {
                     return (
                         <button
@@ -138,18 +147,18 @@ export const ContextMenu: React.FC = () => {
             </button>
             <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
 
-            {data?.objectIds?.length > 1 && (
+            {objectIds.length > 1 && (
                 <button
-                    onClick={() => handleObjectAction(() => useEditorStore.getState().groupObjects(data.objectIds))}
+                    onClick={() => handleObjectAction(() => useEditorStore.getState().groupObjects(objectIds))}
                     className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 flex items-center gap-3 text-sm transition-colors"
                 >
                     <Split size={15} /> Group Objects
                 </button>
             )}
 
-            {data?.objectIds?.some((id: string) => currentPage?.objects.find(o => o.id === id)?.groupId) && (
+            {objectIds.some((id: string) => currentPage?.objects.find(o => o.id === id)?.groupId) && (
                 <button
-                    onClick={() => handleObjectAction(() => useEditorStore.getState().ungroupObjects(data.objectIds))}
+                    onClick={() => handleObjectAction(() => useEditorStore.getState().ungroupObjects(objectIds))}
                     className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 flex items-center gap-3 text-sm transition-colors"
                 >
                     <RefreshCw size={15} /> Ungroup
@@ -165,7 +174,7 @@ export const ContextMenu: React.FC = () => {
                 })}
                 className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 flex items-center gap-3 text-sm transition-colors"
             >
-                {currentPage?.objects.find(o => o.id === data?.objectIds?.[0])?.isLocked ? (
+                {currentPage?.objects.find(o => o.id === objectIds[0])?.isLocked ? (
                     <><ArrowUp size={15} className="rotate-180" /> Unlock</>
                 ) : (
                     <><ArrowUp size={15} /> Lock</>
@@ -173,16 +182,16 @@ export const ContextMenu: React.FC = () => {
             </button>
 
             <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
-            <button key="front" onClick={() => handleObjectAction(() => editorReorderObject(data?.objectIds[0], 'front'))} disabled={data?.objectIds?.length !== 1} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 disabled:opacity-50 flex items-center gap-3 text-sm transition-colors">
+            <button key="front" onClick={() => handleObjectAction(() => editorReorderObject(objectIds[0], 'front'))} disabled={objectIds.length !== 1} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 disabled:opacity-50 flex items-center gap-3 text-sm transition-colors">
                 <ArrowUp size={15} /> Bring to Front
             </button>
-            <button key="back" onClick={() => handleObjectAction(() => editorReorderObject(data?.objectIds[0], 'back'))} disabled={data?.objectIds?.length !== 1} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 disabled:opacity-50 flex items-center gap-3 text-sm transition-colors">
+            <button key="back" onClick={() => handleObjectAction(() => editorReorderObject(objectIds[0], 'back'))} disabled={objectIds.length !== 1} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-gray-200 disabled:opacity-50 flex items-center gap-3 text-sm transition-colors">
                 <ArrowDown size={15} /> Send to Back
             </button>
-            {currentPage?.objects.find(o => o.id === data?.objectIds?.[0])?.type === 'measure' && (
+            {currentPage?.objects.find(o => o.id === objectIds[0])?.type === 'measure' && (
                 <>
                     <button key="calibrate" onClick={() => handleObjectAction(() => {
-                        const obj = currentPage.objects.find(o => o.id === data?.objectIds[0]);
+                        const obj = currentPage?.objects.find(o => o.id === objectIds[0]);
                         if (obj && obj.type === 'measure' && obj.points) {
                             const [x1, y1, x2, y2] = obj.points;
                             const distPx = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
@@ -214,16 +223,16 @@ export const ContextMenu: React.FC = () => {
             </div>
             <button key="edit" onClick={() => handlePageAction(async () => {
                 // If we are on Home page list, finding page by ID. If in editor, existing logic applies.
-                const page = pages.find(p => p.id === data?.pageId);
+                const page = pages.find(p => p.id === pageId);
                 if (page) initEditor(page);
             })} className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center gap-3 text-sm font-medium transition-colors">
                 <Edit3 size={15} /> Edit Page
             </button>
-            <button key="dup_page" onClick={() => handlePageAction(() => usePDFStore.getState().duplicatePage(data?.pageId))} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-zinc-200 flex items-center gap-3 text-sm font-medium transition-colors">
+            <button key="dup_page" onClick={() => pageId && handlePageAction(() => usePDFStore.getState().duplicatePage(pageId))} className="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-white/5 text-gray-700 dark:text-zinc-200 flex items-center gap-3 text-sm font-medium transition-colors">
                 <Copy size={15} /> Duplicate Page
             </button>
             <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
-            <button key="del_page" onClick={() => handlePageAction(() => { if (confirm('Delete page?')) usePDFStore.getState().deletePage(data?.pageId); })} className="w-full text-left px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-3 text-sm font-medium transition-colors">
+            <button key="del_page" onClick={() => pageId && handlePageAction(() => { if (confirm('Delete page?')) usePDFStore.getState().deletePage(pageId); })} className="w-full text-left px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-3 text-sm font-medium transition-colors">
                 <Trash2 size={15} /> Delete Page
             </button>
         </>

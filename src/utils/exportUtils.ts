@@ -6,6 +6,166 @@ import { hexToRgba } from './colorUtils';
 
 import { applyAdjustmentPipeline } from './effectUtils';
 
+export interface RenderPageOptions {
+    renderScale?: number;
+    outputScale?: number;
+    downsamplingMethod?: 'bicubic' | 'nearest';
+}
+
+/**
+ * Build the current editor state into a PDF byte array.
+ */
+export const buildDocumentPdfBytes = async (pages: PageState[], originalPdfBytes: ArrayBuffer | null) => {
+    if (pages.length === 0) return;
+
+    const newPdf = await PDFDocument.create();
+    let originalPdfDoc: PDFDocument | null = null;
+    let pdfjsDoc: PDFDocumentProxy | null = null;
+
+    if (originalPdfBytes) {
+        // Clone the buffer to prevent detachment issues
+        const pdfBytes = originalPdfBytes.slice(0);
+        originalPdfDoc = await PDFDocument.load(pdfBytes);
+
+        // Also load with pdf.js to get viewport information for coordinate conversion
+        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes) });
+        pdfjsDoc = await loadingTask.promise;
+    }
+
+    for (const page of pages) {
+        let pdfPage: PDFPage;
+        let pageWidth = 595;
+        let pageHeight = 842;
+        let viewport: PDFViewport | null = null;
+
+        // 1. Get Base Page (PDF, Image, or Blank)
+        if (page.source === 'pdf' && originalPdfDoc && page.originalPageIndex !== undefined) {
+            // Copy original page (pdf-lib uses 0-based index)
+            // page.originalPageIndex is 1-based from our store.
+            const [copiedPage] = await newPdf.copyPages(originalPdfDoc, [page.originalPageIndex - 1]);
+            pdfPage = newPdf.addPage(copiedPage);
+            pageWidth = pdfPage.getWidth();
+            pageHeight = pdfPage.getHeight();
+
+            // Get pdf.js viewport for this page
+            if (pdfjsDoc) {
+                const jsPage = await pdfjsDoc.getPage(page.originalPageIndex); // pdf.js is 1-based
+                // We match the scale used for canvas rendering later (scale=2)
+                viewport = jsPage.getViewport({ scale: 2 });
+            }
+
+        } else if (page.source === 'image' && page.content) {
+            // Embed image
+            const imageBytes = await fetch(page.content).then(res => res.arrayBuffer());
+            let embeddedImage: PDFImage;
+
+            if (page.content.startsWith('data:image/png')) {
+                embeddedImage = await newPdf.embedPng(imageBytes);
+            } else {
+                embeddedImage = await newPdf.embedJpg(imageBytes);
+            }
+
+            pageWidth = page.width || embeddedImage.width;
+            pageHeight = page.height || embeddedImage.height;
+
+            pdfPage = newPdf.addPage([pageWidth, pageHeight]);
+            pdfPage.drawImage(embeddedImage, {
+                x: 0,
+                y: 0,
+                width: pageWidth,
+                height: pageHeight,
+            });
+
+            viewport = {
+                width: pageWidth,
+                height: pageHeight,
+                convertToViewportPoint: (x: number, y: number) => [x * 2, y * 2], // Simple scale=2
+                scale: 2
+            };
+
+        } else {
+            // Blank page
+            pageWidth = page.width || 595;
+            pageHeight = page.height || 842;
+            pdfPage = newPdf.addPage([pageWidth, pageHeight]);
+
+            viewport = {
+                width: pageWidth,
+                height: pageHeight,
+                convertToViewportPoint: (x: number, y: number) => [x * 2, y * 2],
+                scale: 2
+            };
+        }
+
+        // 2. Render Annotations to a Canvas (Rasterization)
+        // If the page is edited or has objects (including adjustment layers), we create an overlay
+        const hasAnnotations = (page.objects && page.objects.length > 0) ||
+            (page.nativeTextEdits && Object.keys(page.nativeTextEdits).length > 0) ||
+            (page.paths && page.paths.length > 0);
+
+        if (hasAnnotations) {
+            const scale = 2; // High DPI for crisp text/shapes
+            const canvas = document.createElement('canvas');
+            canvas.width = pageWidth * scale;
+            canvas.height = pageHeight * scale;
+            const ctx = canvas.getContext('2d');
+
+            if (ctx) {
+                ctx.scale(scale, scale);
+
+                // A. If there are effects applied early in the stack, we might need to rasterize the background
+                // Check if there are any effect objects
+                const hasEffects = page.objects.some(obj => obj.type === 'effect' && obj.visible !== false);
+
+                if (hasEffects && pdfjsDoc && page.source === 'pdf' && page.originalPageIndex !== undefined) {
+                    const jsPage = await pdfjsDoc.getPage(page.originalPageIndex);
+                    const bgViewport = jsPage.getViewport({ scale });
+                    const bgCanvas = document.createElement('canvas');
+                    bgCanvas.width = canvas.width;
+                    bgCanvas.height = canvas.height;
+                    const bgCtx = bgCanvas.getContext('2d');
+                    if (bgCtx) {
+                        await jsPage.render({ canvasContext: bgCtx, viewport: bgViewport }).promise;
+                        ctx.drawImage(bgCanvas, 0, 0, pageWidth, pageHeight);
+                    }
+                } else if (hasEffects && page.source === 'image' && page.content) {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    await new Promise<void>((resolve) => {
+                        img.onload = () => {
+                            ctx.drawImage(img, 0, 0, pageWidth, pageHeight);
+                            resolve();
+                        }
+                        img.src = page.content!;
+                    });
+                }
+
+                // B. Draw Native Text Edits
+                if (page.nativeTextEdits && viewport) {
+                    drawNativeTextEdits(ctx, page.nativeTextEdits, viewport);
+                }
+
+                // C. Draw Annotations & Adjustment Layers Interleaved
+                await drawPageAnnotationsToCanvas(ctx, page);
+            }
+
+            // 3. Embed this Annotation Layer into the PDF
+            const annotationUrl = canvas.toDataURL('image/png');
+            const annotationImageBytes = await fetch(annotationUrl).then(res => res.arrayBuffer());
+            const embeddedAnnotation = await newPdf.embedPng(annotationImageBytes);
+
+            pdfPage.drawImage(embeddedAnnotation, {
+                x: 0,
+                y: 0,
+                width: pageWidth,
+                height: pageHeight,
+            });
+        }
+    }
+
+    return newPdf.save();
+};
+
 /**
  * Main function to save the document as a new PDF.
  */
@@ -13,162 +173,10 @@ export const saveDocument = async (pages: PageState[], originalPdfBytes: ArrayBu
     if (pages.length === 0) return;
 
     try {
-        const newPdf = await PDFDocument.create();
-        let originalPdfDoc: PDFDocument | null = null;
-        let pdfjsDoc: PDFDocumentProxy | null = null;
-
-        if (originalPdfBytes) {
-            // Clone the buffer to prevent detachment issues
-            const pdfBytes = originalPdfBytes.slice(0);
-            originalPdfDoc = await PDFDocument.load(pdfBytes);
-
-            // Also load with pdf.js to get viewport information for coordinate conversion
-            const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes) });
-            pdfjsDoc = await loadingTask.promise;
-        }
-
-        for (const page of pages) {
-            let pdfPage: PDFPage;
-            let pageWidth = 595;
-            let pageHeight = 842;
-            let viewport: PDFViewport | null = null;
-
-            // 1. Get Base Page (PDF, Image, or Blank)
-            if (page.source === 'pdf' && originalPdfDoc && page.originalPageIndex !== undefined) {
-                // Copy original page (pdf-lib uses 0-based index)
-                // page.originalPageIndex is 1-based from our store.
-                const [copiedPage] = await newPdf.copyPages(originalPdfDoc, [page.originalPageIndex - 1]);
-                pdfPage = newPdf.addPage(copiedPage);
-                pageWidth = pdfPage.getWidth();
-                pageHeight = pdfPage.getHeight();
-
-                // Get pdf.js viewport for this page
-                if (pdfjsDoc) {
-                    const jsPage = await pdfjsDoc.getPage(page.originalPageIndex); // pdf.js is 1-based
-                    // We match the scale used for canvas rendering later (scale=2)
-                    viewport = jsPage.getViewport({ scale: 2 });
-                }
-
-            } else if (page.source === 'image' && page.content) {
-                // Embed image
-                const imageBytes = await fetch(page.content).then(res => res.arrayBuffer());
-                let embeddedImage: PDFImage;
-
-                if (page.content.startsWith('data:image/png')) {
-                    embeddedImage = await newPdf.embedPng(imageBytes);
-                } else {
-                    embeddedImage = await newPdf.embedJpg(imageBytes);
-                }
-
-                pageWidth = page.width || embeddedImage.width;
-                pageHeight = page.height || embeddedImage.height;
-
-                pdfPage = newPdf.addPage([pageWidth, pageHeight]);
-                pdfPage.drawImage(embeddedImage, {
-                    x: 0,
-                    y: 0,
-                    width: pageWidth,
-                    height: pageHeight,
-                });
-
-                viewport = {
-                    width: pageWidth,
-                    height: pageHeight,
-                    convertToViewportPoint: (x: number, y: number) => [x * 2, y * 2], // Simple scale=2
-                    scale: 2
-                };
-
-            } else {
-                // Blank page
-                pageWidth = page.width || 595;
-                pageHeight = page.height || 842;
-                pdfPage = newPdf.addPage([pageWidth, pageHeight]);
-
-                viewport = {
-                    width: pageWidth,
-                    height: pageHeight,
-                    convertToViewportPoint: (x: number, y: number) => [x * 2, y * 2],
-                    scale: 2
-                };
-            }
-
-            // 2. Render Annotations to a Canvas (Rasterization)
-            // If the page is edited or has objects (including adjustment layers), we create an overlay
-            const hasAnnotations = (page.objects && page.objects.length > 0) ||
-                (page.nativeTextEdits && Object.keys(page.nativeTextEdits).length > 0) ||
-                (page.paths && page.paths.length > 0);
-
-            if (hasAnnotations) {
-                const scale = 2; // High DPI for crisp text/shapes
-                const canvas = document.createElement('canvas');
-                canvas.width = pageWidth * scale;
-                canvas.height = pageHeight * scale;
-                const ctx = canvas.getContext('2d');
-
-                if (ctx) {
-                    ctx.scale(scale, scale);
-
-                    // A. If there are effects applied early in the stack, we might need to rasterize the background
-                    // Check if there are any effect objects
-                    const hasEffects = page.objects.some(obj => obj.type === 'effect' && obj.visible !== false);
-
-                    if (hasEffects && pdfjsDoc && page.source === 'pdf' && page.originalPageIndex !== undefined) {
-                        const jsPage = await pdfjsDoc.getPage(page.originalPageIndex);
-                        const bgViewport = jsPage.getViewport({ scale });
-                        const bgCanvas = document.createElement('canvas');
-                        bgCanvas.width = canvas.width;
-                        bgCanvas.height = canvas.height;
-                        const bgCtx = bgCanvas.getContext('2d');
-                        if (bgCtx) {
-                            await jsPage.render({ canvasContext: bgCtx, viewport: bgViewport }).promise;
-                            ctx.drawImage(bgCanvas, 0, 0, pageWidth, pageHeight);
-                        }
-                    } else if (hasEffects && page.source === 'image' && page.content) {
-                        const img = new Image();
-                        img.crossOrigin = 'anonymous';
-                        await new Promise<void>((resolve) => {
-                            img.onload = () => {
-                                ctx.drawImage(img, 0, 0, pageWidth, pageHeight);
-                                resolve();
-                            }
-                            img.src = page.content!;
-                        });
-                    }
-
-                    // B. Draw Native Text Edits
-                    if (page.nativeTextEdits && viewport) {
-                        drawNativeTextEdits(ctx, page.nativeTextEdits, viewport);
-                    }
-
-                    // C. Draw Annotations & Adjustment Layers Interleaved
-                    await drawPageAnnotationsToCanvas(ctx, page);
-                }
-
-                // 3. Embed this Annotation Layer into the PDF
-                const annotationUrl = canvas.toDataURL('image/png');
-                const annotationImageBytes = await fetch(annotationUrl).then(res => res.arrayBuffer());
-                const embeddedAnnotation = await newPdf.embedPng(annotationImageBytes);
-
-                pdfPage.drawImage(embeddedAnnotation, {
-                    x: 0,
-                    y: 0,
-                    width: pageWidth,
-                    height: pageHeight,
-                });
-            }
-        }
-
-        // Save and Download
-        const pdfBytes = await newPdf.save();
+        const pdfBytes = await buildDocumentPdfBytes(pages, originalPdfBytes);
+        if (!pdfBytes) return;
         const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `edited_document_${Date.now()}.pdf`;
-        a.click();
-        URL.revokeObjectURL(url);
-
+        downloadFile(blob, `edited_document_${Date.now()}.pdf`);
     } catch (error) {
         console.error('Export Error:', error);
         alert('Failed to save PDF. Check console for details.');
@@ -604,7 +612,7 @@ export const exportPageAsImage = async (page: PageState, format: 'png' | 'jpg', 
     }
 };
 
-const downloadFile = (blob: Blob, filename: string) => {
+export const downloadFile = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -614,8 +622,15 @@ const downloadFile = (blob: Blob, filename: string) => {
 };
 
 // Exported for PrintModal previews
-export const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', quality: number, pdfDocSource: PDFDocumentProxy | null): Promise<{ blob: Blob | null }> => {
-    const scale = 2; // High DPI export
+export const renderPageToBlob = async (
+    page: PageState,
+    format: 'png' | 'jpg',
+    quality: number,
+    pdfDocSource: PDFDocumentProxy | null,
+    options: RenderPageOptions = {}
+): Promise<{ blob: Blob | null }> => {
+    const renderScale = Math.max(options.renderScale ?? 2, 0.25);
+    const outputScale = Math.max(options.outputScale ?? renderScale, 0.25);
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return { blob: null };
@@ -624,7 +639,7 @@ export const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', q
 
     if (page.source === 'pdf' && page.originalPageIndex !== undefined && pdfDocSource) {
         try {
-            const result = await getPdfPageViewport(pdfDocSource, page.originalPageIndex, scale);
+            const result = await getPdfPageViewport(pdfDocSource, page.originalPageIndex, renderScale);
             const pdfPage = result.page;
             viewport = result.viewport;
 
@@ -639,14 +654,14 @@ export const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', q
 
         } catch (e) {
             console.error("PDF Render failed", e);
-            canvas.width = (page.width || 595) * scale;
-            canvas.height = (page.height || 842) * scale;
+            canvas.width = (page.width || 595) * renderScale;
+            canvas.height = (page.height || 842) * renderScale;
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
     } else if (page.source === 'image' && page.content) {
-        canvas.width = (page.width || 800) * scale;
-        canvas.height = (page.height || 600) * scale;
+        canvas.width = (page.width || 800) * renderScale;
+        canvas.height = (page.height || 600) * renderScale;
 
         const img = new Image();
         img.crossOrigin = 'anonymous';
@@ -659,28 +674,28 @@ export const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', q
         });
 
         viewport = {
-            width: canvas.width / scale,
-            height: canvas.height / scale,
-            convertToViewportPoint: (x: number, y: number) => [x * scale, y * scale],
-            scale: scale
+            width: canvas.width / renderScale,
+            height: canvas.height / renderScale,
+            convertToViewportPoint: (x: number, y: number) => [x * renderScale, y * renderScale],
+            scale: renderScale
         };
     } else {
-        canvas.width = (page.width || 595) * scale;
-        canvas.height = (page.height || 842) * scale;
+        canvas.width = (page.width || 595) * renderScale;
+        canvas.height = (page.height || 842) * renderScale;
         ctx.fillStyle = page.backgroundColor || 'white';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         viewport = {
-            width: canvas.width / scale,
-            height: canvas.height / scale,
-            convertToViewportPoint: (x: number, y: number) => [x * scale, y * scale],
-            scale: scale
+            width: canvas.width / renderScale,
+            height: canvas.height / renderScale,
+            convertToViewportPoint: (x: number, y: number) => [x * renderScale, y * renderScale],
+            scale: renderScale
         };
     }
 
     // 2. Render Annotations using Unified Logic
     ctx.save();
-    ctx.scale(scale, scale);
+    ctx.scale(renderScale, renderScale);
 
     if (page.nativeTextEdits && viewport) {
         drawNativeTextEdits(ctx, page.nativeTextEdits, viewport);
@@ -690,8 +705,26 @@ export const renderPageToBlob = async (page: PageState, format: 'png' | 'jpg', q
 
     ctx.restore();
 
+    const finalCanvas = outputScale === renderScale ? canvas : (() => {
+        const scaledCanvas = document.createElement('canvas');
+        const scaleRatio = outputScale / renderScale;
+        scaledCanvas.width = Math.max(1, Math.round(canvas.width * scaleRatio));
+        scaledCanvas.height = Math.max(1, Math.round(canvas.height * scaleRatio));
+
+        const scaledCtx = scaledCanvas.getContext('2d');
+        if (!scaledCtx) return canvas;
+
+        const useNearest = options.downsamplingMethod === 'nearest';
+        scaledCtx.imageSmoothingEnabled = !useNearest;
+        if (!useNearest && 'imageSmoothingQuality' in scaledCtx) {
+            scaledCtx.imageSmoothingQuality = 'high';
+        }
+        scaledCtx.drawImage(canvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
+        return scaledCanvas;
+    })();
+
     return new Promise((resolve) => {
-        canvas.toBlob((blob) => {
+        finalCanvas.toBlob((blob) => {
             resolve({ blob });
         }, format === 'jpg' ? 'image/jpeg' : 'image/png', quality);
     });

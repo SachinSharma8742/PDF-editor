@@ -1,5 +1,4 @@
 import type { ImageOperations } from "../components/features/editor/ImageStudio/useImageStudioStore";
-import MLWorker from '../workers/mlProcessing.worker?worker';
 
 export async function applyEnhance(
     input: ImageBitmap,
@@ -9,7 +8,10 @@ export async function applyEnhance(
 
     // Worker communcation
     return new Promise((resolve, reject) => {
-        const worker = new MLWorker();
+        const worker = new Worker(
+            new URL('../workers/mlProcessing.worker.ts', import.meta.url),
+            { type: 'module' }
+        );
 
         // Convert Bitmap to ImageData for worker (Worker needs buffer)
         // We need an intermediate canvas for this

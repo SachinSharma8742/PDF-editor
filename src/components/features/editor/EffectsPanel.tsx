@@ -1,6 +1,7 @@
 import React from 'react';
 import { useEditorStore } from '../../../store/editorStore';
 import { usePDFStore } from '../../../store/pdfStore';
+import { useBatchOperationStore } from '../../../store/batchOperationStore';
 import {
     Sparkles, Trash2, Eye, EyeOff,
     Zap, Moon, Contrast, SlidersHorizontal, Droplets, Wand2
@@ -8,6 +9,7 @@ import {
 import clsx from 'clsx';
 import type { PDFObject } from '../../../store/pdfStore';
 import { DEFAULT_ADJUSTMENT_PARAMS } from '../../../utils/effectUtils';
+import { applyEffectToAllPages } from '../../../utils/batchOperations';
 
 /**
  * Presets are parameter sets of the single shared adjustment pipeline.
@@ -53,8 +55,11 @@ const EFFECT_PRESETS = [
 
 export const EffectsPanel: React.FC = () => {
     const { currentPage, addObject, deleteObjects, updateObject } = useEditorStore();
+    const pages = usePDFStore((state) => state.pages);
+    const { currentTask, isProcessing, currentPage: processedCount, totalPages } = useBatchOperationStore();
 
     const activeEffects = currentPage?.objects.filter(obj => obj.type === 'effect') || [];
+    const batchProgress = totalPages > 0 ? Math.round((processedCount / totalPages) * 100) : 0;
 
     const handleAddEffect = (preset: typeof EFFECT_PRESETS[number]) => {
         if (!currentPage) return;
@@ -173,20 +178,6 @@ export const EffectsPanel: React.FC = () => {
                                             ))}
                                     </div>
                                     
-                                    <div className="mt-3 pt-3 border-t border-white/5">
-                                        <button
-                                            onClick={() => {
-                                                const { applyEffectToAllPages } = usePDFStore.getState();
-                                                applyEffectToAllPages(effect);
-                                                // Small toast or feedback could be added here
-                                            }}
-                                            className="w-full flex items-center justify-center gap-2 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-colors border border-blue-500/20"
-                                            title="Apply this exact effect to all pages in the document"
-                                        >
-                                            <Sparkles size={12} />
-                                            Apply to All Pages
-                                        </button>
-                                    </div>
                                 </div>
                             ))
                         )}
@@ -233,6 +224,31 @@ export const EffectsPanel: React.FC = () => {
                         ))}
                     </div>
                 </section>
+
+                {activeEffects.length > 0 && (
+                    <section className="pt-2 border-t border-white/10">
+                        <button
+                            onClick={() => applyEffectToAllPages(activeEffects[0].effectParams || {}, pages, usePDFStore.getState())}
+                            disabled={isProcessing}
+                            className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-[10px] font-bold uppercase tracking-widest rounded-xl transition-colors shadow-lg shadow-blue-900/20"
+                        >
+                            <Sparkles size={12} />
+                            Apply to All Pages
+                        </button>
+
+                        {isProcessing && (
+                            <div className="mt-2 space-y-1.5">
+                                <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                                    <span>{currentTask || 'Batch effect'}...</span>
+                                    <span>{batchProgress}%</span>
+                                </div>
+                                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                    <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${batchProgress}%` }} />
+                                </div>
+                            </div>
+                        )}
+                    </section>
+                )}
             </div>
         </div>
     );

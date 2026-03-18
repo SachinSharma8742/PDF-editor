@@ -10,6 +10,11 @@ interface PDFTextLayerProps {
     viewOnly?: boolean; // If true, just display edits without interaction
 }
 
+interface PDFPageWithText {
+    getViewport: (params: { scale: number }) => { convertToViewportPoint: (x: number, y: number) => [number, number]; scale: number };
+    getTextContent: () => Promise<{ items: any[] }>;
+}
+
 export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, viewOnly = false }) => {
     const { pdfDocument, pages } = usePDFStore();
     const { editingMode, setActiveNativeTextItem, activeNativeTextItem, setEditingMode, findReplaceState, pendingNativeTextEdits } = useEditorStore();
@@ -23,7 +28,7 @@ export const PDFTextLayer: React.FC<PDFTextLayerProps> = ({ pageNumber, scale, v
 
         const loadText = async () => {
             try {
-                const page = await pdfDocument.getPage(pageState.originalPageIndex!);
+                const page = await pdfDocument.getPage(pageState.originalPageIndex!) as unknown as PDFPageWithText;
                 const viewport = page.getViewport({ scale });
                 const textContent = await page.getTextContent();
 

@@ -19,20 +19,16 @@ import {
     Plus,
     Sun,
     Moon,
-    FlipHorizontal,
-    FlipVertical,
     Pencil,
     Clock,
-    Search,
-    LayoutGrid
+    SlidersHorizontal
 } from 'lucide-react';
 import { loadPDF } from '../../utils/pdfOps';
 import { saveDocument, saveDocumentFlattened, exportPageAsImage } from '../../utils/exportUtils';
 import { useEditorStore } from '../../store/editorStore';
 import { TimelineModal } from '../features/editor/TimelineModal';
-import { SmartSearchPanel } from '../features/editor/SmartSearchPanel';
-import { BatchOperationsPanel } from '../features/editor/BatchOperationsPanel';
 import clsx from 'clsx';
+import { CompressionOverlay } from '../features/export/CompressionOverlay';
 
 
 export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick }) => {
@@ -45,27 +41,8 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
     const [exportQuality, setExportQuality] = useState(0.8);
     const [isExporting, setIsExporting] = useState(false);
     const [isTimelineOpen, setIsTimelineOpen] = useState(false);
-    const [isSearchOpen, setIsSearchOpen] = useState(false);
-    const [searchMode, setSearchMode] = useState<'find' | 'replace'>('find');
-    const [isBatchOpen, setIsBatchOpen] = useState(false);
-
-    // Global keyboard shortcuts for search panel (Ctrl+F, Ctrl+H)
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            const isMeta = e.ctrlKey || e.metaKey;
-            if (isMeta && e.key === 'f') {
-                e.preventDefault();
-                setSearchMode('find');
-                setIsSearchOpen(true);
-            } else if (isMeta && e.key === 'h') {
-                e.preventDefault();
-                setSearchMode('replace');
-                setIsSearchOpen(true);
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
+    const [isCompressionOpen, setIsCompressionOpen] = useState(false);
+    const [compressionPageIndices, setCompressionPageIndices] = useState<number[]>([]);
 
     // Handle click outside to close export menu
     React.useEffect(() => {
@@ -103,7 +80,6 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
         addObject,
         pages,
         rotatePage,
-        flipPage,
         theme,
         toggleTheme,
         pdfDocument,
@@ -117,6 +93,14 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
     const compactPrimaryActionClass = "group h-10 px-3 rounded-xl transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-95 flex items-center overflow-hidden whitespace-nowrap";
     const compactIconActionClass = "group h-10 px-3 rounded-xl transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-90 flex items-center overflow-hidden whitespace-nowrap";
     const compactPrimaryActionLabelClass = "hidden sm:block max-w-0 overflow-hidden whitespace-nowrap opacity-0 -translate-x-2 ml-0 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover:max-w-[120px] group-hover:opacity-100 group-hover:translate-x-0 group-hover:ml-2.5";
+
+    const getTargetPageIndices = () => (
+        isSelectionMode && selectedPageIds.length > 0
+            ? pages
+                .map((page, index) => selectedPageIds.includes(page.id) ? index : -1)
+                .filter((index) => index >= 0)
+            : pages.map((_, index) => index)
+    );
 
     // Export handler
     const handleExport = async () => {
@@ -275,68 +259,9 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                     >
                         <RotateCw size={18} strokeWidth={2.5} />
                     </button>
-
-                    <button
-                        onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) flipPage(p.id, 'horizontal'); }}
-                        disabled={!hasPages}
-                        className={clsx(
-                            compactIconActionClass,
-                            "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white"
-                        )}
-                        aria-label="Flip Horizontal"
-                    >
-                        <FlipHorizontal size={18} strokeWidth={2.5} />
-                    </button>
-
-                    <button
-                        onClick={() => { const p = pages.find(pg => pg.pageNumber === currentPage); if (p) flipPage(p.id, 'vertical'); }}
-                        disabled={!hasPages}
-                        className={clsx(
-                            compactIconActionClass,
-                            "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white"
-                        )}
-                        aria-label="Flip Vertical"
-                    >
-                        <FlipVertical size={18} strokeWidth={2.5} />
-                    </button>
                 </div>
 
-                {/* 4. Smart Tools (Search + Batch) */}
-                {hasPages && (
-                    <div className="flex items-center gap-1 pr-3 mr-3 border-r border-zinc-200 dark:border-white/10">
-                        <button
-                            onClick={() => { setSearchMode('find'); setIsSearchOpen((v) => !v); }}
-                            className={clsx(
-                                compactIconActionClass,
-                                isSearchOpen
-                                    ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30"
-                                    : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white"
-                            )}
-                            aria-label="Smart Search (Ctrl+F)"
-                            title="Smart Search (Ctrl+F / Cmd+F)"
-                        >
-                            <Search size={18} strokeWidth={2.5} />
-                            <span className={clsx(compactPrimaryActionLabelClass, "text-[10px] font-black uppercase tracking-[0.15em]")}>Search</span>
-                        </button>
-
-                        <button
-                            onClick={() => setIsBatchOpen((v) => !v)}
-                            className={clsx(
-                                compactIconActionClass,
-                                isBatchOpen
-                                    ? "bg-purple-600 text-white shadow-lg shadow-purple-500/30"
-                                    : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5 hover:text-zinc-900 dark:hover:text-white"
-                            )}
-                            aria-label="Batch Operations"
-                            title="Batch Operations — apply actions to all pages"
-                        >
-                            <LayoutGrid size={18} strokeWidth={2.5} />
-                            <span className={clsx(compactPrimaryActionLabelClass, "text-[10px] font-black uppercase tracking-[0.15em]")}>Batch</span>
-                        </button>
-                    </div>
-                )}
-
-                {/* 5. Primary Actions */}
+                {/* 4. Primary Actions */}
                 <div className="flex items-center gap-3 pl-1 pr-2">
                     {hasPages && (
                         <div className="flex items-center gap-3">
@@ -499,6 +424,27 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
                                         )}
 
                                         <button
+                                            onClick={() => {
+                                                setCompressionPageIndices(getTargetPageIndices());
+                                                setIsCompressionOpen(true);
+                                                setIsExportOpen(false);
+                                            }}
+                                            className="w-full rounded-2xl border border-blue-500/20 bg-blue-500/10 px-4 py-4 text-left transition-all duration-300 hover:border-blue-400/40 hover:bg-blue-500/15"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="rounded-xl bg-blue-500/15 p-2 text-blue-300">
+                                                    <SlidersHorizontal size={16} strokeWidth={2.5} />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[11px] font-black uppercase tracking-[0.18em] text-white">Compress PDF</div>
+                                                    <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-100/70">
+                                                        PDF.co presets and direct download
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </button>
+
+                                        <button
                                             onClick={handleExport}
                                             disabled={isExporting}
                                             className="w-full py-4 bg-zinc-900 dark:bg-blue-600 hover:bg-black dark:hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-xl shadow-black/10 dark:shadow-blue-900/20 active:scale-[0.98]"
@@ -523,19 +469,12 @@ export const Toolbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick })
 
             {/* Version Timeline Modal */}
             <TimelineModal isOpen={isTimelineOpen} onClose={() => setIsTimelineOpen(false)} />
-
-            {/* Smart Search Panel */}
-            <SmartSearchPanel
-                isOpen={isSearchOpen}
-                onClose={() => setIsSearchOpen(false)}
-                defaultMode={searchMode}
+            <CompressionOverlay
+                isOpen={isCompressionOpen}
+                onClose={() => setIsCompressionOpen(false)}
+                selectedPageIndices={compressionPageIndices}
             />
 
-            {/* Batch Operations Panel */}
-            <BatchOperationsPanel
-                isOpen={isBatchOpen}
-                onClose={() => setIsBatchOpen(false)}
-            />
         </div>
     );
 };

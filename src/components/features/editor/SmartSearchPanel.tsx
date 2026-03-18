@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Search, Replace, X, ChevronDown, ChevronUp, Clock, Trash2,
@@ -20,11 +20,12 @@ interface SmartSearchPanelProps {
     isOpen: boolean;
     onClose: () => void;
     defaultMode?: 'find' | 'replace';
+    allowReplace?: boolean;
 }
 
-export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onClose, defaultMode = 'find' }) => {
+export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onClose, defaultMode = 'find', allowReplace = true }) => {
     const { pages } = usePDFStore();
-    const [mode, setMode] = useState<'find' | 'replace'>(defaultMode);
+    const [mode, setMode] = useState<'find' | 'replace'>(allowReplace ? defaultMode : 'find');
     const [searchTerm, setSearchTerm] = useState('');
     const [replaceTerm, setReplaceTerm] = useState('');
     const [options, setOptions] = useState<SearchOptions>({
@@ -36,17 +37,32 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
     const [currentIndex, setCurrentIndex] = useState(-1);
     const [hasSearched, setHasSearched] = useState(false);
     const [regexError, setRegexError] = useState<string | null>(null);
-    const [showHistory, setShowHistory] = useState(false);
+    const [searchInputFocused, setSearchInputFocused] = useState(false);
     const [replaceStatus, setReplaceStatus] = useState<string | null>(null);
 
     const { history, addEntry, clearHistory, removeEntry } = useSearchHistory();
     const searchInputRef = useRef<HTMLInputElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
 
-    // Keep mode in sync with defaultMode prop changes
+    const filteredHistory = useMemo(() => {
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) {
+            return history.slice(0, 5);
+        }
+
+        return history
+            .filter((entry) => entry.term.toLowerCase().includes(normalizedSearch))
+            .slice(0, 5);
+    }, [history, searchTerm]);
+
     useEffect(() => {
-        setMode(defaultMode);
-    }, [defaultMode]);
+        if (allowReplace) {
+            setMode(defaultMode);
+            return;
+        }
+
+        setMode('find');
+    }, [allowReplace, defaultMode]);
 
     // Focus search input when panel opens
     useEffect(() => {
@@ -58,7 +74,7 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
             setCurrentIndex(-1);
             setHasSearched(false);
             setRegexError(null);
-            setShowHistory(false);
+            setSearchInputFocused(false);
             setReplaceStatus(null);
         }
     }, [isOpen]);
@@ -168,9 +184,10 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
 
     const selectHistoryEntry = useCallback((term: string) => {
         setSearchTerm(term);
-        setShowHistory(false);
         setTimeout(() => searchInputRef.current?.focus(), 10);
     }, []);
+
+    const showSuggestions = searchInputFocused && filteredHistory.length > 0;
 
     const toggleOption = useCallback((key: keyof SearchOptions) => {
         setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -209,31 +226,32 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
                     </span>
                 </div>
                 <div className="flex items-center gap-1">
-                    {/* Mode toggle */}
-                    <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5 mr-1">
-                        <button
-                            onClick={() => setMode('find')}
-                            className={clsx(
-                                "px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all",
-                                mode === 'find'
-                                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm"
-                                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-                            )}
-                        >
-                            Find
-                        </button>
-                        <button
-                            onClick={() => setMode('replace')}
-                            className={clsx(
-                                "px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all",
-                                mode === 'replace'
-                                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm"
-                                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-                            )}
-                        >
-                            Replace
-                        </button>
-                    </div>
+                    {allowReplace && (
+                        <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5 mr-1">
+                            <button
+                                onClick={() => setMode('find')}
+                                className={clsx(
+                                    "px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all",
+                                    mode === 'find'
+                                        ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm"
+                                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                )}
+                            >
+                                Find
+                            </button>
+                            <button
+                                onClick={() => setMode('replace')}
+                                className={clsx(
+                                    "px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all",
+                                    mode === 'replace'
+                                        ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm"
+                                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                )}
+                            >
+                                Replace
+                            </button>
+                        </div>
+                    )}
                     <button
                         onClick={onClose}
                         className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-white/5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-all"
@@ -259,8 +277,8 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
                             setHasSearched(false);
                             setReplaceStatus(null);
                         }}
-                        onFocus={() => history.length > 0 && setShowHistory(true)}
-                        onBlur={() => setTimeout(() => setShowHistory(false), 150)}
+                        onFocus={() => setSearchInputFocused(true)}
+                        onBlur={() => setTimeout(() => setSearchInputFocused(false), 120)}
                         className={clsx(
                             "w-full bg-zinc-50 dark:bg-white/[0.04] border rounded-xl py-2.5 pl-9 pr-24 text-[12px] text-zinc-900 dark:text-white outline-none transition-all",
                             regexError
@@ -310,43 +328,52 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
                             <Regex size={13} />
                         </button>
                     </div>
+                </div>
 
-                    {/* History Dropdown */}
-                    {showHistory && history.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 z-10 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden">
-                            <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100 dark:border-white/5">
-                                <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-1">
-                                    <Clock size={10} /> Recent Searches
-                                </span>
-                                <button
-                                    onClick={clearHistory}
-                                    className="text-[9px] text-red-400 hover:text-red-500 font-bold uppercase tracking-wider flex items-center gap-1"
-                                >
-                                    <Trash2 size={9} /> Clear
-                                </button>
-                            </div>
-                            {history.slice(0, 8).map((entry) => (
+                {showSuggestions && (
+                    <div className="rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-white/[0.03] p-2">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1">
+                                <Clock size={10} /> Suggestions
+                            </span>
+                            <button
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    clearHistory();
+                                }}
+                                className="text-[9px] text-red-400 hover:text-red-500 font-bold uppercase tracking-wider flex items-center gap-1"
+                            >
+                                <Trash2 size={9} /> Clear
+                            </button>
+                        </div>
+                        <div className="space-y-1.5 max-h-28 overflow-y-auto pr-0.5">
+                            {filteredHistory.map((entry) => (
                                 <div
                                     key={entry.term}
-                                    className="flex items-center justify-between px-3 py-1.5 hover:bg-zinc-50 dark:hover:bg-white/5 cursor-pointer group transition-colors"
-                                    onMouseDown={() => selectHistoryEntry(entry.term)}
+                                    className="group flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-zinc-100 dark:hover:bg-white/5"
                                 >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <Clock size={10} className="text-zinc-400 shrink-0" />
-                                        <span className="text-[11px] text-zinc-700 dark:text-zinc-300 truncate">{entry.term}</span>
-                                    </div>
+                                    <button
+                                        onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            selectHistoryEntry(entry.term);
+                                        }}
+                                        className="min-w-0 flex-1 text-left"
+                                    >
+                                        <span className="text-[11px] text-zinc-700 dark:text-zinc-300 truncate block">{entry.term}</span>
+                                    </button>
                                     <div className="flex items-center gap-1.5 shrink-0">
                                         {entry.resultCount !== undefined && (
-                                            <span className="text-[9px] text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-full">
+                                            <span className="text-[9px] text-zinc-500 bg-white dark:bg-zinc-800 px-1.5 py-0.5 rounded-full border border-zinc-200 dark:border-white/10">
                                                 {entry.resultCount}
                                             </span>
                                         )}
                                         <button
                                             onMouseDown={(e) => {
-                                                e.stopPropagation();
+                                                e.preventDefault();
                                                 removeEntry(entry.term);
                                             }}
                                             className="opacity-0 group-hover:opacity-100 p-0.5 text-zinc-400 hover:text-red-400 transition-all"
+                                            aria-label={`Remove ${entry.term} from history`}
                                         >
                                             <X size={10} />
                                         </button>
@@ -354,8 +381,8 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
                                 </div>
                             ))}
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
 
                 {regexError && (
                     <p className="text-[10px] text-red-400 flex items-center gap-1.5 px-1">
@@ -364,7 +391,7 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
                 )}
 
                 {/* Replace Input */}
-                {mode === 'replace' && (
+                {allowReplace && mode === 'replace' && (
                     <div className="relative">
                         <Replace className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
                         <input
@@ -409,7 +436,7 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
                 </div>
 
                 {/* Replace Buttons */}
-                {mode === 'replace' && (
+                {allowReplace && mode === 'replace' && (
                     <div className="flex gap-2">
                         <button
                             onClick={handleReplaceSingle}
@@ -431,7 +458,7 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
                 )}
 
                 {/* Replace Status */}
-                {replaceStatus && (
+                {allowReplace && replaceStatus && (
                     <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-xl">
                         <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
                         <span className="text-[10px] text-green-400 font-bold">{replaceStatus}</span>

@@ -215,7 +215,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
             {/* Watermark Overlay */}
             {pageState.watermark && pageState.watermark.text && dimensions && (
                 <div
-                    className="absolute inset-0 pointer-events-none overflow-hidden flex items-center justify-center z-[6]"
+                    className="absolute inset-0 pointer-events-none overflow-hidden z-[6]"
                     style={{ opacity: pageState.watermark.opacity ?? 0.2 }}
                 >
                     {pageState.watermark.isRepeating ? (
@@ -236,19 +236,61 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                             ))}
                         </div>
                     ) : (
-                        <span
-                            style={{
-                                fontSize: (pageState.watermark.fontSize || 80) * scale,
-                                color: pageState.watermark.color || '#000000',
-                                transform: `rotate(${pageState.watermark.rotate || -45}deg)`,
+                        (() => {
+                            const wm = pageState.watermark!;
+                            const position = wm.position || 'center';
+                            const fontSize = (wm.fontSize || 80) * scale;
+                            const inset = Math.max(20, fontSize * 0.35);
+                            const angle = wm.rotate ?? -25;
+
+                            const baseStyle: React.CSSProperties = {
+                                position: 'absolute',
+                                fontSize,
+                                color: wm.color || '#000000',
                                 fontWeight: 'bold',
                                 whiteSpace: 'nowrap',
                                 userSelect: 'none',
-                                fontFamily: 'sans-serif'
-                            }}
-                        >
-                            {pageState.watermark.text}
-                        </span>
+                                fontFamily: 'sans-serif',
+                            };
+
+                            if (position === 'top-left') {
+                                return <span style={{ ...baseStyle, top: inset, left: inset, transform: `rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'top-center') {
+                                return <span style={{ ...baseStyle, top: inset, left: '50%', transform: `translateX(-50%) rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'top-right') {
+                                return <span style={{ ...baseStyle, top: inset, right: inset, transform: `rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'middle-left') {
+                                return <span style={{ ...baseStyle, top: '50%', left: inset, transform: `translateY(-50%) rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'middle-right') {
+                                return <span style={{ ...baseStyle, top: '50%', right: inset, transform: `translateY(-50%) rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'bottom-left') {
+                                return <span style={{ ...baseStyle, bottom: inset, left: inset, transform: `rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'bottom-center') {
+                                return <span style={{ ...baseStyle, bottom: inset, left: '50%', transform: `translateX(-50%) rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'bottom-right') {
+                                return <span style={{ ...baseStyle, bottom: inset, right: inset, transform: `rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+
+                            return (
+                                <span
+                                    style={{
+                                        ...baseStyle,
+                                        top: '50%',
+                                        left: '50%',
+                                        transform: `translate(-50%, -50%) rotate(${angle}deg)`,
+                                    }}
+                                >
+                                    {wm.text}
+                                </span>
+                            );
+                        })()
                     )}
                 </div>
             )}

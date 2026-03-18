@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "verify": "node scripts/verify.js"
+    "verify": "node scripts/verify.js",
+    "test": "node scripts/test-pdfco.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

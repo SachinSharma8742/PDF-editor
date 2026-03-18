@@ -1036,10 +1036,10 @@ export const EditorCanvas: React.FC = () => {
         >
             {/* Background Layer and Overlays are now rendered inside the Konva Stage for stack-based adjustment layers */}
 
-            {/* Watermark Layer (Z=6, on top of texture, below objects) */}
+            {/* Watermark Layer (Preview overlay above stage for guaranteed visibility) */}
             {currentPage.watermark && currentPage.watermark.text && (
                 <div
-                    className="absolute inset-0 pointer-events-none overflow-hidden flex items-center justify-center z-[6]"
+                    className="absolute inset-0 pointer-events-none overflow-hidden z-[60]"
                     style={{ opacity: currentPage.watermark.opacity ?? 0.2 }}
                 >
                     {currentPage.watermark.isRepeating ? (
@@ -1060,26 +1060,69 @@ export const EditorCanvas: React.FC = () => {
                             ))}
                         </div>
                     ) : (
-                        <span
-                            style={{
-                                fontSize: (currentPage.watermark.fontSize || 80) * scale,
-                                color: currentPage.watermark.color || '#000000',
-                                transform: `rotate(${currentPage.watermark.rotate || -45}deg)`,
+                        (() => {
+                            const wm = currentPage.watermark!;
+                            const position = wm.position || 'center';
+                            const fontSize = (wm.fontSize || 80) * scale;
+                            const inset = Math.max(20, fontSize * 0.35);
+                            const angle = wm.rotate ?? -25;
+
+                            const baseStyle: React.CSSProperties = {
+                                position: 'absolute',
+                                fontSize,
+                                color: wm.color || '#000000',
                                 fontWeight: 'bold',
                                 whiteSpace: 'nowrap',
                                 userSelect: 'none',
-                                fontFamily: 'sans-serif'
-                            }}
-                        >
-                            {currentPage.watermark.text}
-                        </span>
+                                fontFamily: 'sans-serif',
+                                textShadow: '0 1px 2px rgba(255,255,255,0.55), 0 1px 2px rgba(0,0,0,0.15)',
+                            };
+
+                            if (position === 'top-left') {
+                                return <span style={{ ...baseStyle, top: inset, left: inset, transform: `rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'top-center') {
+                                return <span style={{ ...baseStyle, top: inset, left: '50%', transform: `translateX(-50%) rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'top-right') {
+                                return <span style={{ ...baseStyle, top: inset, right: inset, transform: `rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'middle-left') {
+                                return <span style={{ ...baseStyle, top: '50%', left: inset, transform: `translateY(-50%) rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'middle-right') {
+                                return <span style={{ ...baseStyle, top: '50%', right: inset, transform: `translateY(-50%) rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'bottom-left') {
+                                return <span style={{ ...baseStyle, bottom: inset, left: inset, transform: `rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'bottom-center') {
+                                return <span style={{ ...baseStyle, bottom: inset, left: '50%', transform: `translateX(-50%) rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+                            if (position === 'bottom-right') {
+                                return <span style={{ ...baseStyle, bottom: inset, right: inset, transform: `rotate(${angle}deg)` }}>{wm.text}</span>;
+                            }
+
+                            return (
+                                <span
+                                    style={{
+                                        ...baseStyle,
+                                        top: '50%',
+                                        left: '50%',
+                                        transform: `translate(-50%, -50%) rotate(${angle}deg)`,
+                                    }}
+                                >
+                                    {wm.text}
+                                </span>
+                            );
+                        })()
                     )}
                 </div>
             )}
 
             {/* Structure Layer (Header/Footer) (Z=7) */}
             {(currentPage.structure?.header || currentPage.structure?.footer) && (
-                <div className="absolute inset-0 pointer-events-none z-[7] flex flex-col justify-between p-8">
+                <div className="absolute inset-0 pointer-events-none z-[61] flex flex-col justify-between p-8">
                     {/* Header */}
                     {currentPage.structure?.header?.text ? (
                         <div style={{

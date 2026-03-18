@@ -1,5 +1,3 @@
-import MLWorker from '../workers/mlProcessing.worker?worker';
-
 /**
  * Run ML task in a dedicated worker.
  * Spawns a new worker for each task to ensure memory cleanup.
@@ -23,7 +21,10 @@ function runMLTask(type: 'detect-subject' | 'upscale', imageSrc: string): Promis
             const imageData = ctx.getImageData(0, 0, img.naturalWidth, img.naturalHeight);
 
             // Spawn worker
-            const worker = new MLWorker();
+            const worker = new Worker(
+                new URL('../workers/mlProcessing.worker.ts', import.meta.url),
+                { type: 'module' }
+            );
 
             // Timeout
             const timeoutId = setTimeout(() => {

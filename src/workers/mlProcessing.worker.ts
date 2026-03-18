@@ -6,18 +6,18 @@
  * 2. AI Upscale: Tries ONNX (super-res) -> Fallback to Bicubic+Sharpen
  */
 
-import * as ort from 'onnxruntime-web';
-
 // ─── Configuration ─────────────────────────────────────────────
 
 const U2NET_MODEL_URL = '/models/u2netp.onnx';
 const SUPER_RES_MODEL_URL = '/models/super-res.onnx'; // Placeholder
 const ANALYSIS_MAX_SIZE = 512;
 const U2NET_INPUT_SIZE = 320;
+const ORT_MODULE_NAME = 'onnxruntime-web';
 
 // Shared sessions
-let detectionSession: ort.InferenceSession | null = null;
-let upscaleSession: ort.InferenceSession | null = null;
+let detectionSession: any = null;
+let upscaleSession: any = null;
+let ortModule: any = null;
 
 // Bypass TS check for Worker context vs Window context
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,9 +25,14 @@ const ctx: any = self;
 
 // ─── Helpers: ONNX ─────────────────────────────────────────────
 
-async function loadDetectionModel(): Promise<ort.InferenceSession | null> {
+async function loadDetectionModel(): Promise<any | null> {
     if (detectionSession) return detectionSession;
     try {
+        const ort = await loadOrtModule();
+        if (!ort) {
+            return null;
+        }
+
         detectionSession = await ort.InferenceSession.create(U2NET_MODEL_URL, {
             executionProviders: ['wasm'],
             graphOptimizationLevel: 'all'
@@ -39,9 +44,14 @@ async function loadDetectionModel(): Promise<ort.InferenceSession | null> {
     }
 }
 
-async function loadUpscaleModel(): Promise<ort.InferenceSession | null> {
+async function loadUpscaleModel(): Promise<any | null> {
     if (upscaleSession) return upscaleSession;
     try {
+        const ort = await loadOrtModule();
+        if (!ort) {
+            return null;
+        }
+
         upscaleSession = await ort.InferenceSession.create(SUPER_RES_MODEL_URL, {
             executionProviders: ['wasm']
         });
@@ -52,7 +62,11 @@ async function loadUpscaleModel(): Promise<ort.InferenceSession | null> {
     }
 }
 
-function preprocessU2Net(imageData: Uint8ClampedArray, w: number, h: number): ort.Tensor {
+function preprocessU2Net(imageData: Uint8ClampedArray, w: number, h: number): any {
+    if (!ortModule) {
+        throw new Error('onnxruntime-web is not available.');
+    }
+
     const size = U2NET_INPUT_SIZE;
     const float32Data = new Float32Array(1 * 3 * size * size);
 
@@ -82,7 +96,7 @@ function preprocessU2Net(imageData: Uint8ClampedArray, w: number, h: number): or
         float32Data[2 * size * size + i] = (b - mean[2]) / std[2]; // B
     }
 
-    return new ort.Tensor('float32', float32Data, [1, 3, size, size]);
+    return new ortModule.Tensor('float32', float32Data, [1, 3, size, size]);
 }
 
 // ─── Heuristics (Fallbacks) ────────────────────────────────────
@@ -230,7 +244,7 @@ async function executeSubjectDetection(
     }
 
     // Run ONNX inference
-    let tensor: ort.Tensor | null = null;
+    let tensor: any = null;
     try {
         tensor = preprocessU2Net(imageData, width, height);
         const feeds = { [session.inputNames[0]]: tensor };
@@ -275,6 +289,19 @@ async function executeSubjectDetection(
         return heuristicSubjectDetection(imageData, width, height);
     } finally {
         if (tensor) tensor.dispose();
+    }
+}
+
+async function loadOrtModule(): Promise<any | null> {
+    if (ortModule) {
+        return ortModule;
+    }
+
+    try {
+        ortModule = await import(/* @vite-ignore */ ORT_MODULE_NAME);
+        return ortModule;
+    } catch {
+        return null;
     }
 }
 

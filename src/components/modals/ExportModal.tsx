@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { X, FileText, Image as ImageIcon, Layers, Download, Lock } from 'lucide-react';
+import { X, Image as ImageIcon, Layers, Download, Lock } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { useEditorStore } from '../../store/editorStore';
 import { usePDFStore } from '../../store/pdfStore';
 import { saveDocument, saveDocumentFlattened, exportPageAsImage } from '../../utils/exportUtils';
+import { CompressionOverlay } from '../features/export/CompressionOverlay';
 
 interface ExportModalProps {
     isOpen: boolean;
@@ -13,66 +14,32 @@ interface ExportModalProps {
 export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
     const [format, setFormat] = useState<'pdf-standard' | 'pdf-flattened' | 'png'>('pdf-standard');
     const [quality, setQuality] = useState<number>(0.8); // 0 to 1
-    const [filename, setFilename] = useState('document');
     const [isExporting, setIsExporting] = useState(false);
+    const [isCompressionOpen, setIsCompressionOpen] = useState(false);
 
     // Future: Password state
     // const [password, setPassword] = useState('');
 
-    const { pages, pdfDocument } = usePDFStore();
+    const { pages, pdfDocument, originalPdfBytes } = usePDFStore();
     const { currentPage } = useEditorStore();
 
     if (!isOpen) return null;
 
     const handleExport = async () => {
         setIsExporting(true);
-        const finalFilename = `${filename || 'document'}.${format === 'png' ? 'png' : 'pdf'}`;
 
         try {
             if (format === 'pdf-standard') {
-                // We need the original PDF bytes. Ideally store should have them or we fetch?
-                // pdfStore has 'originalPdfBytes'? No, it has pdfDocument (PDFJS).
-                // We need the array buffer. 
-                // Let's assume we can't easily get original bytes back from PDFJS without re-fetching if we didn't store them.
-                // Wait, usePDFStore usually might store the file?
-                // Let's check pdfStore.
-                // It does NOT store raw bytes permanently to save memory.
-                // However, we used to pass 'pdfBytes' to saveDocument.
-                // If we don't have it, we might be in trouble for 'Standard' export which relies on 'copyPages'.
-                // If we don't have original bytes, we MUST flatten or use a different strategy.
-
-                // Workaround: If we cannot get original bytes, fallback to flattened or warn.
-                // But `saveDocument` needs `originalPdfBytes`.
-                // For now, let's try to pass null and see if it handles Blank pages at least.
-                // If it's a PDF source, we need the source.
-
-                // FIX: We need a way to get the original PDF data.
-                // Maybe we can re-fetch it if we have a URL?
-                // For local files, we might be out of luck if we didn't keep it.
-                // BUT `pdfStore` has `pdfDocument`. 
-                // We can use `pdfDocument.getData()` if using PDFJS? 
-                // `pdfDocument` is `PDFDocumentProxy`.
-                // `await pdfDocument.getData()` returns Uint8Array!
-
-                let originalBytes: ArrayBuffer | null = null;
-                if (pdfDocument) {
-                    try {
-                        const data = await pdfDocument.getData();
-                        originalBytes = data.buffer;
-                    } catch (e) {
-                        console.error("Could not retrieve PDF bytes from PDFJS", e);
-                    }
-                }
-
-                await saveDocument(pages, originalBytes);
+                await saveDocument(pages, originalPdfBytes);
 
             } else if (format === 'pdf-flattened') {
                 await saveDocumentFlattened(pages, pdfDocument, quality);
             } else if (format === 'png') {
                 // Export current page only? Or all?
                 // Let's do current page for now as 'Image Export' usually implies single view
-                if (currentPage) {
-                    await exportPageAsImage(currentPage, 'png', quality, pdfDocument);
+                const activePage = currentPage;
+                if (activePage) {
+                    await exportPageAsImage(activePage, 'png', quality, pdfDocument);
                 }
             }
         } catch (error) {
@@ -97,18 +64,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
 
                 {/* Content */}
                 <div className="p-5 space-y-6">
-
-                    {/* Filename */}
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Filename</label>
-                        <input
-                            type="text"
-                            value={filename}
-                            onChange={(e) => setFilename(e.target.value)}
-                            className="w-full bg-zinc-900 border border-white/10 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
-                            placeholder="document"
-                        />
-                    </div>
 
                     {/* Format Selection */}
                     <div className="space-y-2">
@@ -138,7 +93,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                                 <Lock size={18} />
                                 <div className="text-left">
                                     <div className="text-sm font-semibold">Flattened PDF</div>
-                                    <div className="text-[10px] opacity-70">Single layer, smaller size, read-only</div>
+                                    <div className="text-[10px] opacity-70">Single layer, read-only</div>
                                 </div>
                             </button>
 
@@ -181,6 +136,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
 
                 {/* Footer */}
                 <div className="p-4 border-t border-white/5 bg-[#18181b] flex justify-end gap-3">
+                    <Button
+                        variant="outline"
+                        onClick={() => setIsCompressionOpen(true)}
+                        disabled={isExporting}
+                    >
+                        Compress with PDF.co
+                    </Button>
                     <Button variant="ghost" onClick={onClose} disabled={isExporting}>
                         Cancel
                     </Button>
@@ -194,6 +156,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                     </Button>
                 </div>
             </div>
+
+            <CompressionOverlay
+                isOpen={isCompressionOpen}
+                onClose={() => setIsCompressionOpen(false)}
+                selectedPageIndices={pages.map((_, index) => index)}
+            />
         </div>
     );
 };
