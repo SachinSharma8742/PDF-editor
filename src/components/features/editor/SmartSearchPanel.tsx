@@ -187,7 +187,7 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
         setTimeout(() => searchInputRef.current?.focus(), 10);
     }, []);
 
-    const showSuggestions = searchInputFocused && filteredHistory.length > 0;
+    const showHistory = searchInputFocused && filteredHistory.length > 0;
 
     const toggleOption = useCallback((key: keyof SearchOptions) => {
         setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -273,9 +273,15 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
                         placeholder={options.useRegex ? 'Search regex...' : 'Search text...'}
                         value={searchTerm}
                         onChange={(e) => {
-                            setSearchTerm(e.target.value);
+                            const nextTerm = e.target.value;
+                            setSearchTerm(nextTerm);
                             setHasSearched(false);
                             setReplaceStatus(null);
+                            setRegexError(null);
+                            if (!nextTerm.trim()) {
+                                setResults([]);
+                                setCurrentIndex(-1);
+                            }
                         }}
                         onFocus={() => setSearchInputFocused(true)}
                         onBlur={() => setTimeout(() => setSearchInputFocused(false), 120)}
@@ -330,11 +336,11 @@ export const SmartSearchPanel: React.FC<SmartSearchPanelProps> = ({ isOpen, onCl
                     </div>
                 </div>
 
-                {showSuggestions && (
+                {showHistory && (
                     <div className="rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50/70 dark:bg-white/[0.03] p-2">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1">
-                                <Clock size={10} /> Suggestions
+                                <Clock size={10} /> Recent Searches
                             </span>
                             <button
                                 onMouseDown={(e) => {

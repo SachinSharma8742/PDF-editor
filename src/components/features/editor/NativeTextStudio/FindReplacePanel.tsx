@@ -32,7 +32,7 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
     const canReplaceCurrent = currentMatchIndex >= 0 && currentMatchIndex < matches.length && !matches[currentMatchIndex]?.isFuzzy;
     const canReplaceAll = matches.some((m) => !m.isFuzzy);
 
-    const filteredSuggestions = searchTerm.trim()
+    const filteredHistory = searchTerm.trim()
         ? history
             .filter((entry) => entry.term.toLowerCase().includes(searchTerm.trim().toLowerCase()))
             .slice(0, 5)
@@ -45,19 +45,15 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
         }
     }, [searchTerm, caseSensitive, wholeWord, useRegex, useFuzzy, textItems]);
 
-    useEffect(() => {
+    const commitSearchToHistory = useCallback(() => {
         const normalized = searchTerm.trim();
         if (!normalized) return;
-
-        const timeoutId = window.setTimeout(() => {
-            addEntry(normalized, matches.length);
-        }, 280);
-
-        return () => window.clearTimeout(timeoutId);
+        addEntry(normalized, matches.length);
     }, [searchTerm, matches.length, addEntry]);
 
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
+            commitSearchToHistory();
             if (e.shiftKey) {
                 navigateMatch('prev');
             } else {
@@ -67,7 +63,7 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
         if (e.key === 'Escape') {
             setFindReplaceOpen(false);
         }
-    }, [navigateMatch, setFindReplaceOpen]);
+    }, [commitSearchToHistory, navigateMatch, setFindReplaceOpen]);
 
     if (!isOpen) return null;
 
@@ -107,7 +103,10 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
                         </span>
                     )}
                     <button
-                        onClick={() => navigateMatch('prev')}
+                        onClick={() => {
+                            commitSearchToHistory();
+                            navigateMatch('prev');
+                        }}
                         disabled={matches.length === 0}
                         className="p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-zinc-200 dark:hover:bg-white/10 transition-colors"
                         title="Previous (Shift+Enter)"
@@ -115,7 +114,10 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
                         <ChevronUp size={14} />
                     </button>
                     <button
-                        onClick={() => navigateMatch('next')}
+                        onClick={() => {
+                            commitSearchToHistory();
+                            navigateMatch('next');
+                        }}
                         disabled={matches.length === 0}
                         className="p-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-zinc-200 dark:hover:bg-white/10 transition-colors"
                         title="Next (Enter)"
@@ -194,11 +196,11 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
                 </div>
             )}
 
-            {filteredSuggestions.length > 0 && (
+            {filteredHistory.length > 0 && (
                 <div className="rounded-lg border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-zinc-800/50 p-2 space-y-1">
                     <div className="flex items-center justify-between px-1">
                         <span className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                            <Clock size={10} /> Suggestions
+                            <Clock size={10} /> Recent Searches
                         </span>
                         <button
                             onClick={clearHistory}
@@ -209,7 +211,7 @@ export const FindReplacePanel: React.FC<FindReplacePanelProps> = ({ textItems })
                     </div>
 
                     <div className="max-h-28 overflow-y-auto pr-1 space-y-1">
-                        {filteredSuggestions.map((entry) => (
+                        {filteredHistory.map((entry) => (
                             <div
                                 key={entry.term}
                                 className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-700/60 group"

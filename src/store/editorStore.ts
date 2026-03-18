@@ -643,7 +643,17 @@ export const useEditorStore = create<EditorStore>()(
                 findReplaceState: { ...state.findReplaceState, isOpen }
             })),
             setSearchTerm: (term) => set(state => ({
-                findReplaceState: { ...state.findReplaceState, searchTerm: term }
+                findReplaceState: {
+                    ...state.findReplaceState,
+                    searchTerm: term,
+                    ...(term.trim()
+                        ? {}
+                        : {
+                            matches: [],
+                            currentMatchIndex: -1,
+                            regexError: null,
+                        })
+                }
             })),
             setReplaceTerm: (term) => set(state => ({
                 findReplaceState: { ...state.findReplaceState, replaceTerm: term }
