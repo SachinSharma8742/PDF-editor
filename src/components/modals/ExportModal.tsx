@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Image as ImageIcon, Layers, Download, Lock } from 'lucide-react';
+import { X, Image as ImageIcon, Layers, Download, Lock, Sparkles } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { useEditorStore } from '../../store/editorStore';
 import { usePDFStore } from '../../store/pdfStore';
@@ -20,8 +20,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
     // Future: Password state
     // const [password, setPassword] = useState('');
 
-    const { pages, pdfDocument, originalPdfBytes } = usePDFStore();
+    const { pages, pdfDocument, originalPdfBytes, selectedPageIds } = usePDFStore();
     const { currentPage } = useEditorStore();
+
+    const selectedPageIndices = selectedPageIds.length > 0
+        ? pages
+            .map((page, index) => ({ page, index }))
+            .filter(({ page }) => selectedPageIds.includes(page.id))
+            .map(({ index }) => index)
+        : pages.map((_, index) => index);
 
     if (!isOpen) return null;
 
@@ -140,8 +147,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                         variant="outline"
                         onClick={() => setIsCompressionOpen(true)}
                         disabled={isExporting}
+                        className="border-violet-400/40 text-violet-200 hover:bg-violet-500/10"
                     >
-                        Compress with PDF.co
+                        <Sparkles size={14} />
+                        Advanced Compression
                     </Button>
                     <Button variant="ghost" onClick={onClose} disabled={isExporting}>
                         Cancel
@@ -160,7 +169,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
             <CompressionOverlay
                 isOpen={isCompressionOpen}
                 onClose={() => setIsCompressionOpen(false)}
-                selectedPageIndices={pages.map((_, index) => index)}
+                selectedPageIndices={selectedPageIndices}
             />
         </div>
     );

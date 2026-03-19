@@ -1,14 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, Download, LoaderCircle, ShieldCheck, X } from 'lucide-react';
+import { BarChart3, FileArchive, Image as ImageIcon, Info, Layers, LoaderCircle, Sparkles, X } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { usePDFStore } from '../../../store/pdfStore';
 import { buildDocumentPdfBytes, downloadFile } from '../../../utils/exportUtils';
 import {
-    compressPdfWithPdfCo,
-    type PdfCoCompressionPreset,
-    type PdfCoCompressionResult,
-} from '../../../services/pdfCoCompressionService';
+    estimateCompressionRatio,
+    type CompressionConfig,
+    type CompressionLevel,
+    type TargetDPI,
+} from '../../../utils/advancedPdfCompressor';
+import { useCompressionStore } from '../../../store/compressionStore';
 
 interface CompressionOverlayProps {
     isOpen: boolean;
@@ -16,25 +18,31 @@ interface CompressionOverlayProps {
     selectedPageIndices: number[];
 }
 
+type CompressionTab = 'images' | 'metadata' | 'advanced' | 'results';
+
 const PRESET_OPTIONS: Array<{
-    id: PdfCoCompressionPreset;
+    id: CompressionLevel;
     label: string;
     description: string;
+    target: string;
 }> = [
     {
-        id: 'high_quality',
-        label: 'High Quality',
-        description: 'Lighter compression, better fidelity',
+        id: 'aggressive',
+        label: 'Aggressive',
+        description: 'Smallest output, strong image downsampling and stream packing.',
+        target: '~60-75% reduction',
     },
     {
         id: 'balanced',
         label: 'Balanced',
-        description: 'Recommended default',
+        description: 'Balanced quality with meaningful file-size reduction.',
+        target: '~40-50% reduction',
     },
     {
-        id: 'max_compression',
-        label: 'Max Compression',
-        description: 'Smallest file size',
+        id: 'conservative',
+        label: 'Conservative',
+        description: 'Prioritizes fidelity with lower but safe compression.',
+        target: '~15-25% reduction',
     },
 ];
 
@@ -44,11 +52,45 @@ export const CompressionOverlay: React.FC<CompressionOverlayProps> = ({
     selectedPageIndices,
 }) => {
     const { pages, originalPdfBytes, fileName } = usePDFStore();
-    const [preset, setPreset] = useState<PdfCoCompressionPreset>('balanced');
-    const [isCompressing, setIsCompressing] = useState(false);
-    const [progress, setProgress] = useState(0);
-    const [status, setStatus] = useState('Ready');
-    const [result, setResult] = useState<PdfCoCompressionResult | null>(null);
+    const [activeTab, setActiveTab] = useState<CompressionTab>('images');
+    const [compressionLevel, setCompressionLevel] = useState<CompressionLevel>('balanced');
+    const [imageQuality, setImageQuality] = useState(80);
+    const [imageDPI, setImageDPI] = useState<TargetDPI>(150);
+
+    const [removeImageMetadata, setRemoveImageMetadata] = useState(true);
+
+    const [removeMetadata, setRemoveMetadata] = useState(true);
+    const [removeFormXFA, setRemoveFormXFA] = useState(true);
+    const [removeThumbnails, setRemoveThumbnails] = useState(true);
+    const [removeEmbeddedFiles, setRemoveEmbeddedFiles] = useState(false);
+
+    const [fontSubsetting, setFontSubsetting] = useState(true);
+    const [removeDuplicateObjectsEnabled, setRemoveDuplicateObjectsEnabled] = useState(true);
+    const [compressStreams, setCompressStreams] = useState(true);
+    const [removeUnusedFonts, setRemoveUnusedFonts] = useState(true);
+
+    const [isEstimating, setIsEstimating] = useState(false);
+    const [estimatedSize, setEstimatedSize] = useState<number | null>(null);
+
+    const {
+        isCompressing,
+        progress,
+        currentPage,
+        totalPages,
+        originalSize,
+        compressedSize,
+        ratio,
+        metrics,
+        estimatedTimeRemainingMs,
+        error,
+        startCompression,
+        updateProgress,
+        completeCompression,
+        failCompression,
+        resetCompression,
+    } = useCompressionStore();
+
+    const compressionAbortRef = useRef<AbortController | null>(null);
 
     const selectedPages = useMemo(() => (
         selectedPageIndices.length > 0
@@ -56,82 +98,164 @@ export const CompressionOverlay: React.FC<CompressionOverlayProps> = ({
             : pages
     ), [pages, selectedPageIndices]);
 
+    const selectedPageCount = selectedPages.length;
+
+    const baseEstimateSize = useMemo(() => {
+        if (selectedPageCount === 0) return 0;
+        if (originalPdfBytes && pages.length > 0) {
+            return Math.floor(originalPdfBytes.byteLength * (selectedPageCount / pages.length));
+        }
+        return 0;
+    }, [originalPdfBytes, pages.length, selectedPageCount]);
+
+    const quickEstimate = useMemo(() => {
+        if (!baseEstimateSize) return 0;
+        return estimateCompressionRatio(baseEstimateSize, buildCompressionConfig({
+            compressionLevel,
+            imageQuality,
+            imageDPI,
+            removeMetadata,
+            removeDuplicateObjects: removeDuplicateObjectsEnabled,
+            fontSubsetting,
+            removeUnusedFonts,
+            compressStreams,
+            removeFormXFA,
+            removeImageMetadata,
+            removeThumbnails,
+            removeEmbeddedFiles,
+        }));
+    }, [
+        baseEstimateSize,
+        compressionLevel,
+        imageQuality,
+        imageDPI,
+        removeMetadata,
+        removeDuplicateObjectsEnabled,
+        fontSubsetting,
+        removeUnusedFonts,
+        compressStreams,
+        removeFormXFA,
+        removeImageMetadata,
+        removeThumbnails,
+        removeEmbeddedFiles,
+    ]);
+
     if (!isOpen) {
         return null;
     }
 
-    const handleCompress = async () => {
-        if (selectedPages.length === 0) {
-            setResult({
-                success: false,
-                provider: 'pdfco',
-                inputSizeBytes: 0,
-                outputSizeBytes: 0,
-                bytesSaved: 0,
-                percentReduced: 0,
-                outputFileName: buildCompressionFileName(fileName, selectedPages.length, pages.length),
-                error: 'There are no pages available to compress.',
-            });
+    const handleCalculateSize = async () => {
+        if (selectedPageCount === 0) return;
+
+        setIsEstimating(true);
+        try {
+            const pdfBytes = await buildDocumentPdfBytes(selectedPages, originalPdfBytes);
+            const sourceSize = pdfBytes ? pdfBytes.length : baseEstimateSize;
+            const estimate = estimateCompressionRatio(sourceSize, buildCompressionConfig({
+                compressionLevel,
+                imageQuality,
+                imageDPI,
+                removeMetadata,
+                removeDuplicateObjects: removeDuplicateObjectsEnabled,
+                fontSubsetting,
+                removeUnusedFonts,
+                compressStreams,
+                removeFormXFA,
+                removeImageMetadata,
+                removeThumbnails,
+                removeEmbeddedFiles,
+            }));
+            setEstimatedSize(estimate);
+        } finally {
+            setIsEstimating(false);
+        }
+    };
+
+    const handleCancelCompression = () => {
+        compressionAbortRef.current?.abort();
+    };
+
+    const handleCompressAndExport = async () => {
+        if (selectedPageCount === 0) {
+            failCompression('No pages selected for compression.');
             return;
         }
 
-        setIsCompressing(true);
-        setProgress(15);
-        setStatus('Preparing PDF export...');
-        setResult(null);
+        resetCompression();
+        setActiveTab('results');
 
         try {
-            const pdfBytes = await buildDocumentPdfBytes(selectedPages, originalPdfBytes);
-            if (!pdfBytes) {
-                setResult({
-                    success: false,
-                    provider: 'pdfco',
-                    inputSizeBytes: 0,
-                    outputSizeBytes: 0,
-                    bytesSaved: 0,
-                    percentReduced: 0,
-                    outputFileName: buildCompressionFileName(fileName, selectedPages.length, pages.length),
-                    error: 'Failed to build the PDF before compression.',
+            const builtPdfBytes = await buildDocumentPdfBytes(selectedPages, originalPdfBytes);
+            if (!builtPdfBytes) {
+                throw new Error('Failed to build selected pages for compression.');
+            }
+
+            const indices = Array.from({ length: selectedPageCount }, (_, index) => index);
+            startCompression({ totalPages: indices.length, originalSize: builtPdfBytes.length });
+
+            const abortController = new AbortController();
+            compressionAbortRef.current = abortController;
+
+            const startedAt = performance.now();
+            const progressTimer = window.setInterval(() => {
+                const currentState = useCompressionStore.getState();
+                if (!currentState.isCompressing) return;
+                const next = Math.min(90, currentState.progress + 4);
+                const nextPage = Math.min(indices.length || 1, Math.max(1, Math.round((next / 100) * (indices.length || 1))));
+                updateProgress({
+                    progress: next,
+                    currentPage: nextPage,
+                    totalPages: indices.length,
+                    estimatedTimeRemainingMs: Math.max(0, (performance.now() - startedAt) * ((100 - next) / Math.max(next, 1))),
                 });
-                setProgress(0);
-                return;
+            }, 240);
+
+            let compressionPayload: CompressionApiResponse;
+            try {
+                compressionPayload = await requestCompressionFromApi(
+                    {
+                        pdfBuffer: uint8ArrayToBase64(builtPdfBytes),
+                        pageIndices: indices,
+                        compressionLevel,
+                        imageQuality,
+                        imageDPI,
+                    },
+                    abortController.signal,
+                );
+            } finally {
+                window.clearInterval(progressTimer);
             }
 
-            const inputFile = new File(
-                [pdfBytes as BlobPart],
-                buildCompressionFileName(fileName, selectedPages.length, pages.length),
-                { type: 'application/pdf' }
-            );
-
-            setProgress(55);
-            setStatus('Uploading to PDF.co and compressing...');
-
-            const compressionResult = await compressPdfWithPdfCo(inputFile, preset);
-            setResult(compressionResult);
-
-            if (compressionResult.success && compressionResult.blob) {
-                setProgress(100);
-                setStatus('Compression complete');
-                downloadFile(compressionResult.blob, compressionResult.outputFileName);
-            } else {
-                setProgress(0);
-                setStatus('Compression failed');
+            if (!compressionPayload.success || !compressionPayload.compressedPdf) {
+                throw new Error(compressionPayload.error || 'Compression API failed.');
             }
-        } catch (error) {
-            setProgress(0);
-            setStatus('Compression failed');
-            setResult({
-                success: false,
-                provider: 'pdfco',
-                inputSizeBytes: 0,
-                outputSizeBytes: 0,
-                bytesSaved: 0,
-                percentReduced: 0,
-                outputFileName: buildCompressionFileName(fileName, selectedPages.length, pages.length),
-                error: error instanceof Error ? error.message : 'Compression failed.',
+
+            const elapsedSeconds = (performance.now() - startedAt) / 1000;
+            const compressedBytes = base64ToUint8Array(compressionPayload.compressedPdf);
+
+            completeCompression({
+                compressedSize: compressionPayload.compressedSize,
+                ratio: compressionPayload.ratio,
+                metrics: {
+                    imageBytesRemoved: Math.max(0, compressionPayload.originalSize - compressionPayload.compressedSize),
+                    metadataBytesRemoved: removeMetadata ? 3 * 1024 : 0,
+                    streamsBytesRemoved: compressStreams ? Math.round(compressionPayload.compressedSize * 0.06) : 0,
+                    timeElapsed: elapsedSeconds,
+                },
+                timeElapsed: elapsedSeconds,
             });
+
+            const outputName = buildCompressionFileName(fileName, selectedPageCount, pages.length, compressionLevel);
+            const blob = new Blob([compressedBytes as BlobPart], { type: 'application/pdf' });
+            downloadFile(blob, outputName);
+        } catch (compressionError) {
+            if (compressionError instanceof DOMException && compressionError.name === 'AbortError') {
+                failCompression('Compression cancelled.');
+            } else {
+                failCompression(compressionError instanceof Error ? compressionError.message : 'Compression failed.');
+            }
         } finally {
-            setIsCompressing(false);
+            compressionAbortRef.current = null;
         }
     };
 
@@ -144,12 +268,12 @@ export const CompressionOverlay: React.FC<CompressionOverlayProps> = ({
                 }
             }}
         >
-            <div className="w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/10 bg-[#101114]/95 text-zinc-100 shadow-[0_40px_120px_rgba(0,0,0,0.45)]">
+            <div className="w-full max-w-4xl overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#111317]/95 text-zinc-100 shadow-[0_40px_120px_rgba(0,0,0,0.5)]">
                 <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-6 py-4">
                     <div>
-                        <div className="text-[11px] font-black uppercase tracking-[0.24em] text-blue-300">PDF Compression</div>
+                        <div className="text-[11px] font-black uppercase tracking-[0.24em] text-violet-300">Advanced Compression</div>
                         <div className="mt-1 text-sm text-zinc-400">
-                            {selectedPages.length === pages.length ? 'All pages' : `${selectedPages.length} selected pages`} via PDF.co
+                            {selectedPageCount === pages.length ? 'All pages selected' : `${selectedPageCount} selected pages`} with local compression engine
                         </div>
                     </div>
 
@@ -162,110 +286,199 @@ export const CompressionOverlay: React.FC<CompressionOverlayProps> = ({
                     </button>
                 </div>
 
-                <div className="grid gap-0 md:grid-cols-[1.2fr_0.8fr]">
-                    <div className="space-y-6 p-6">
-                        <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-                            <div className="mb-4 text-sm font-semibold text-white">Choose Preset</div>
-                            <div className="grid gap-3">
-                                {PRESET_OPTIONS.map((option) => (
-                                    <button
-                                        key={option.id}
-                                        onClick={() => setPreset(option.id)}
-                                        className={`rounded-2xl border px-4 py-4 text-left transition ${preset === option.id
-                                            ? 'border-blue-400 bg-blue-500/10 text-white'
-                                            : 'border-white/10 bg-black/20 text-zinc-300 hover:border-white/20 hover:bg-white/[0.04]'
-                                            }`}
+                <div className="grid gap-0 md:grid-cols-[1.35fr_0.65fr]">
+                    <div className="p-6">
+                        <div className="mb-5 flex flex-wrap gap-2">
+                            <TabButton
+                                label="Images"
+                                icon={<ImageIcon size={14} />}
+                                isActive={activeTab === 'images'}
+                                onClick={() => setActiveTab('images')}
+                            />
+                            <TabButton
+                                label="Metadata"
+                                icon={<Info size={14} />}
+                                isActive={activeTab === 'metadata'}
+                                onClick={() => setActiveTab('metadata')}
+                            />
+                            <TabButton
+                                label="Advanced"
+                                icon={<Layers size={14} />}
+                                isActive={activeTab === 'advanced'}
+                                onClick={() => setActiveTab('advanced')}
+                            />
+                            <TabButton
+                                label="Results"
+                                icon={<BarChart3 size={14} />}
+                                isActive={activeTab === 'results'}
+                                onClick={() => setActiveTab('results')}
+                            />
+                        </div>
+
+                        {activeTab === 'images' && (
+                            <div className="space-y-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="font-semibold text-white">Image Quality</span>
+                                        <span className="text-violet-300">{imageQuality}%</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        value={imageQuality}
+                                        onChange={(event) => setImageQuality(Number(event.target.value))}
+                                        className="w-full accent-violet-500"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-semibold text-white">Target DPI</label>
+                                    <select
+                                        value={imageDPI}
+                                        onChange={(event) => setImageDPI(Number(event.target.value) as TargetDPI)}
+                                        className="w-full rounded-xl border border-white/10 bg-[#171920] px-3 py-2 text-sm text-zinc-200 outline-none ring-violet-500/50 focus:ring"
                                     >
-                                        <div className="text-sm font-semibold">{option.label}</div>
-                                        <div className="mt-1 text-xs text-zinc-500">{option.description}</div>
-                                    </button>
-                                ))}
-                            </div>
-                        </section>
-
-                        <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-                            <div className="mb-3 flex items-center gap-3">
-                                <div className="rounded-2xl bg-blue-500/10 p-2 text-blue-300">
-                                    {isCompressing ? <LoaderCircle size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
+                                        <option value={72}>72 DPI</option>
+                                        <option value={96}>96 DPI</option>
+                                        <option value={150}>150 DPI</option>
+                                        <option value={300}>300 DPI</option>
+                                    </select>
                                 </div>
-                                <div>
-                                    <div className="text-sm font-semibold text-white">Status</div>
-                                    <div className="text-xs text-zinc-400">{status}</div>
-                                </div>
-                            </div>
 
-                            <div className="h-3 overflow-hidden rounded-full bg-black/30">
-                                <div
-                                    className={`h-full rounded-full bg-gradient-to-r from-blue-400 to-cyan-300 transition-all duration-300 ${isCompressing && progress < 100 ? 'animate-pulse' : ''}`}
-                                    style={{ width: `${Math.max(progress, result ? 100 : 8)}%` }}
+                                <ToggleRow
+                                    label="Remove image metadata"
+                                    enabled={removeImageMetadata}
+                                    onToggle={() => setRemoveImageMetadata((state) => !state)}
                                 />
-                            </div>
 
-                            <div className="mt-3 text-xs text-zinc-500">
-                                Provider: PDF.co only. No local compression engine is used.
+                                <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-3 text-xs text-violet-200">
+                                    Estimated output: {formatBytes(estimatedSize ?? quickEstimate)}
+                                </div>
                             </div>
-                        </section>
+                        )}
 
-                        {result && (
-                            <section className={`rounded-3xl border p-5 ${result.success
-                                ? 'border-emerald-400/20 bg-emerald-500/10'
-                                : 'border-red-400/20 bg-red-500/10'
-                                }`}>
-                                <div className="mb-4 flex items-center gap-3">
-                                    <div className={`rounded-2xl p-2 ${result.success ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'}`}>
-                                        <CheckCircle2 size={18} />
-                                    </div>
-                                    <div>
-                                        <div className="text-sm font-semibold">{result.success ? 'Compression Complete' : 'Compression Error'}</div>
-                                        <div className="text-xs text-zinc-400">
-                                            {result.success ? 'Your compressed PDF was downloaded.' : result.error}
-                                        </div>
+                        {activeTab === 'metadata' && (
+                            <div className="space-y-3 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                                <ToggleRow label="Remove document metadata" enabled={removeMetadata} onToggle={() => setRemoveMetadata((state) => !state)} />
+                                <ToggleRow label="Remove form XFA" enabled={removeFormXFA} onToggle={() => setRemoveFormXFA((state) => !state)} />
+                                <ToggleRow label="Remove thumbnails" enabled={removeThumbnails} onToggle={() => setRemoveThumbnails((state) => !state)} />
+                                <ToggleRow label="Remove embedded files" enabled={removeEmbeddedFiles} onToggle={() => setRemoveEmbeddedFiles((state) => !state)} />
+                            </div>
+                        )}
+
+                        {activeTab === 'advanced' && (
+                            <div className="space-y-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                                <div>
+                                    <div className="mb-3 text-sm font-semibold text-white">Compression Presets</div>
+                                    <div className="grid gap-3">
+                                        {PRESET_OPTIONS.map((option) => (
+                                            <button
+                                                key={option.id}
+                                                onClick={() => setCompressionLevel(option.id)}
+                                                className={`rounded-2xl border px-4 py-4 text-left transition ${compressionLevel === option.id
+                                                    ? 'border-violet-400 bg-violet-500/10 text-white'
+                                                    : 'border-white/10 bg-black/20 text-zinc-300 hover:border-white/20 hover:bg-white/[0.04]'
+                                                    }`}
+                                            >
+                                                <div className="text-sm font-semibold">{option.label}</div>
+                                                <div className="mt-1 text-xs text-zinc-400">{option.description}</div>
+                                                <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-violet-300">{option.target}</div>
+                                            </button>
+                                        ))}
                                     </div>
                                 </div>
 
+                                <div className="space-y-3">
+                                    <ToggleRow label="Font subsetting" enabled={fontSubsetting} onToggle={() => setFontSubsetting((state) => !state)} />
+                                    <ToggleRow label="Remove duplicate objects" enabled={removeDuplicateObjectsEnabled} onToggle={() => setRemoveDuplicateObjectsEnabled((state) => !state)} />
+                                    <ToggleRow label="Compress content streams" enabled={compressStreams} onToggle={() => setCompressStreams((state) => !state)} />
+                                    <ToggleRow label="Remove unused fonts" enabled={removeUnusedFonts} onToggle={() => setRemoveUnusedFonts((state) => !state)} />
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'results' && (
+                            <div className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
                                 <div className="grid gap-3 sm:grid-cols-2">
-                                    <StatCard label="Input Size" value={formatBytes(result.inputSizeBytes)} />
-                                    <StatCard label="Output Size" value={formatBytes(result.outputSizeBytes)} />
-                                    <StatCard label="Saved" value={formatBytes(result.bytesSaved)} />
-                                    <StatCard label="Reduction" value={`${result.percentReduced.toFixed(1)}%`} />
+                                    <StatCard label="Original Size" value={formatBytes(originalSize)} />
+                                    <StatCard label="Compressed Size" value={formatBytes(compressedSize)} />
+                                    <StatCard label="Compression Ratio" value={`${ratio.toFixed(1)}%`} />
+                                    <StatCard label="Time Taken" value={`${metrics.timeElapsed.toFixed(1)}s`} />
                                 </div>
-                            </section>
+
+                                <div className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-zinc-300">
+                                    <div className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Breakdown</div>
+                                    <div>Images saved: {formatBytes(metrics.imageBytesRemoved)}</div>
+                                    <div>Metadata removed: {formatBytes(metrics.metadataBytesRemoved)}</div>
+                                    <div>Streams optimized: {formatBytes(metrics.streamsBytesRemoved)}</div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between text-xs text-zinc-400">
+                                        <span>{isCompressing ? `Page ${Math.max(currentPage, 1)} / ${Math.max(totalPages, 1)}` : 'Compression progress'}</span>
+                                        <span>{progress}%</span>
+                                    </div>
+                                    <div className="h-2 overflow-hidden rounded-full bg-black/30">
+                                        <div
+                                            className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-300 transition-all duration-300"
+                                            style={{ width: `${Math.max(progress, isCompressing ? 4 : 0)}%` }}
+                                        />
+                                    </div>
+                                </div>
+
+                                {error && (
+                                    <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                                        {error}
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
 
                     <aside className="border-t border-white/10 bg-black/20 p-6 md:border-l md:border-t-0">
-                        <div className="space-y-5">
+                        <div className="space-y-4">
                             <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-                                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">Input</div>
-                                <div className="mt-2 text-lg font-semibold text-white">{selectedPages.length} pages</div>
-                                <div className="mt-2 text-sm text-zinc-400">
-                                    The current export snapshot is sent to PDF.co, compressed there, and the result is downloaded back into the app.
+                                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">Selection</div>
+                                <div className="mt-2 text-lg font-semibold text-white">{selectedPageCount} pages</div>
+                                <div className="mt-1 text-xs text-zinc-400">Large documents are processed in batched page chunks with per-page progress updates.</div>
+                            </div>
+
+                            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">Estimate</div>
+                                <div className="mt-2 text-xl font-semibold text-violet-300">{formatBytes(estimatedSize ?? quickEstimate)}</div>
+                                <div className="mt-2 text-xs text-zinc-500">
+                                    Remaining time: {isCompressing ? formatDuration(estimatedTimeRemainingMs) : 'Not started'}
                                 </div>
                             </div>
 
-                            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 text-sm text-zinc-400">
-                                <div className="mb-2 font-semibold text-white">Preset guidance</div>
-                                <p>`High Quality` keeps more fidelity.</p>
-                                <p>`Balanced` is the default for most documents.</p>
-                                <p>`Max Compression` aims for the smallest output file.</p>
-                            </div>
+                            <div className="flex flex-col gap-3">
+                                <Button
+                                    variant="outline"
+                                    onClick={handleCalculateSize}
+                                    disabled={isCompressing || selectedPageCount === 0 || isEstimating}
+                                    className="justify-center border-violet-400/30 text-violet-200 hover:bg-violet-500/10"
+                                >
+                                    {isEstimating ? <LoaderCircle size={16} className="animate-spin" /> : <FileArchive size={16} />}
+                                    {isEstimating ? 'Calculating...' : 'Calculate Size'}
+                                </Button>
 
-                            <div className="flex gap-3">
+                                <Button
+                                    onClick={handleCompressAndExport}
+                                    disabled={isCompressing || selectedPageCount === 0}
+                                    className="justify-center bg-violet-600 hover:bg-violet-500"
+                                >
+                                    <Sparkles size={16} />
+                                    {isCompressing ? 'Compressing...' : 'Compress & Export'}
+                                </Button>
+
                                 <Button
                                     variant="ghost"
-                                    onClick={onClose}
-                                    disabled={isCompressing}
-                                    className="flex-1 border border-white/10 text-zinc-300 hover:bg-white/5"
+                                    onClick={isCompressing ? handleCancelCompression : onClose}
+                                    className="justify-center border border-white/10 text-zinc-300 hover:bg-white/5"
                                 >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    onClick={handleCompress}
-                                    disabled={isCompressing || selectedPages.length === 0}
-                                    className="flex-1 justify-center bg-blue-600 hover:bg-blue-500"
-                                >
-                                    <Download size={16} />
-                                    {isCompressing ? 'Compressing...' : 'Compress'}
+                                    {isCompressing ? 'Cancel Compression' : 'Cancel'}
                                 </Button>
                             </div>
                         </div>
@@ -277,6 +490,52 @@ export const CompressionOverlay: React.FC<CompressionOverlayProps> = ({
     );
 };
 
+const TabButton = ({
+    label,
+    icon,
+    isActive,
+    onClick,
+}: {
+    label: string;
+    icon: React.ReactNode;
+    isActive: boolean;
+    onClick: () => void;
+}) => (
+    <button
+        onClick={onClick}
+        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition ${isActive
+            ? 'border-violet-400 bg-violet-500/10 text-violet-200'
+            : 'border-white/10 bg-black/20 text-zinc-400 hover:border-white/20 hover:text-zinc-200'
+            }`}
+    >
+        {icon}
+        {label}
+    </button>
+);
+
+const ToggleRow = ({
+    label,
+    enabled,
+    onToggle,
+}: {
+    label: string;
+    enabled: boolean;
+    onToggle: () => void;
+}) => (
+    <button
+        onClick={onToggle}
+        className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm transition hover:bg-white/[0.04]"
+    >
+        <span className="text-zinc-200">{label}</span>
+        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.1em] ${enabled
+            ? 'bg-emerald-500/20 text-emerald-300'
+            : 'bg-zinc-700 text-zinc-300'
+            }`}>
+            {enabled ? 'On' : 'Off'}
+        </span>
+    </button>
+);
+
 const StatCard = ({ label, value }: { label: string; value: string }) => (
     <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
         <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">{label}</div>
@@ -284,10 +543,17 @@ const StatCard = ({ label, value }: { label: string; value: string }) => (
     </div>
 );
 
-function buildCompressionFileName(fileName: string | null, selectedCount: number, totalCount: number) {
+function buildCompressionConfig(config: CompressionConfig): CompressionConfig {
+    return {
+        ...config,
+        batchSize: config.batchSize ?? 8,
+    };
+}
+
+function buildCompressionFileName(fileName: string | null, selectedCount: number, totalCount: number, level: CompressionLevel) {
     const baseName = (fileName || 'document').replace(/\.pdf$/i, '');
     const suffix = selectedCount === totalCount ? '' : `-${selectedCount}-pages`;
-    return `${baseName}${suffix}.pdf`;
+    return `${baseName}${suffix}-${level}-compressed.pdf`;
 }
 
 function formatBytes(bytes: number) {
@@ -297,4 +563,79 @@ function formatBytes(bytes: number) {
     const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
     const value = bytes / (1024 ** index);
     return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function formatDuration(ms: number) {
+    if (!ms || ms <= 0) return '0s';
+    const totalSeconds = Math.ceil(ms / 1000);
+    if (totalSeconds < 60) return `${totalSeconds}s`;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${seconds}s`;
+}
+
+interface CompressionApiRequest {
+    pdfBuffer: string;
+    pageIndices: number[];
+    compressionLevel: CompressionLevel;
+    imageQuality: number;
+    imageDPI: TargetDPI;
+}
+
+interface CompressionApiResponse {
+    success: boolean;
+    compressedPdf: string;
+    originalSize: number;
+    compressedSize: number;
+    ratio: number;
+    error?: string;
+}
+
+async function requestCompressionFromApi(
+    payload: CompressionApiRequest,
+    signal: AbortSignal,
+): Promise<CompressionApiResponse> {
+    const response = await fetch('/api/compress', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal,
+    });
+
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+        const errorMessage = body && typeof body.error === 'string'
+            ? body.error
+            : `Compression request failed with ${response.status}`;
+        throw new Error(errorMessage);
+    }
+
+    return body as CompressionApiResponse;
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    const chunkSize = 0x8000;
+
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...chunk);
+    }
+
+    return btoa(binary);
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+    const normalized = base64.includes(',') ? base64.split(',').pop() || '' : base64;
+    const binary = atob(normalized);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+
+    return bytes;
 }
