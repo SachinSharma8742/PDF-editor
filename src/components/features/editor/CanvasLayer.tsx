@@ -134,8 +134,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({ pageId, width, height,
                     fill={edit.color || 'black'}
                     fontStyle={`${edit.fontStyle || 'normal'} ${edit.fontWeight || 'normal'}`}
                     textDecoration={edit.textDecoration || ''}
-                    width={Math.max(edit.width, 10)} // Ensure some width for wrapping if needed
-                    listening={false}
+                    wrap="none" listening={false}
                 />
             </Group>
         ));
