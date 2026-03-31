@@ -14,7 +14,7 @@ const developers = [
         initials: 'JS',
         gradient: 'from-blue-500 to-cyan-400',
         links: [
-            { icon: Globe, label: 'Portfolio', href: 'https://jayesh-portfolio-ruddy.vercel.app/' },
+            { icon: Globe, label: 'Portfolio', href: 'https://jayesh-portfolio-neon.vercel.app/' },
             { icon: Github, label: 'GitHub' },
             { icon: Linkedin, label: 'LinkedIn' },
         ],
