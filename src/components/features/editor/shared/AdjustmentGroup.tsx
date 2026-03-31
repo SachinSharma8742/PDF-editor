@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { Group } from 'react-konva';
 import Konva from 'konva';
 import type { PDFObject } from '../../../../store/pdfStore';
@@ -10,6 +10,7 @@ interface AdjustmentGroupProps {
     isSelected: boolean;
     onSelect?: (e: Konva.KonvaEventObject<MouseEvent>) => void;
     children: React.ReactNode;
+    contentVersion?: string;
 }
 
 /**
@@ -23,31 +24,49 @@ const createAdjustmentFilter = (effectParams: Record<string, any>) => {
     };
 };
 
-export const AdjustmentGroup: React.FC<AdjustmentGroupProps> = ({ object, isSelected, onSelect, children }) => {
-    const groupRef = useRef<Konva.Group>(null);
+/** Stable serialization of effect params for dependency comparison */
+const serializeParams = (params: Record<string, any> | undefined): string => {
+    if (!params) return '';
+    try { return JSON.stringify(params); } catch { return ''; }
+};
 
+export const AdjustmentGroup: React.FC<AdjustmentGroupProps> = ({ object, isSelected, onSelect, children, contentVersion }) => {
+    const groupRef = useRef<Konva.Group>(null);
+    const cacheTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const prevParamsRef = useRef<string>('');
+
+    // Stable cache key based on effect parameters only
+    const paramKey = serializeParams(object.effectParams);
+
+    const doCache = useCallback(() => {
+        if (!groupRef.current) return;
+        try {
+            groupRef.current.cache({
+                x: 0,
+                y: 0,
+                width: object.width || 800,
+                height: object.height || 1100,
+                pixelRatio: 1
+            });
+            groupRef.current.getLayer()?.batchDraw();
+        } catch (e) {
+            // Silently fail — cache errors are non-critical
+        }
+    }, [object.width, object.height]);
+
+    // Re-cache only when effect parameters, visibility, opacity, or the underlying objects actually change
     useEffect(() => {
         if (groupRef.current) {
             groupRef.current.clearCache();
-            const timer = setTimeout(() => {
-                if (groupRef.current) {
-                    try {
-                        groupRef.current.cache({
-                            x: 0,
-                            y: 0,
-                            width: object.width || 800,
-                            height: object.height || 1100,
-                            pixelRatio: 1
-                        });
-                        groupRef.current.getLayer()?.batchDraw();
-                    } catch (e) {
-                        console.warn("AdjustmentGroup: Cache failed", e);
-                    }
-                }
-            }, 100);
-            return () => clearTimeout(timer);
+            // Debounce the cache to avoid rapid successive calls
+            if (cacheTimerRef.current) clearTimeout(cacheTimerRef.current);
+            cacheTimerRef.current = setTimeout(doCache, 150);
+            prevParamsRef.current = paramKey;
         }
-    }, [object.effectParams, object.opacity, object.visible, object.width, object.height, children]);
+        return () => {
+            if (cacheTimerRef.current) clearTimeout(cacheTimerRef.current);
+        };
+    }, [paramKey, object.opacity, object.visible, doCache, contentVersion]);
 
     // Build the custom filter based on current params
     const filters: any[] = [];
@@ -75,3 +94,4 @@ export const AdjustmentGroup: React.FC<AdjustmentGroupProps> = ({ object, isSele
         </>
     );
 };
+

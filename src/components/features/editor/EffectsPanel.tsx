@@ -64,11 +64,6 @@ export const EffectsPanel: React.FC = () => {
     const handleAddEffect = (preset: typeof EFFECT_PRESETS[number]) => {
         if (!currentPage) return;
 
-        // Remove existing effects first (Single Effect Mode)
-        if (activeEffects.length > 0) {
-            deleteObjects(activeEffects.map(obj => obj.id));
-        }
-
         const newEffect: PDFObject = {
             id: `effect-${Date.now()}`,
             type: 'effect',
@@ -88,11 +83,6 @@ export const EffectsPanel: React.FC = () => {
 
     const handleAddCustomEffect = () => {
         if (!currentPage) return;
-
-        // Remove existing effects first (Single Effect Mode)
-        if (activeEffects.length > 0) {
-            deleteObjects(activeEffects.map(obj => obj.id));
-        }
 
         const newEffect: PDFObject = {
             id: `effect-${Date.now()}`,

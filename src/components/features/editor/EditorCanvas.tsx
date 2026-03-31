@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Stage, Layer, Line, Transformer, Rect, Group, Text, Image as KonvaImage } from 'react-konva';
 import Konva from 'konva';
 import { useEditorStore } from '../../../store/editorStore';
+import { useShallow } from 'zustand/react/shallow';
 
 import { usePDFStore, type PDFObject } from '../../../store/pdfStore'; // Need this for the PDF Document source
 import { PDFObjectRenderer } from './PDFObjectRenderer';
@@ -17,7 +18,7 @@ import { detectShape } from '../../../utils/shapeDetection';
 
 
 export const EditorCanvas: React.FC = () => {
-    // Editor State
+    // Editor State — use shallow selectors to avoid full re-renders on unrelated store changes
     const {
         currentPage,
         scale,
@@ -43,10 +44,36 @@ export const EditorCanvas: React.FC = () => {
         isCropping,
         setCropping,
         isBezierDrawing,
-    } = useEditorStore();
+    } = useEditorStore(useShallow(s => ({
+        currentPage: s.currentPage,
+        scale: s.scale,
+        activeTool: s.activeTool,
+        toolPreferences: s.toolPreferences,
+        selectedObjectIds: s.selectedObjectIds,
+        selectObject: s.selectObject,
+        selectObjects: s.selectObjects,
+        updateObject: s.updateObject,
+        deleteObjects: s.deleteObjects,
+        addPath: s.addPath,
+        addObject: s.addObject,
+        setActiveTool: s.setActiveTool,
+        snapToGrid: s.snapToGrid,
+        gridSize: s.gridSize,
+        editingObjectId: s.editingObjectId,
+        setEditingObjectId: s.setEditingObjectId,
+        stagePosition: s.stagePosition,
+        setStagePosition: s.setStagePosition,
+        openTextStudio: s.openTextStudio,
+        previewStyle: s.previewStyle,
+        setScale: s.setScale,
+        isCropping: s.isCropping,
+        setCropping: s.setCropping,
+        isBezierDrawing: s.isBezierDrawing,
+    })));
 
     // PDF Global State (Source)
-    const { pdfDocument, eraserMode } = usePDFStore();
+    const pdfDocument = usePDFStore(s => s.pdfDocument);
+    const eraserMode = usePDFStore(s => s.eraserMode);
 
     // Auto-Fit PDF on Page Load
     useEffect(() => {
@@ -106,8 +133,31 @@ export const EditorCanvas: React.FC = () => {
 
     // Local State
     const [rendering, setRendering] = useState(false);
-    const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
     const [bgImage, setBgImage] = useState<HTMLCanvasElement | null>(null);
+
+    // --- Computed Dimensions (Synchronous Zoom) ---
+    const dimensions = React.useMemo(() => {
+        if (!currentPage) return null;
+        
+        // Base dimensions (scale = 1)
+        let baseWidth = currentPage.width || 800;
+        let baseHeight = currentPage.height || 1100;
+        
+        // Handle PDF-specific user rotations (intrinsic already parsed into dimensions width/height)
+        if (currentPage.source === 'pdf') {
+            const rotation = Math.abs(currentPage.rotation || 0) % 360;
+            const isSwapped = (rotation === 90 || rotation === 270);
+            if (isSwapped) {
+                baseWidth = currentPage.height || 1100;
+                baseHeight = currentPage.width || 800;
+            }
+        }
+        
+        return {
+            width: Math.floor(baseWidth * scale),
+            height: Math.floor(baseHeight * scale)
+        };
+    }, [currentPage?.width, currentPage?.height, currentPage?.source, currentPage?.rotation, scale]);
 
     // Drawing State (Local to component for interactions)
     const [isDrawing, setIsDrawing] = useState(false);
@@ -164,7 +214,9 @@ export const EditorCanvas: React.FC = () => {
     }, [selectedObjectIds, currentPage]);
 
 
-    // --- PDF Rendering ---
+
+
+    // --- PDF Background Rendering (Runs ONCE per page/rotation) ---
     useEffect(() => {
         if (!currentPage || currentPage.source !== 'pdf') return;
 
@@ -183,20 +235,6 @@ export const EditorCanvas: React.FC = () => {
 
                 const rotation = (currentPage.rotation || 0) + ((page as any).rotate || 0); // Combine intrinsic + user rotation
 
-                // Get base viewport at scale 1 to determine unzoomed size
-                const baseViewport = page.getViewport({ scale: 1, rotation: rotation % 360 } as any);
-                const baseWidth = baseViewport.width;
-                const baseHeight = baseViewport.height;
-
-                const cssWidth = Math.floor(baseWidth * scale);
-                const cssHeight = Math.floor(baseHeight * scale);
-
-                // Set dimensions if not set or changed (triggers re-render to mount stage correctly)
-                if (!dimensions || dimensions.width !== cssWidth || dimensions.height !== cssHeight) {
-                    setDimensions({ width: cssWidth, height: cssHeight });
-                    return;
-                }
-
                 // Use a fixed high-DPI scale for background rendering to keep it sharp
                 const RENDER_SCALE = 2;
                 const viewport = page.getViewport({ scale: RENDER_SCALE, rotation: rotation % 360 } as any);
@@ -210,13 +248,9 @@ export const EditorCanvas: React.FC = () => {
                 const bufferContext = bufferCanvas.getContext('2d');
                 if (!bufferContext) return;
 
-                const transform = outputScale !== 1
-                    ? [outputScale, 0, 0, outputScale, 0, 0]
-                    : undefined;
-
                 const renderContext = {
                     canvasContext: bufferContext,
-                    transform: transform,
+                    transform: undefined,
                     viewport: viewport,
                 };
 
@@ -250,21 +284,12 @@ export const EditorCanvas: React.FC = () => {
             renderTask?.cancel();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pdfDocument, currentPage?.originalPageIndex, scale, dimensions?.width, dimensions?.height, currentPage?.rotation]);
+    }, [pdfDocument, currentPage?.originalPageIndex, currentPage?.rotation]);
 
 
     // Remove old applySingleEffect and applyThresholdEffect and applyScanEnhanceEffect as they are now in effectUtils
 
-    // Dimensions for Non-PDF sources (e.g. Blank page)
-    useEffect(() => {
-        if (!currentPage) return;
-        if (currentPage.source !== 'pdf') {
-            setDimensions({
-                width: currentPage.width * scale,
-                height: currentPage.height * scale
-            });
-        }
-    }, [currentPage, scale]);
+
 
     // --- Transformer Sync Logic for Multi-Select ---
     useEffect(() => {
@@ -1330,33 +1355,52 @@ export const EditorCanvas: React.FC = () => {
                                 fill="rgba(59, 130, 246, 0.1)"
                             />
                         )}
-
                         {/* 3. Integrated Stack-Based Rendering */}
                         {(() => {
                             if (!currentPage || !dimensions) return null;
 
-                            const unzoomedWidth = dimensions.width / scale;
-                            const unzoomedHeight = dimensions.height / scale;
+                            // Compute pure base unscaled dimensions to guarantee perfectly stable geometry 
+                            // across varying zoom levels preventing adjustment layer rapid cache invalidation
+                            let baseWidth = currentPage.width || 800;
+                            let baseHeight = currentPage.height || 1100;
 
-                            // Start with the background
-                            let currentStack: React.ReactNode = null;
+                            // Handle rotation swapping first for the standard values
+                            const rotation = Math.abs(currentPage.rotation || 0) % 360;
+                            const isSwapped = (rotation === 90 || rotation === 270);
+                            
+                            if (isSwapped && currentPage.source === 'pdf') {
+                                // Swap base values if we are in PDF mode with rotation
+                                const temp = baseWidth;
+                                baseWidth = baseHeight;
+                                baseHeight = temp;
+                            }
+
+                            // If metadata is still loading (width is 0 or 800) but we have a background, 
+                            // extract true unscaled dimensions from the 2x buffer canvas
+                            if (bgImage && (currentPage.width === 0 || currentPage.width === 800)) {
+                                baseWidth = (bgImage as any).width / 2;
+                                baseHeight = (bgImage as any).height / 2;
+                            }
+
+                            // Start with the background in an array
+                            let currentStack: React.ReactNode[] = [];
 
                             if (currentPage.source === 'pdf' && bgImage) {
-                                currentStack = (
+                                currentStack.push(
                                     <KonvaImage
                                         key="pdf-background"
                                         image={bgImage}
-                                        width={unzoomedWidth}
-                                        height={unzoomedHeight}
+                                        width={baseWidth}
+                                        height={baseHeight}
                                         listening={false}
                                     />
                                 );
                             } else if (currentPage.source === 'blank') {
-                                currentStack = (
+                                currentStack.push(
                                     <Rect
                                         key="blank-background"
-                                        width={unzoomedWidth}
-                                        height={unzoomedHeight}
+                                        width={baseWidth}
+                                        height={baseHeight}
                                         fill={currentPage.backgroundColor || '#ffffff'}
                                         listening={false}
                                     />
@@ -1369,6 +1413,18 @@ export const EditorCanvas: React.FC = () => {
                                 // In a full implementation, textures could also be objects
                             }
 
+                            // Compute a stable hash of the underlying objects to trigger filter cache rebuilds
+                            // when items are added, deleted, or moved beneath an adjustment layer.
+                            const contentVersion = React.useMemo(() => {
+                                if (!currentPage) return '';
+                                const objHash = currentPage.objects
+                                    .filter(o => o.type !== 'effect')
+                                    .map(o => `${o.id}_${Math.round(o.x)}_${Math.round(o.y)}_${Math.round(o.width || 0)}_${Math.round(o.height || 0)}_${o.opacity}_${o.text || ''}_${o.src || ''}`)
+                                    .join('|');
+                                // Include background presence and page dimensions to catch late-loading PDF visuals
+                                return `${objHash}|${bgImage ? 'bg-loaded' : 'no-bg'}|${baseWidth}x${baseHeight}`;
+                            }, [currentPage?.objects, bgImage, baseWidth, baseHeight]);
+
                             // Iterate through objects and build the nested structure
                             currentPage.objects.forEach((obj) => {
                                 const isSelected = selectedObjectIds.includes(obj.id);
@@ -1379,17 +1435,18 @@ export const EditorCanvas: React.FC = () => {
                                         ...obj,
                                         x: 0,
                                         y: 0,
-                                        width: unzoomedWidth,
-                                        height: unzoomedHeight,
+                                        width: baseWidth,
+                                        height: baseHeight,
                                         rotation: 0,
                                         isLocked: true // Prevent any internal move logic
                                     };
 
-                                    // Effect Layer: Wrap the current stack
-                                    currentStack = (
+                                    // Effect Layer: Wrap the current stack array into a single layer
+                                    currentStack = [
                                         <AdjustmentGroup
                                             key={obj.id}
                                             object={proObject}
+                                            contentVersion={contentVersion}
                                             isSelected={isSelected}
                                             onSelect={(e) => {
                                                 if (activeTool === 'select') {
@@ -1400,28 +1457,26 @@ export const EditorCanvas: React.FC = () => {
                                         >
                                             {currentStack}
                                         </AdjustmentGroup>
-                                    );
+                                    ];
                                 } else {
-                                    // Standard Object: Group it with the current stack
-                                    currentStack = (
-                                        <Group key={obj.id}>
-                                            {currentStack}
-                                            <PDFObjectRenderer
-                                                object={obj}
-                                                isSelected={isSelected}
-                                                onSelect={(e: Konva.KonvaEventObject<MouseEvent>) => {
-                                                    if (activeTool === 'eraser' && eraserMode === 'element') {
-                                                        deleteObjects([obj.id]);
-                                                    } else if (activeTool === 'select') {
-                                                        const isMulti = e?.evt?.shiftKey === true;
-                                                        selectObject(obj.id, isMulti);
-                                                    }
-                                                }}
-                                                onChange={(updates) => updateObject(obj.id, updates)}
-                                                isLocked={obj.isLocked}
-                                                isSelectionEnabled={activeTool === 'select' || (activeTool === 'eraser' && eraserMode === 'element')}
-                                            />
-                                        </Group>
+                                    // Standard Object: Just append as a sibling
+                                    currentStack.push(
+                                        <PDFObjectRenderer
+                                            key={obj.id}
+                                            object={obj}
+                                            isSelected={isSelected}
+                                            onSelect={(e: Konva.KonvaEventObject<MouseEvent>) => {
+                                                if (activeTool === 'eraser' && eraserMode === 'element') {
+                                                    deleteObjects([obj.id]);
+                                                } else if (activeTool === 'select') {
+                                                    const isMulti = e?.evt?.shiftKey === true;
+                                                    selectObject(obj.id, isMulti);
+                                                }
+                                            }}
+                                            onChange={(updates) => updateObject(obj.id, updates)}
+                                            isLocked={obj.isLocked}
+                                            isSelectionEnabled={activeTool === 'select' || (activeTool === 'eraser' && eraserMode === 'element')}
+                                        />
                                     );
                                 }
                             });

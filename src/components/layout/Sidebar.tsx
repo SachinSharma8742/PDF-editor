@@ -4,7 +4,7 @@ import { usePDFStore } from '../../store/pdfStore';
 import {
     Plus, Upload, Trash2,
     Settings, BoxSelect, Download, Copy,
-    RefreshCw, FolderOpen, Info, HelpCircle, Printer, ArrowLeftRight
+    RefreshCw, FolderOpen, Info, HelpCircle, Printer, ArrowLeftRight, Code2
 } from 'lucide-react';
 import { AddPageModal } from '../../components/features/page-operations/AddPageModal';
 import { useEditorStore } from '../../store/editorStore';
@@ -16,11 +16,13 @@ import { loadPDF } from '../../utils/pdfOps';
 import { saveDocument } from '../../utils/exportUtils';
 import clsx from 'clsx';
 import { CompareModal } from '../features/editor/CompareModal';
+import { DeveloperModal } from '../features/editor/DeveloperModal';
 
 export const Sidebar: React.FC = () => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isCompareOpen, setIsCompareOpen] = useState(false);
+    const [isDeveloperOpen, setIsDeveloperOpen] = useState(false);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const {
@@ -218,6 +220,14 @@ export const Sidebar: React.FC = () => {
                                         </button>
 
                                         <button
+                                            onClick={() => { setIsDeveloperOpen(true); setIsSettingsOpen(false); }}
+                                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-zinc-500 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5 transition-all text-left"
+                                        >
+                                            <Code2 size={14} className="ml-1 text-purple-500" />
+                                            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Developers</span>
+                                        </button>
+
+                                        <button
                                             onClick={async () => {
                                                 if (confirm('Are you sure you want to clear all app data?')) {
                                                     const { clear } = await import('idb-keyval');
@@ -363,6 +373,7 @@ export const Sidebar: React.FC = () => {
 
             <AddPageModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
             <CompareModal isOpen={isCompareOpen} onClose={() => setIsCompareOpen(false)} />
+            <DeveloperModal isOpen={isDeveloperOpen} onClose={() => setIsDeveloperOpen(false)} />
         </div>
     );
 };

@@ -1,12 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { usePDFStore } from '../../../store/pdfStore';
 import { PDFPage } from './PDFPage';
 import { FileText } from 'lucide-react';
-
+import { useShallow } from 'zustand/react/shallow';
 
 export const PDFViewer: React.FC = () => {
     const {
-        pages,
         pdfDocument,
         undo,
         redo,
@@ -14,15 +13,29 @@ export const PDFViewer: React.FC = () => {
         selectedObjectIds,
         setCurrentPage,
         activeTool
-    } = usePDFStore();
+    } = usePDFStore(useShallow(s => ({
+        pdfDocument: s.pdfDocument,
+        undo: s.undo,
+        redo: s.redo,
+        deleteObjects: s.deleteObjects,
+        selectedObjectIds: s.selectedObjectIds,
+        setCurrentPage: s.setCurrentPage,
+        activeTool: s.activeTool
+    })));
 
+    // Map to primitive strings first so useShallow can perfectly cache and prevent infinite re-renders
+    const pagesInfoStr = usePDFStore(useShallow(s => s.pages.map(p => `${p.pageNumber}:${p.width}`)));
+    const pagesInfo = useMemo(() => pagesInfoStr.map(str => {
+        const [pageNumber, width] = str.split(':').map(Number);
+        return { pageNumber, width };
+    }), [pagesInfoStr]);
 
     const observerRef = useRef<IntersectionObserver | null>(null);
     const activeIntersections = useRef<Map<number, number>>(new Map());
 
     // Scroll Tracking Effect
     useEffect(() => {
-        if (!pdfDocument || pages.length === 0) return;
+        if (!pdfDocument || pagesInfo.length === 0) return;
 
         // Cleanup state on re-init
         activeIntersections.current.clear();
@@ -71,7 +84,7 @@ export const PDFViewer: React.FC = () => {
 
         // Wait for components to mount and register with observer
         const timeoutId = setTimeout(() => {
-            pages.forEach(page => {
+            pagesInfo.forEach(page => {
                 const element = document.getElementById(`page-${page.pageNumber}`);
                 if (element && observerRef.current) {
                     observerRef.current.observe(element);
@@ -83,7 +96,7 @@ export const PDFViewer: React.FC = () => {
             if (observerRef.current) observerRef.current.disconnect();
             clearTimeout(timeoutId);
         };
-    }, [pdfDocument, pages, setCurrentPage]); // Re-run when pages are added, removed, or reordered
+    }, [pdfDocument, pagesInfo, setCurrentPage]); // Re-run when pages are added, removed, or reordered
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -179,7 +192,7 @@ export const PDFViewer: React.FC = () => {
 
     // Auto-Fit Scale on Load
     useEffect(() => {
-        if (!pdfDocument || pages.length === 0 || !containerRef.current) return;
+        if (!pdfDocument || pagesInfo.length === 0 || !containerRef.current) return;
 
         const fitToWidth = () => {
             const containerWidth = containerRef.current?.clientWidth || window.innerWidth;
@@ -187,7 +200,7 @@ export const PDFViewer: React.FC = () => {
             const availableWidth = containerWidth - padding;
 
             // Find the widest page to ensure everything fits
-            const maxPageWidth = Math.max(...pages.map(p => p.width));
+            const maxPageWidth = Math.max(...pagesInfo.map(p => p.width));
 
             if (maxPageWidth > 0) {
                 // Calculate scale to fit
@@ -223,9 +236,9 @@ export const PDFViewer: React.FC = () => {
         const timeout = setTimeout(fitToWidth, 100);
         return () => clearTimeout(timeout);
 
-    }, [pdfDocument, pages.length]); // Run when document/pages change
+    }, [pdfDocument, pagesInfo.length]); // Run when document/pages change
 
-    if (!pdfDocument && pages.length === 0) {
+    if (!pdfDocument && pagesInfo.length === 0) {
         return (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-zinc-600 animate-in fade-in duration-700">
                 <div className="relative mb-6">
@@ -265,7 +278,7 @@ export const PDFViewer: React.FC = () => {
                 event.preventDefault();
             }}
         >
-            {(pages as any[]).map((page: any) => (
+            {pagesInfo.map((page: any) => (
                 <PDFPage key={page.pageNumber} pageNumber={page.pageNumber} />
             ))}
         </div>

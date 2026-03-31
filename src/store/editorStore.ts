@@ -1638,7 +1638,7 @@ export const useEditorStore = create<EditorStore>()(
                 const groupW = maxX - minX;
                 const groupH = maxY - minY;
 
-                console.log('[GroupObjects] Creating group:', { groupX, groupY, groupW, groupH });
+                // console.log('[GroupObjects] Creating group:', { groupX, groupY, groupW, groupH });
 
                 const newGroupId = crypto.randomUUID();
 
@@ -1649,7 +1649,7 @@ export const useEditorStore = create<EditorStore>()(
                         x: obj.x - groupX,
                         y: obj.y - groupY
                     };
-                    console.log('[GroupObjects] Child:', { id: obj.id, originalX: obj.x, groupX, relativeX: child.x });
+                    // console.log('[GroupObjects] Child:', { id: obj.id, originalX: obj.x, groupX, relativeX: child.x });
                     return child;
                 });
 

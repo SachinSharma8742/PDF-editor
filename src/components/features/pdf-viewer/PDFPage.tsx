@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { usePDFStore } from '../../../store/pdfStore';
 import { useEditorStore } from '../../../store/editorStore';
@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { PageSelectionOverlay } from '../page-operations/PageSelectionOverlay';
 import { CanvasLayer } from '../editor/CanvasLayer';
 import { PDFTextLayer } from './PDFTextLayer';
+import { useShallow } from 'zustand/react/shallow';
 
 interface PDFPageProps {
     pageNumber: number;
@@ -54,9 +55,14 @@ const BackgroundLayer: React.FC<{
     );
 };
 
-export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
-    const { pdfDocument, scale, pages } = usePDFStore();
-    const pageState = pages.find(p => p.pageNumber === pageNumber);
+export const PDFPage = React.memo<PDFPageProps>(({ pageNumber }) => {
+    const pdfDocument = usePDFStore(s => s.pdfDocument);
+    const scale = usePDFStore(s => s.scale);
+    const totalPages = usePDFStore(s => s.pages.length);
+    
+    // Only re-render if THIS specific page's state actually changes
+    const pageState = usePDFStore(useShallow(s => s.pages.find(p => p.pageNumber === pageNumber)));
+
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -65,7 +71,26 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
     const [bgImage, setBgImage] = useState<HTMLCanvasElement | HTMLImageElement | null>(null);
     const bufferCanvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
 
-    // Effect for PDF Rendering
+    // Effect for syncing fast dimensions on zoom/scale change
+    useEffect(() => {
+        if (!pageState || pageState.source !== 'pdf' || !pdfDocument) return;
+        const indexToFetch = pageState.originalPageIndex;
+        if (indexToFetch === undefined) return;
+
+        let isCancelled = false;
+        pdfDocument.getPage(indexToFetch).then(page => {
+            if (isCancelled) return;
+            const baseViewport = page.getViewport({ scale: 1 });
+            setDimensions({
+                width: Math.floor(baseViewport.width * scale),
+                height: Math.floor(baseViewport.height * scale)
+            });
+        }).catch(() => {});
+        
+        return () => { isCancelled = true; };
+    }, [pdfDocument, pageState?.originalPageIndex, scale, pageState?.source]);
+
+    // Effect for Heavy PDF Rendering (ONCE)
     useEffect(() => {
         if (!pageState || pageState.source !== 'pdf') return;
 
@@ -105,12 +130,6 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                     const finalCtx = finalBg.getContext('2d');
                     finalCtx?.drawImage(bufferCanvas, 0, 0);
                     setBgImage(finalBg);
-
-                    const baseViewport = page.getViewport({ scale: 1 });
-                    setDimensions({
-                        width: Math.floor(baseViewport.width * scale),
-                        height: Math.floor(baseViewport.height * scale)
-                    });
                 }
             } catch (error: any) {
                 if (error.name !== 'RenderingCancelledException') {
@@ -127,7 +146,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
             isCancelled = true;
             if (renderTask) renderTask.cancel();
         };
-    }, [pdfDocument, pageNumber, scale, pageState]);
+    }, [pdfDocument, pageNumber, pageState?.source, pageState?.originalPageIndex, pageState?.rotation]);
 
     // Handle image-based background
     useEffect(() => {
@@ -310,7 +329,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                         }}>
                             {pageState.structure.header.text
                                 .replace('{{page}}', `${pageState.pageNumber}`)
-                                .replace('{{total}}', `${pages.length}`)
+                                .replace('{{total}}', `${totalPages}`)
                                 .replace('{{date}}', new Date().toLocaleDateString())}
                         </div>
                     ) : <div />}
@@ -327,7 +346,7 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
                         }}>
                             {pageState.structure.footer.text
                                 .replace('{{page}}', `${pageState.pageNumber}`)
-                                .replace('{{total}}', `${pages.length}`)
+                                .replace('{{total}}', `${totalPages}`)
                                 .replace('{{date}}', new Date().toLocaleDateString())}
                         </div>
                     ) : <div />}
@@ -347,4 +366,4 @@ export const PDFPage: React.FC<PDFPageProps> = ({ pageNumber }) => {
             )}
         </div>
     );
-};
+});

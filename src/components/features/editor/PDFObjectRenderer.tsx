@@ -24,7 +24,8 @@ interface PDFObjectRendererProps {
 import Konva from 'konva';
 
 const URLImage = ({ object, opacity, ...props }: any) => {
-    const [img] = useImage(object.src || '', 'anonymous');
+    const isLocal = object.src?.startsWith('data:') || object.src?.startsWith('blob:');
+    const [img] = useImage(object.src || '', isLocal ? undefined : 'anonymous');
     const imageRef = useRef<Konva.Image>(null);
 
     // Apply filters and cache
@@ -217,7 +218,7 @@ const URLImage = ({ object, opacity, ...props }: any) => {
     );
 };
 
-export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
+const PDFObjectRendererInner: React.FC<PDFObjectRendererProps> = ({
     object,
     isSelected,
     onSelect,
@@ -245,10 +246,11 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
     // console.log(`[Renderer] ${object.id} (${object.type}) Opacity:`, object.opacity);
 
     if (object.type === 'group') {
-        console.log('[PDFObjectRenderer] Rendering Group:', { id: object.id, x: object.x, y: object.y, childrenCount: object.children?.length, visible: object.visible, opacity: object.opacity });
+        // Debug Log (disabled for performance)
+        // console.log('[PDFObjectRenderer] Rendering Group:', { id: object.id, x: object.x, y: object.y, childrenCount: object.children?.length, visible: object.visible, opacity: object.opacity });
     }
     if (!isSelectionEnabled) {
-        console.log('[PDFObjectRenderer] Rendering Child:', { parentGroup: true, id: object.id, type: object.type, x: object.x, y: object.y, visible: object.visible });
+        // console.log('[PDFObjectRenderer] Rendering Child:', { parentGroup: true, id: object.id, type: object.type, x: object.x, y: object.y, visible: object.visible });
     }
 
 
@@ -819,3 +821,16 @@ export const PDFObjectRenderer: React.FC<PDFObjectRendererProps> = ({
 };
 
 // TextEditorOverlay removed - moved to separate file and outside Konva tree
+
+// Memoize to skip re-renders for unchanged objects
+export const PDFObjectRenderer = React.memo(PDFObjectRendererInner, (prevProps, nextProps) => {
+    // Only re-render if the object itself changed (by reference, since store is immutable),
+    // or if the selection/lock state changed.
+    // We ignore event callbacks like onSelect/onChange as they are constantly recreated inline by EditorCanvas.
+    return (
+        prevProps.object === nextProps.object &&
+        prevProps.isSelected === nextProps.isSelected &&
+        prevProps.isLocked === nextProps.isLocked &&
+        prevProps.isSelectionEnabled === nextProps.isSelectionEnabled
+    );
+});
