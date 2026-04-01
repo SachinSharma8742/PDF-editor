@@ -14,7 +14,7 @@ const developers = [
         initials: 'JS',
         gradient: 'from-blue-500 to-cyan-400',
         links: [
-            { icon: Globe, label: 'Portfolio', href: 'https://jayesh-portfolio-ruddy.vercel.app/' },
+            { icon: Globe, label: 'Portfolio', href: 'https://jayesh-portfolio-neon.vercel.app/' },
             { icon: Github, label: 'GitHub' },
             { icon: Linkedin, label: 'LinkedIn' },
         ],
@@ -48,9 +48,8 @@ export const DeveloperModal: React.FC<DeveloperModalProps> = ({ isOpen, onClose 
             onClick={handleClose}
         >
             <div
-                className={`relative w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl ${
-                    isDark ? 'bg-[#1c1c1f] text-white' : 'bg-white text-gray-900'
-                }`}
+                className={`relative w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl ${isDark ? 'bg-[#1c1c1f] text-white' : 'bg-white text-gray-900'
+                    }`}
                 onClick={(e) => e.stopPropagation()}
                 style={{ animation: 'modalIn 0.25s ease-out' }}
             >
@@ -62,9 +61,8 @@ export const DeveloperModal: React.FC<DeveloperModalProps> = ({ isOpen, onClose 
                 `}</style>
 
                 {/* Header */}
-                <div className={`px-5 pt-5 pb-4 flex items-center justify-between border-b ${
-                    isDark ? 'border-white/8' : 'border-gray-100'
-                }`}>
+                <div className={`px-5 pt-5 pb-4 flex items-center justify-between border-b ${isDark ? 'border-white/8' : 'border-gray-100'
+                    }`}>
                     <div>
                         <h2 className="text-base font-bold">Developers</h2>
                         <p className={`text-[11px] mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
@@ -73,9 +71,8 @@ export const DeveloperModal: React.FC<DeveloperModalProps> = ({ isOpen, onClose 
                     </div>
                     <button
                         onClick={handleClose}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                            isDark ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-gray-100 text-gray-400'
-                        }`}
+                        className={`p-1.5 rounded-lg transition-colors ${isDark ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-gray-100 text-gray-400'
+                            }`}
                     >
                         <X size={16} />
                     </button>
@@ -86,9 +83,8 @@ export const DeveloperModal: React.FC<DeveloperModalProps> = ({ isOpen, onClose 
                     {developers.map((dev) => (
                         <div
                             key={dev.name}
-                            className={`rounded-xl p-4 ${
-                                isDark ? 'bg-white/[0.04]' : 'bg-gray-50'
-                            }`}
+                            className={`rounded-xl p-4 ${isDark ? 'bg-white/[0.04]' : 'bg-gray-50'
+                                }`}
                         >
                             <div className="flex items-center gap-3">
                                 {/* Avatar */}
@@ -101,9 +97,8 @@ export const DeveloperModal: React.FC<DeveloperModalProps> = ({ isOpen, onClose 
                                 {/* Info */}
                                 <div className="flex-1 min-w-0">
                                     <h3 className="text-[13px] font-bold leading-none">{dev.name}</h3>
-                                    <p className={`text-[11px] mt-1 font-medium ${
-                                        isDark ? 'text-gray-500' : 'text-gray-400'
-                                    }`}>
+                                    <p className={`text-[11px] mt-1 font-medium ${isDark ? 'text-gray-500' : 'text-gray-400'
+                                        }`}>
                                         {dev.role}
                                     </p>
                                 </div>
@@ -112,11 +107,10 @@ export const DeveloperModal: React.FC<DeveloperModalProps> = ({ isOpen, onClose 
                                 <div className="flex items-center gap-1.5 shrink-0">
                                     {dev.links.map((link) => {
                                         const Icon = link.icon;
-                                        const cls = `p-1.5 rounded-lg transition-all ${
-                                            isDark
+                                        const cls = `p-1.5 rounded-lg transition-all ${isDark
                                                 ? 'text-gray-500 hover:text-white hover:bg-white/10'
                                                 : 'text-gray-400 hover:text-gray-700 hover:bg-gray-200/60'
-                                        }`;
+                                            }`;
 
                                         return link.href ? (
                                             <a
@@ -142,9 +136,8 @@ export const DeveloperModal: React.FC<DeveloperModalProps> = ({ isOpen, onClose 
                 </div>
 
                 {/* Footer */}
-                <div className={`px-5 py-3 text-center border-t ${
-                    isDark ? 'border-white/5' : 'border-gray-100'
-                }`}>
+                <div className={`px-5 py-3 text-center border-t ${isDark ? 'border-white/5' : 'border-gray-100'
+                    }`}>
                     <p className={`text-[10px] font-medium ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
                         Made with <Heart size={10} className="inline text-red-500 mx-0.5" fill="currentColor" /> for productivity
                     </p>
