@@ -14,9 +14,9 @@ const developers = [
         initials: 'JS',
         gradient: 'from-blue-500 to-cyan-400',
         links: [
-            { icon: Globe, label: 'Portfolio', href: 'https://jayesh-portfolio-neon.vercel.app/' },
-            { icon: Github, label: 'GitHub' },
-            { icon: Linkedin, label: 'LinkedIn' },
+            { icon: Globe, label: 'Portfolio', href: 'https://jayesh-portfolio-livid.vercel.app/' },
+            { icon: Github, label: 'GitHub', href: 'https://github.com/jayeshsaini524' },
+            { icon: Linkedin, label: 'LinkedIn', href: 'https://www.linkedin.com/in/jayesh-saini-743554282/' },
         ],
     },
     {
@@ -108,8 +108,8 @@ export const DeveloperModal: React.FC<DeveloperModalProps> = ({ isOpen, onClose 
                                     {dev.links.map((link) => {
                                         const Icon = link.icon;
                                         const cls = `p-1.5 rounded-lg transition-all ${isDark
-                                                ? 'text-gray-500 hover:text-white hover:bg-white/10'
-                                                : 'text-gray-400 hover:text-gray-700 hover:bg-gray-200/60'
+                                            ? 'text-gray-500 hover:text-white hover:bg-white/10'
+                                            : 'text-gray-400 hover:text-gray-700 hover:bg-gray-200/60'
                                             }`;
 
                                         return link.href ? (
