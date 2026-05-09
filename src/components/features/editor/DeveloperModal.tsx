@@ -7,7 +7,21 @@ interface DeveloperModalProps {
     onClose: () => void;
 }
 
-const developers = [
+type DeveloperLink = {
+    icon: React.ComponentType<{ size?: number }>;
+    label: string;
+    href?: string;
+};
+
+type Developer = {
+    name: string;
+    role: string;
+    initials: string;
+    gradient: string;
+    links: DeveloperLink[];
+};
+
+const developers: Developer[] = [
     {
         name: 'Jayesh Saini',
         role: 'Lead Developer',
