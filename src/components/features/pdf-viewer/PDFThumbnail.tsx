@@ -137,6 +137,9 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
     const [rendering, setRendering] = useState(false);
     const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
     const [scaleFactor, setScaleFactor] = useState(1);
+    
+    // Render task reference for cancellation
+    const renderTaskRef = useRef<any>(null);
 
     const pageState = pages.find(p => p.pageNumber === pageNumber);
 
@@ -146,7 +149,9 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
             ([entry]) => {
                 if (entry.isIntersecting) {
                     setIsVisible(true);
-                    observer.disconnect(); // Once loaded, keep it (or we could unload to save MEM, but caching handles reload speed)
+                } else {
+                    // Release DOM/Canvas resources when far off-screen
+                    setIsVisible(false);
                 }
             },
             { rootMargin: '200px' } // Load when within 200px of viewport
@@ -210,10 +215,14 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
                 canvas.width = scaledViewport.width;
                 canvas.height = scaledViewport.height;
 
-                await page.render({
+                const renderContext = {
                     canvasContext: context,
                     viewport: scaledViewport,
-                }).promise;
+                };
+                
+                const renderTask = page.render(renderContext) as any;
+                renderTaskRef.current = renderTask;
+                await renderTask.promise;
 
                 if (isCancelled) return;
 
@@ -241,7 +250,14 @@ export const PDFThumbnail: React.FC<PDFThumbnailProps> = ({ pageNumber, width = 
 
         return () => {
             isCancelled = true;
-            // Cleanup object URLs if needed? usually React handles simple src swaps but good practice if heavily unloading
+            if (renderTaskRef.current) {
+                try {
+                    renderTaskRef.current.cancel();
+                } catch (e) {
+                    // Ignore cancellation errors
+                }
+                renderTaskRef.current = null;
+            }
         };
     }, [isVisible, pageState?.id, pageState?.originalPageIndex, width, pdfDocument, fileName]); // Re-run if page changes
 

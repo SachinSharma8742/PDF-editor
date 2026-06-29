@@ -235,9 +235,18 @@ export const EditorCanvas: React.FC = () => {
 
                 const rotation = (currentPage.rotation || 0) + ((page as any).rotate || 0); // Combine intrinsic + user rotation
 
-                // Use a fixed high-DPI scale for background rendering to keep it sharp
-                const RENDER_SCALE = 2;
-                const viewport = page.getViewport({ scale: RENDER_SCALE, rotation: rotation % 360 } as any);
+                const baseViewport = page.getViewport({ scale: 1, rotation: rotation % 360 } as any);
+                const MAX_CANVAS_DIMENSION = 4096;
+                
+                let renderScale = 2; // Target 2x for sharpness
+                if (baseViewport.width * renderScale > MAX_CANVAS_DIMENSION || baseViewport.height * renderScale > MAX_CANVAS_DIMENSION) {
+                    const maxScaleX = MAX_CANVAS_DIMENSION / baseViewport.width;
+                    const maxScaleY = MAX_CANVAS_DIMENSION / baseViewport.height;
+                    // Cap scale to prevent massive canvas crashes while keeping it as sharp as possible within limits
+                    renderScale = Math.min(maxScaleX, maxScaleY);
+                }
+
+                const viewport = page.getViewport({ scale: renderScale, rotation: rotation % 360 } as any);
                 const outputScale = 1;
 
                 // 1. Prepare Buffer Canvas (Internal PDF Render)
